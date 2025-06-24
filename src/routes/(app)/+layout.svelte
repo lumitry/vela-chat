@@ -50,6 +50,7 @@
 	const i18n = getContext('i18n');
 
 	let loaded = false;
+	let showSidebar = false;
 	let DB = null;
 	let localDBChats = [];
 
@@ -224,6 +225,9 @@
 		}
 
 		loaded = true;
+
+		await tick();
+		showSidebar = true;
 	});
 
 	const checkForVersionUpdates = async () => {
@@ -311,7 +315,9 @@
 			</div>
 		{/if}
 
-		<Sidebar />
+		{#if showSidebar}
+			<Sidebar />
+		{/if}
 
 		{#if loaded}
 			<slot />
