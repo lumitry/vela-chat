@@ -193,6 +193,34 @@
 				}
 			});
 
+			// TODO more thorough testing, and make this toggleable in settings?
+			document.addEventListener('keydown', (e) => {
+				// Check if any modifier keys are pressed
+				if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) {
+					return;
+				}
+
+				const target = e.target as HTMLElement;
+
+				// Check if the event target is an input, textarea, or contenteditable element
+				if (
+					target.tagName === 'INPUT' ||
+					target.tagName === 'TEXTAREA' ||
+					target.isContentEditable
+				) {
+					return;
+				}
+
+				// Check if the key is a single character and not a special key
+				if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+					const chatInput = document.getElementById('chat-input') as HTMLTextAreaElement;
+
+					if (chatInput) {
+						chatInput.focus();
+					}
+				}
+			});
+
 			if ($user?.role === 'admin' && ($settings?.showChangelog ?? true)) {
 				showChangelog.set($settings?.version !== $config.version);
 			}

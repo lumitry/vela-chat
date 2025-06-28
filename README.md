@@ -6,6 +6,7 @@ Current enhancements include:
 - Defer loading of the sidebar until after the chat has loaded, improving effective load times (since the sidebar is rarely the first thing a user interacts with).
 - Removed the floating buttons when text is selected, as they were not useful (cf. "opinionated fork").
 - Made the "New Chat" button work with CMD+click and CTRL+click to open in a new tab without changing the current tab.
+- Typing in the chat input now automatically focuses the chat input.
 
 Planned enhancements include:
 - Serve images via URL, not base64, to reduce payload size, database size, and improve general performance.
