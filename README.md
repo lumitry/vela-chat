@@ -1,4 +1,47 @@
-# Open WebUI 👋
+# Sensible WebUI
+
+Sensible WebUI is an opinionated fork of Open-WebUI 0.6.5 designed to provide a more performant and user-friendly experience.
+
+Current enhancements include:
+- Defer loading of the sidebar until after the chat has loaded, improving effective load times (since the sidebar is rarely the first thing a user interacts with).
+- Removed the floating buttons when text is selected, as they were not useful (cf. "opinionated fork").
+- Made the "New Chat" button work with CMD+click and CTRL+click to open in a new tab without changing the current tab.
+
+Planned enhancements include:
+- Serve images via URL, not base64, to reduce payload size, database size, and improve general performance.
+  - Cache copies of model images, so if someone uploads the Anthropic logo four times, it only gets stored once & sent once.
+- Don't bother loading in-chat images until after the chat itself has loaded.
+- Defer loading of model images.
+- (feat) Add the ability to link to a specific message (automatically navigates to the correct 'branch' in the conversation and scrolls to the message).
+- Renaming chats via modal instead of inline? Inline feels clunky to me.
+- Make chat moving be a button in the dropdown menu instead of drag-and-drop since drag-and-drop is laggy at the moment.
+- Fix CMD+F(/CTRL+F) browser search crashing the browser due to OOM errors.
+- Only send the first few hundred characters of each message to the Overview feature, since only the first few words can be seen at once anyway, and Overview currently can crash the browser with large (multi-megabyte) conversations.
+- Make formatting shortcuts (e.g. CMD+I for italics) work in the non-rich text chat input
+- Always create new tags, not just in the chat elipsis/dropdown menu (i.e. so tags are created in the feedback form and model creation page as well)
+
+Future investigations include:
+- Enforcing Postgres?
+- Fixing the performance of the `folders` endpoint.
+- Removing the `knowledge` UUID list from the `models` endpoint since it is not needed for the vast majority of operations (would this break anything?)
+- (feat) A "Branch Explorer" to visualize the conversation tree that, unlike the current "Overview" feature, allows you to **search branches** and even type in a branch series (e.g. `1-1-3-2-1` for the first branch of the first user message, the first branch of the first assistant message, the third branch of the second user message, and the second branch of the first assistant message) to navigate to a specific branch.
+- Can we make the search feature show context for search results (e.g. showing the surrounding message text) and also take you to the specific branch of the conversation where the search result was found (see also: link to message feature)?
+- LiteLLM/OpenRouter as first-class citizens (tokens per second support, etc.) (maybe also basic usage stats with price info? a bit too complex for now though)
+- Can we add Perplexity support in a way that still shows sources? (you can use it with response streaming disabled right now, but it doesn't show sources)
+- How can we make the evaluations page load quicker? Does it require removing snapshots from the evaluations table? currently evaluations include the entire conversation, which can be hundreds of kilobytes in size (or more), which is probably unnecessary. this might end up being a breaking change involving making messages their own table and linking them to both chats and evaluations (if that's still performant) but it may be worth it.
+- Maybe an "image library" for models? Would help for people who use official images (e.g. the OpenAI blossom, Gemini star, etc.) and don't want to have to locate the image on their computer every time (this would also help with deduplication/caching)
+- How to fix that one issue where if you upload images multiple times in the same chat without refreshing in between, it sometimes makes the page bug out and not show the response coming in?
+- Can we make it so that you can send a message and close the chat/tab/device (e.g. by streaming the response to the backend then forwarding it to the frontend while storing the response in memory then committing to DB when done)? this would be awesome for mobile users
+
+I chose Open-WebUI 0.6.5 because it is the last version that's been stable for me, and it's the last version before the contributor license agreement was introduced.
+
+## Notes
+
+If anyone knows how to migrate from the Sqlite backend to Postgres, please let me know how. I tried using `pgloader`, but it didn't work even with a ton of additional migrations afterwards. I got *almost* everything working except the chats; all chats with markdown code blocks (triple backticks) seemingly broke the renderer on the frontend? I have no idea why that happened, but it was enough to make me give up on the migration for now (especially considering it didn't seem to improve performance by quite as much as I'd hoped). Despite giving up, I tried to vibe code my way through a migration script, but that went similarly poorly.
+
+I'd personally recommend Postgres to anyone starting fresh since it will be more performant in the long run (currently, trying to export all chats from my sqlite-backed "production" instance crashes the docker container entirely) and is fairly simple to set up (just use the postgres docker image and set the `DATABASE_URL` environment variable to `postgresql://postgres:password@localhost:5432/open-webui` or whatever your Postgres instance is).
+
+# Original README
 
 ![GitHub stars](https://img.shields.io/github/stars/open-webui/open-webui?style=social)
 ![GitHub forks](https://img.shields.io/github/forks/open-webui/open-webui?style=social)
