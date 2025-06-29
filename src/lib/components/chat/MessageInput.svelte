@@ -832,6 +832,46 @@
 											on:keydown={async (e) => {
 												const isCtrlPressed = e.ctrlKey || e.metaKey; // metaKey is for Cmd key on Mac
 
+												// Handle Ctrl+B, Ctrl+I, Ctrl+E for formatting
+												if (isCtrlPressed && ['b', 'i', 'e'].includes(e.key.toLowerCase())) {
+													e.preventDefault();
+													const textarea = e.target;
+													const start = textarea.selectionStart;
+													const end = textarea.selectionEnd;
+													const selectedText = prompt.substring(start, end);
+
+													let prefix = '';
+													let suffix = '';
+
+													switch (e.key.toLowerCase()) {
+														case 'b':
+															prefix = '**';
+															suffix = '**';
+															break;
+														case 'i':
+															prefix = '*';
+															suffix = '*';
+															break;
+														case 'e':
+															prefix = '`';
+															suffix = '`';
+															break;
+													}
+
+													prompt =
+														prompt.substring(0, start) +
+														prefix +
+														selectedText +
+														suffix +
+														prompt.substring(end);
+
+													await tick();
+													textarea.focus();
+													textarea.selectionStart = start + prefix.length;
+													textarea.selectionEnd = end + prefix.length;
+													return;
+												}
+
 												const commandsContainerElement =
 													document.getElementById('commands-container');
 
