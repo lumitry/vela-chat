@@ -849,8 +849,8 @@
 															suffix = '**';
 															break;
 														case 'i':
-															prefix = '*';
-															suffix = '*';
+															prefix = '_';
+															suffix = '_';
 															break;
 														case 'e':
 															prefix = '`';
@@ -858,17 +858,34 @@
 															break;
 													}
 
-													prompt =
-														prompt.substring(0, start) +
-														prefix +
-														selectedText +
-														suffix +
-														prompt.substring(end);
+													const textBefore = prompt.substring(start - prefix.length, start);
+													const textAfter = prompt.substring(end, end + suffix.length);
 
-													await tick();
-													textarea.focus();
-													textarea.selectionStart = start + prefix.length;
-													textarea.selectionEnd = end + prefix.length;
+													if (textBefore === prefix && textAfter === suffix) {
+														// Remove formatting
+														prompt =
+															prompt.substring(0, start - prefix.length) +
+															selectedText +
+															prompt.substring(end + suffix.length);
+
+														await tick();
+														textarea.focus();
+														textarea.selectionStart = start - prefix.length;
+														textarea.selectionEnd = end - prefix.length;
+													} else {
+														// Add formatting
+														prompt =
+															prompt.substring(0, start) +
+															prefix +
+															selectedText +
+															suffix +
+															prompt.substring(end);
+
+														await tick();
+														textarea.focus();
+														textarea.selectionStart = start + prefix.length;
+														textarea.selectionEnd = end + prefix.length;
+													}
 													return;
 												}
 

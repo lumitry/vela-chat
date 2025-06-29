@@ -7,6 +7,7 @@ Current enhancements include:
 - Removed the floating buttons when text is selected, as they were not useful (cf. "opinionated fork").
 - Made the "New Chat" button work with CMD+click and CTRL+click to open in a new tab without changing the current tab.
 - Typing in the chat input now automatically focuses the chat input.
+- Made formatting shortcuts (CTRL/CMD+I for italics, CTRL/CMD+B for bold, CTRL/CMD+E for code) work in the non-rich text chat input.
 
 Planned enhancements include:
 - Serve images via URL, not base64, to reduce payload size, database size, and improve general performance.
@@ -18,8 +19,8 @@ Planned enhancements include:
 - Make chat moving be a button in the dropdown menu instead of drag-and-drop since drag-and-drop is laggy at the moment.
 - Fix CMD+F(/CTRL+F) browser search crashing the browser due to OOM errors.
 - Only send the first few hundred characters of each message to the Overview feature, since only the first few words can be seen at once anyway, and Overview currently can crash the browser with large (multi-megabyte) conversations.
-- Make formatting shortcuts (e.g. CMD+I for italics) work in the non-rich text chat input
 - Always create new tags, not just in the chat elipsis/dropdown menu (i.e. so tags are created in the feedback form and model creation page as well)
+- Allow disabling of regeneration on CTRL/CMD+R since sometimes you just want to refresh the page.
 
 Future investigations include:
 - Enforcing Postgres?
