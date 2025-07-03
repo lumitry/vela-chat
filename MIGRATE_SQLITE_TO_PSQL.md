@@ -9,4 +9,5 @@
    chmod +x migrate.sh
    ./migrate.sh
    ```
+   (note: you may need to adjust the script to match your env; at the moment, it does not load your database from the env var, for example.)
 6. run the application again, it should now be using the new postgres database with all your data migrated from sqlite
