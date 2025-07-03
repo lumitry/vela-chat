@@ -13,40 +13,44 @@ Current enhancements include:
 - Improve performance of the `/api/models` endpoint (no `/v1/` in the slug, that's a different endpoint) by optimizing for large model counts. I managed to reduce the time it takes to load the models from around 11 seconds to under a second, but this isn't necessarily a like-for-like comparison so take it with a grain of salt. What I can say is that it now takes ~4 or 5 seconds to load the same page that used to take 30, and then 14 (after the `/api/v1/folders` change above).
 
 Planned enhancements include:
-- Serve images via URL, not base64, to reduce payload size, database size, and improve general performance.
-  - Cache copies of model images, so if someone uploads the Anthropic logo four times, it only gets stored once & sent once.
-- Don't bother loading in-chat images until after the chat itself has loaded.
-- Defer loading of model images.
+- (perf) Serve images via URL, not base64, to reduce payload size, database size, and improve general performance.
+  - (perf) Cache copies of model images, so if someone uploads the Anthropic logo four times, it only gets stored once & sent once.
+  - Make this work for migrated DBs and not just new installations! Might be possible since the migration scripts are python? IDK
+- (perf) Don't bother loading in-chat images until after the chat itself has loaded.
+- (perf) Defer loading of model images.
 - (feat) Add the ability to link to a specific message (automatically navigates to the correct 'branch' in the conversation and scrolls to the message).
-- Renaming chats via modal instead of inline? Inline feels clunky to me.
-- Make chat moving be a button in the dropdown menu instead of drag-and-drop since drag-and-drop is laggy at the moment.
-- Fix CMD+F(/CTRL+F) browser search crashing the browser due to OOM errors.
-- Only send the first few hundred characters of each message to the Overview feature, since only the first few words can be seen at once anyway, and Overview currently can crash the browser with large (multi-megabyte) conversations.
-- Always create new tags, not just in the chat elipsis/dropdown menu (i.e. so tags are created in the feedback form and model creation page as well)
-- Allow disabling of regeneration on CTRL/CMD+R since sometimes you just want to refresh the page.
-- Lazy-load or allow disabling of TTS features; I personally don't use them, and Kokoro TTS is 2MB of JS that doesn't need to be loaded. (I'm also not sure if Transformers.JS is being used for anything else; that's another 800KB.)
+- (enh) Renaming chats via modal instead of inline? Inline feels clunky to me.
+- (enh) Make chat moving be a button in the dropdown menu instead of drag-and-drop since drag-and-drop is laggy at the moment.
+- (bug) Fix CMD+F(/CTRL+F) browser search crashing the browser due to OOM errors.
+- (bug) Only send the first few hundred characters of each message to the Overview feature, since only the first few words can be seen at once anyway, and Overview currently can crash the browser with large (multi-megabyte) conversations.
+- (bug) Always create new tags, not just in the chat elipsis/dropdown menu (i.e. so tags are created in the feedback form and model creation page as well)
+- (enh) Allow disabling of regeneration on CTRL/CMD+R since sometimes you just want to refresh the page.
+- (enh) Lazy-load or allow disabling of TTS features; I personally don't use them, and Kokoro TTS is 2MB of JS that doesn't need to be loaded. (I'm also not sure if Transformers.JS is being used for anything else; that's another 800KB.)
 
 Future investigations include:
-- Enforcing Postgres?
-- Removing the `knowledge` UUID list from the `models` endpoint since it is not needed for the vast majority of operations (would this break anything?)
+- (perf) Enforcing Postgres?
+- (perf/optim) Removing the `knowledge` UUID list from the `models` endpoint since it is not needed for the vast majority of operations (would this break anything?)
 - (feat) A "Branch Explorer" to visualize the conversation tree that, unlike the current "Overview" feature, allows you to **search branches** and even type in a branch series (e.g. `1-1-3-2-1` for the first branch of the first user message, the first branch of the first assistant message, the third branch of the second user message, and the second branch of the first assistant message) to navigate to a specific branch.
-- Can we make the search feature show context for search results (e.g. showing the surrounding message text) and also take you to the specific branch of the conversation where the search result was found (see also: link to message feature)?
-- LiteLLM/OpenRouter as first-class citizens (tokens per second support, etc.) (maybe also basic usage stats with price info? a bit too complex for now though)
-- Can we add Perplexity support in a way that still shows sources? (you can use it with response streaming disabled right now, but it doesn't show sources)
-- How can we make the evaluations page load quicker? Does it require removing snapshots from the evaluations table? currently evaluations include the entire conversation, which can be hundreds of kilobytes in size (or more), which is probably unnecessary. this might end up being a breaking change involving making messages their own table and linking them to both chats and evaluations (if that's still performant) but it may be worth it.
-- Maybe an "image library" for models? Would help for people who use official images (e.g. the OpenAI blossom, Gemini star, etc.) and don't want to have to locate the image on their computer every time (this would also help with deduplication/caching)
+- (enh) Can we make the chat search feature show context for search results (e.g. showing the surrounding message text) and also take you to the specific branch of the conversation where the search result was found (see also: link to message feature)?
+- (enh) LiteLLM/OpenRouter as first-class citizens (tokens per second support, etc.) (maybe also basic usage stats with price info? a bit too complex for now though)
+- (enh) Can we add Perplexity support in a way that still shows sources? (you can use it with response streaming disabled right now, but it doesn't show sources)
+- (perf) How can we make the evaluations page load quicker? Does it require removing snapshots from the evaluations table? currently evaluations include the entire conversation, which can be hundreds of kilobytes in size (or more), which is probably unnecessary. this might end up being a breaking change involving making messages their own table and linking them to both chats and evaluations (if that's still performant) but it may be worth it.
+- (feat) Maybe an "image library" for models? Would help for people who use official images (e.g. the OpenAI blossom, Gemini star, etc.) and don't want to have to locate the image on their computer every time (this would also help with deduplication/caching)
 - How to fix that one issue where if you upload images multiple times in the same chat without refreshing in between, it sometimes makes the page bug out and not show the response coming in?
-- Can we make it so that you can send a message and close the chat/tab/device (e.g. by streaming the response to the backend then forwarding it to the frontend while storing the response in memory then committing to DB when done)? this would be awesome for mobile users
-- Could there be a "Scratchpad" sidebar where you can just dump a ton of text that will get chunked and vectorized for RAG without having to create a knowledge base, upload files, or use really long context length? Would be nice for adding reference information that isn't important enough to need to stay in context the full time, especially when using local models where quality degrades heavily after ~16k tokens.
-- Why does my personal database cause the evaluations page to fail with a `TypeError: Cannot read properties of null (reading 'toString') at Leaderboard.svelte:121:33` error? I tried removing an evaluation with weird data (empty strings instead of `null`) in DataGrip but that didn't help. This occurs both in Postgres and Sqlite on my "production" instance running 0.6.5 main branch, so it's a legitimate bug, but IDK when it appeared or what the issue is.
+- (feat) Can we make it so that you can send a message and close the chat/tab/device (e.g. by streaming the response to the backend then forwarding it to the frontend while storing the response in memory then committing to DB when done)? this would be awesome for mobile users
+- (feat) Could there be a "Scratchpad" sidebar where you can just dump a ton of text that will get chunked and vectorized for RAG without having to create a knowledge base, upload files, or use really long context length? Would be nice for adding reference information that isn't important enough to need to stay in context the full time, especially when using local models where quality degrades heavily after ~16k tokens.
+- (bug) Why does my personal database cause the evaluations page to fail with a `TypeError: Cannot read properties of null (reading 'toString') at Leaderboard.svelte:121:33` error? I tried removing an evaluation with weird data (empty strings instead of `null`) in DataGrip but that didn't help. This occurs both in Postgres and Sqlite on my "production" instance running 0.6.5 main branch, so it's a legitimate bug, but IDK when it appeared or what the issue is.
 
 I chose Open-WebUI 0.6.5 because it is the last version that's been stable for me, and it's the last version before the contributor license agreement was introduced.
 
 ## Notes
+I'd personally recommend Postgres to anyone starting fresh since it will be more performant in the long run (currently, trying to export all chats from my Sqlite-backed "production" instance crashes the docker container entirely) and is fairly simple to set up (just use the Postgres docker image and set the `DATABASE_URL` environment variable to `postgresql://postgres:password@localhost:5432/open-webui` or whatever your Postgres instance is).
 
-~~If anyone knows how to migrate from the Sqlite backend to Postgres, please let me know how. I tried using `pgloader`, but it didn't work even with a ton of additional migrations afterwards. I got *almost* everything working except the chats; all chats with markdown code blocks (triple backticks) seemingly broke the renderer on the frontend? I have no idea why that happened, but it was enough to make me give up on the migration for now (especially considering it didn't seem to improve performance by quite as much as I'd hoped). Despite giving up, I tried to vibe code my way through a migration script, but that went similarly poorly.~~ UPDATE: This was a `pnpm` issue, and it occurred even before the migration. Changing to `npm` instead fixed the issue. I have completed a migration and everything seems to be working as expected now, though I doubt it will have been worth the effort. See `MIGRATE_SQLITE_TO_PSQL.md` and `migrate.sh`, which I will probably add to a more permanent location in the repo later, but for now they're in the root.
+If you'd like to migrate your Sqlite installation to Postgres, you can see my notes on how to do this in [MIGRATE_SQLITE_TO_PSQL.md](MIGRATE_SQLITE_TO_PSQL.md) and the `migrate.sh` script in the root of the repository (will probably add these to a more permanent location later).
 
-I'd personally recommend Postgres to anyone starting fresh since it will be more performant in the long run (currently, trying to export all chats from my sqlite-backed "production" instance crashes the docker container entirely) and is fairly simple to set up (just use the postgres docker image and set the `DATABASE_URL` environment variable to `postgresql://postgres:password@localhost:5432/open-webui` or whatever your Postgres instance is).
+If you get issues loading chats containing code blocks, you should check to make sure you're using `npm` and not `pnpm`. PNPM has issues with codemirror in this repo. See [issue #1](https://github.com/lumitry/sensible-ui/issues/1) for more details.
+
+Additionally, don't mind the name. I'm bad at naming things so this is the best I could come up with lol, no shade to the maintainer or contributors! There's a reason I'm building on top of their awesome work, after all. 😄
 
 # Original README
 
