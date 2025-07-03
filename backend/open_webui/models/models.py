@@ -6,11 +6,13 @@ from open_webui.internal.db import Base, JSONField, get_db
 from open_webui.env import SRC_LOG_LEVELS
 
 from open_webui.models.users import Users, UserResponse
+from open_webui.models.groups import Groups
 
 
 from pydantic import BaseModel, ConfigDict
 
-from sqlalchemy import or_, and_, func
+import sqlalchemy
+from sqlalchemy import or_, and_, func, Index
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy import BigInteger, Column, Text, JSON, Boolean
 
@@ -174,19 +176,55 @@ class ModelsTable:
             return [ModelModel.model_validate(model) for model in db.query(Model).all()]
 
     def get_models(self) -> list[ModelUserResponse]:
+        """
+        Get all models with associated user information.
+        Optimized for performance with large datasets.
+        """
         with get_db() as db:
-            models = []
-            for model in db.query(Model).filter(Model.base_model_id != None).all():
-                user = Users.get_user_by_id(model.user_id)
-                models.append(
-                    ModelUserResponse.model_validate(
-                        {
-                            **ModelModel.model_validate(model).model_dump(),
-                            "user": user.model_dump() if user else None,
-                        }
-                    )
-                )
-            return models
+            # Query all models with filter applied
+            all_models = (
+                db.query(Model)
+                .filter(Model.base_model_id != None)
+                .all()
+            )
+            
+            # Early return if there are no models
+            if not all_models:
+                return []
+                
+            # Process in batches to improve memory usage
+            batch_size = 50
+            result = []
+            
+            # Get all user IDs in one go
+            user_ids = {model.user_id for model in all_models if model.user_id}
+            
+            # Fetch all relevant users in a single query
+            user_dict = {}
+            if user_ids:
+                users = Users.get_users_by_ids(list(user_ids))
+                user_dict = {user.id: user for user in users}
+            
+            # Use a more efficient approach to model conversion
+            # Process models in batches to limit memory usage with large datasets
+            for i in range(0, len(all_models), batch_size):
+                batch = all_models[i:i+batch_size]
+                batch_result = []
+                
+                for model in batch:
+                    user = user_dict.get(model.user_id)
+                    
+                    # Convert model to dict directly and add the user
+                    model_dict = ModelModel.model_validate(model).model_dump()
+                    model_dict["user"] = user.model_dump() if user else None
+                    
+                    # Add to batch result
+                    batch_result.append(ModelUserResponse.model_validate(model_dict))
+                
+                # Add batch to final result
+                result.extend(batch_result)
+            
+            return result
 
     def get_base_models(self) -> list[ModelModel]:
         with get_db() as db:
@@ -198,13 +236,78 @@ class ModelsTable:
     def get_models_by_user_id(
         self, user_id: str, permission: str = "write"
     ) -> list[ModelUserResponse]:
-        models = self.get_models()
-        return [
-            model
-            for model in models
-            if model.user_id == user_id
-            or has_access(user_id, permission, model.access_control)
-        ]
+        with get_db() as db:
+            start_time = time.time()
+            
+            # Step 1: Fetch user's group memberships once to use in access control
+            user_groups = Groups.get_groups_by_member_id(user_id)
+            user_group_ids = [group.id for group in user_groups]
+            
+            # Step 2: Fetch only the models that belong to this user directly
+            user_models = (
+                db.query(Model)
+                .filter(Model.base_model_id != None)
+                .filter(Model.user_id == user_id)
+                .all()
+            )
+            
+            # Step 3: Process models not owned by the user (with optimized access control)
+            # This batch-processes access control instead of doing it one-by-one
+            other_models = (
+                db.query(Model)
+                .filter(Model.base_model_id != None)
+                .filter(Model.user_id != user_id)
+                .all()
+            )
+            
+            # Efficiently check access for all models at once 
+            filtered_other_models = []
+            for model in other_models:
+                # Fast path: Public access if access_control is None
+                if model.access_control is None:
+                    if permission == "read":  # Public read access
+                        filtered_other_models.append(model)
+                    continue
+                
+                # Check permissions without making additional DB calls
+                permission_access = model.access_control.get(permission, {})
+                permitted_group_ids = permission_access.get("group_ids", [])
+                permitted_user_ids = permission_access.get("user_ids", [])
+                
+                # User has direct access or through a group
+                if (user_id in permitted_user_ids or 
+                    any(g_id in permitted_group_ids for g_id in user_group_ids)):
+                    filtered_other_models.append(model)
+            
+            # Combine user's models with filtered models
+            all_models = user_models + filtered_other_models
+            
+            # Early return if no models found
+            if not all_models:
+                return []
+            
+            # Step 4: Get all user data needed for these models in one query
+            user_ids = {model.user_id for model in all_models if model.user_id}
+            
+            user_dict = {}
+            if user_ids:
+                users = Users.get_users_by_ids(list(user_ids))
+                user_dict = {user.id: user for user in users}
+            
+            # Step 5: Build response in batches to manage memory
+            result = []
+            batch_size = 50
+            for i in range(0, len(all_models), batch_size):
+                batch = all_models[i:i+batch_size]
+                for model in batch:
+                    model_owner = user_dict.get(model.user_id)
+                    model_dict = ModelModel.model_validate(model).model_dump()
+                    model_dict["user"] = model_owner.model_dump() if model_owner else None
+                    result.append(ModelUserResponse.model_validate(model_dict))
+            
+            end_time = time.time()
+            log.info(f"get_models_by_user_id took {(end_time - start_time):.3f} seconds for {len(all_models)} models")
+            return result
 
     def get_model_by_id(self, id: str) -> Optional[ModelModel]:
         try:

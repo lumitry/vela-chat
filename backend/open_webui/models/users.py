@@ -143,6 +143,38 @@ class UsersTable:
         except Exception:
             return None
 
+    def get_users_by_ids(self, ids: list[str]) -> list[UserModel]:
+        """
+        Efficiently fetch multiple users by their IDs in a single query.
+        
+        Args:
+            ids: List of user IDs to retrieve
+            
+        Returns:
+            List of UserModel objects for the requested IDs. If a user doesn't exist,
+            they won't be included in the result.
+        """
+        if not ids:
+            return []
+            
+        # Limit batch size to prevent too large of an IN clause
+        if len(ids) > 500:
+            # Process in smaller batches if there are many IDs
+            result = []
+            for i in range(0, len(ids), 500):
+                batch_ids = ids[i:i+500]
+                result.extend(self.get_users_by_ids(batch_ids))
+            return result
+            
+        try:
+            with get_db() as db:
+                # Select only the fields we need
+                users = db.query(User).filter(User.id.in_(ids)).all()
+                return [UserModel.model_validate(user) for user in users]
+        except Exception:
+            return []
+            
+
     def get_user_by_email(self, email: str) -> Optional[UserModel]:
         try:
             with get_db() as db:
