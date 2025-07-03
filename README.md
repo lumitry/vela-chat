@@ -9,6 +9,7 @@ Current enhancements include:
 - Typing in the chat input now automatically focuses the chat input.
 - Made formatting shortcuts (CTRL/CMD+I for italics, CTRL/CMD+B for bold, CTRL/CMD+E for code) work in the non-rich text chat input.
 - When the response contains hex codes, they are rendered with color swatches next to them. (Note: This does not occur in code blocks.)
+- Improved speed of `/api/v1/folders/` endpoint by streamlining the database query to avoid an N+1 query problem. I measured 7084ms for the old query (running via Docker with Postgres DB; it took 11.75 seconds for an equivalent Sqlite DB) vs 135ms (running via `npm run dev` with Postgres DB) for the new query with 30 folders in my personal database, which is a 50x improvement. In the real world, this gave me a ~2x improvement in page load time for a chat I've been using for testing, from 30 seconds to 14 seconds. The next bottleneck for page load times is the `/api/models` endpoint, which takes 10 seconds to load and blocks the UI. Fix is WIP.
 
 Planned enhancements include:
 - Serve images via URL, not base64, to reduce payload size, database size, and improve general performance.
@@ -22,10 +23,10 @@ Planned enhancements include:
 - Only send the first few hundred characters of each message to the Overview feature, since only the first few words can be seen at once anyway, and Overview currently can crash the browser with large (multi-megabyte) conversations.
 - Always create new tags, not just in the chat elipsis/dropdown menu (i.e. so tags are created in the feedback form and model creation page as well)
 - Allow disabling of regeneration on CTRL/CMD+R since sometimes you just want to refresh the page.
+- Lazy-load or allow disabling of TTS features; I personally don't use them, and Kokoro TTS is 2MB of JS that doesn't need to be loaded. (I'm also not sure if Transformers.JS is being used for anything else; that's another 800KB.)
 
 Future investigations include:
 - Enforcing Postgres?
-- Fixing the performance of the `folders` endpoint.
 - Removing the `knowledge` UUID list from the `models` endpoint since it is not needed for the vast majority of operations (would this break anything?)
 - (feat) A "Branch Explorer" to visualize the conversation tree that, unlike the current "Overview" feature, allows you to **search branches** and even type in a branch series (e.g. `1-1-3-2-1` for the first branch of the first user message, the first branch of the first assistant message, the third branch of the second user message, and the second branch of the first assistant message) to navigate to a specific branch.
 - Can we make the search feature show context for search results (e.g. showing the surrounding message text) and also take you to the specific branch of the conversation where the search result was found (see also: link to message feature)?
@@ -38,12 +39,11 @@ Future investigations include:
 - Could there be a "Scratchpad" sidebar where you can just dump a ton of text that will get chunked and vectorized for RAG without having to create a knowledge base, upload files, or use really long context length? Would be nice for adding reference information that isn't important enough to need to stay in context the full time, especially when using local models where quality degrades heavily after ~16k tokens.
 - Why does my personal database cause the evaluations page to fail with a `TypeError: Cannot read properties of null (reading 'toString') at Leaderboard.svelte:121:33` error? I tried removing an evaluation with weird data (empty strings instead of `null`) in DataGrip but that didn't help. This occurs both in Postgres and Sqlite on my "production" instance running 0.6.5 main branch, so it's a legitimate bug, but IDK when it appeared or what the issue is.
 
-
 I chose Open-WebUI 0.6.5 because it is the last version that's been stable for me, and it's the last version before the contributor license agreement was introduced.
 
 ## Notes
 
-If anyone knows how to migrate from the Sqlite backend to Postgres, please let me know how. ~~I tried using `pgloader`, but it didn't work even with a ton of additional migrations afterwards. I got *almost* everything working except the chats; all chats with markdown code blocks (triple backticks) seemingly broke the renderer on the frontend? I have no idea why that happened, but it was enough to make me give up on the migration for now (especially considering it didn't seem to improve performance by quite as much as I'd hoped). Despite giving up, I tried to vibe code my way through a migration script, but that went similarly poorly.~~ UPDATE: This was a `pnpm` issue, and it occurred even before the migration. Changing to `npm` instead fixed the issue. I have completed a migration and everything seems to be working as expected now, though I doubt it will have been worth the effort. See `MIGRATE_SQLITE_TO_PSQL.md` and `migrate.sh`, which I will probably add to a more permanent location in the repo later, but for now they're in the root.
+~~If anyone knows how to migrate from the Sqlite backend to Postgres, please let me know how. I tried using `pgloader`, but it didn't work even with a ton of additional migrations afterwards. I got *almost* everything working except the chats; all chats with markdown code blocks (triple backticks) seemingly broke the renderer on the frontend? I have no idea why that happened, but it was enough to make me give up on the migration for now (especially considering it didn't seem to improve performance by quite as much as I'd hoped). Despite giving up, I tried to vibe code my way through a migration script, but that went similarly poorly.~~ UPDATE: This was a `pnpm` issue, and it occurred even before the migration. Changing to `npm` instead fixed the issue. I have completed a migration and everything seems to be working as expected now, though I doubt it will have been worth the effort. See `MIGRATE_SQLITE_TO_PSQL.md` and `migrate.sh`, which I will probably add to a more permanent location in the repo later, but for now they're in the root.
 
 I'd personally recommend Postgres to anyone starting fresh since it will be more performant in the long run (currently, trying to export all chats from my sqlite-backed "production" instance crashes the docker container entirely) and is fairly simple to set up (just use the postgres docker image and set the `DATABASE_URL` environment variable to `postgresql://postgres:password@localhost:5432/open-webui` or whatever your Postgres instance is).
 

@@ -8,7 +8,7 @@ from open_webui.internal.db import Base, get_db
 from open_webui.models.tags import TagModel, Tag, Tags
 from open_webui.env import SRC_LOG_LEVELS
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 from sqlalchemy import BigInteger, Boolean, Column, String, Text, JSON
 from sqlalchemy import or_, func, select, and_, text
 from sqlalchemy.sql import exists
@@ -57,6 +57,16 @@ class ChatModel(BaseModel):
 
     meta: dict = {}
     folder_id: Optional[str] = None
+
+    # @field_validator("chat", "meta", mode="before")
+    # @classmethod
+    # def parse_json_strings(cls, v):
+    #     if isinstance(v, str):
+    #         try:
+    #             return json.loads(v)
+    #         except json.JSONDecodeError:
+    #             return {}
+    #     return v
 
 
 ####################
@@ -679,29 +689,55 @@ class ChatTable:
             # Validate and return chats
             return [ChatModel.model_validate(chat) for chat in all_chats]
 
-    def get_chats_by_folder_id_and_user_id(
-        self, folder_id: str, user_id: str
-    ) -> list[ChatModel]:
+    def get_all_folder_chats_by_user_id(
+        self, user_id: str, folder_ids: list[str] = None
+    ) -> dict[str, list[dict]]:
+        """
+        Efficiently fetch chats for multiple folders in a single query.
+        Returns a dictionary mapping folder_ids to lists of chat objects (with title and id).
+        If folder_ids is None, fetches chats for all folders belonging to the user.
+        """
         with get_db() as db:
-            query = db.query(Chat).filter_by(folder_id=folder_id, user_id=user_id)
+            query = db.query(Chat).filter_by(user_id=user_id)
+
+            # Only get chats that belong to folders
+            query = query.filter(Chat.folder_id.isnot(None))
+
+            # If specific folder IDs are provided, filter by them
+            if folder_ids:
+                query = query.filter(Chat.folder_id.in_(folder_ids))
+
             query = query.filter(or_(Chat.pinned == False, Chat.pinned == None))
             query = query.filter_by(archived=False)
-
             query = query.order_by(Chat.updated_at.desc())
 
+            # Select only the necessary fields for performance
+            query = query.with_entities(Chat.id, Chat.title, Chat.folder_id)
+
             all_chats = query.all()
-            return [ChatModel.model_validate(chat) for chat in all_chats]
+
+            # Group the chats by folder_id
+            result = {}
+            for chat_id, chat_title, folder_id in all_chats:
+                if folder_id not in result:
+                    result[folder_id] = []
+                result[folder_id].append({"id": chat_id, "title": chat_title})
+
+            return result
 
     def get_chats_by_folder_ids_and_user_id(
         self, folder_ids: list[str], user_id: str
     ) -> list[ChatModel]:
+        """
+        Retrieves all chats associated with a list of folder IDs for a specific user.
+        This function is optimized to perform a single database query.
+        """
         with get_db() as db:
             query = db.query(Chat).filter(
                 Chat.folder_id.in_(folder_ids), Chat.user_id == user_id
             )
             query = query.filter(or_(Chat.pinned == False, Chat.pinned == None))
             query = query.filter_by(archived=False)
-
             query = query.order_by(Chat.updated_at.desc())
 
             all_chats = query.all()
