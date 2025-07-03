@@ -17,6 +17,8 @@
 	export let id: string;
 	export let tokens: Token[];
 	export let onSourceClick: Function = () => {};
+
+	const hexColorRegex = /(#[0-9a-fA-F]{3,8})\b/g;
 </script>
 
 {#each tokens as token}
@@ -74,6 +76,18 @@
 			onload="this.style.height=(this.contentWindow.document.body.scrollHeight+20)+'px';"
 		></iframe>
 	{:else if token.type === 'text'}
-		{token.raw}
+		{#each token.raw.split(hexColorRegex) as part, i}
+		<!-- TODO: this should be toggle-able in settings probably -->
+			{#if i % 2 === 1}
+				<span class="inline-flex items-center">
+					<span
+						class="inline-block w-4 h-4 mr-1 border border-gray-300 dark:border-gray-600 rounded-sm"
+						style="background-color: {part};"
+					></span>{part}</span
+				>
+			{:else}
+				{part}
+			{/if}
+		{/each}
 	{/if}
 {/each}

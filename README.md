@@ -8,6 +8,7 @@ Current enhancements include:
 - Made the "New Chat" button work with CMD+click and CTRL+click to open in a new tab without changing the current tab.
 - Typing in the chat input now automatically focuses the chat input.
 - Made formatting shortcuts (CTRL/CMD+I for italics, CTRL/CMD+B for bold, CTRL/CMD+E for code) work in the non-rich text chat input.
+- When the response contains hex codes, they are rendered with color swatches next to them. (Note: This does not occur in code blocks.)
 
 Planned enhancements include:
 - Serve images via URL, not base64, to reduce payload size, database size, and improve general performance.
@@ -34,12 +35,13 @@ Future investigations include:
 - Maybe an "image library" for models? Would help for people who use official images (e.g. the OpenAI blossom, Gemini star, etc.) and don't want to have to locate the image on their computer every time (this would also help with deduplication/caching)
 - How to fix that one issue where if you upload images multiple times in the same chat without refreshing in between, it sometimes makes the page bug out and not show the response coming in?
 - Can we make it so that you can send a message and close the chat/tab/device (e.g. by streaming the response to the backend then forwarding it to the frontend while storing the response in memory then committing to DB when done)? this would be awesome for mobile users
+- Could there be a "Scratchpad" sidebar where you can just dump a ton of text that will get chunked and vectorized for RAG without having to create a knowledge base, upload files, or use really long context length? Would be nice for adding reference information that isn't important enough to need to stay in context the full time, especially when using local models where quality degrades heavily after ~16k tokens.
 
 I chose Open-WebUI 0.6.5 because it is the last version that's been stable for me, and it's the last version before the contributor license agreement was introduced.
 
 ## Notes
 
-If anyone knows how to migrate from the Sqlite backend to Postgres, please let me know how. I tried using `pgloader`, but it didn't work even with a ton of additional migrations afterwards. I got *almost* everything working except the chats; all chats with markdown code blocks (triple backticks) seemingly broke the renderer on the frontend? I have no idea why that happened, but it was enough to make me give up on the migration for now (especially considering it didn't seem to improve performance by quite as much as I'd hoped). Despite giving up, I tried to vibe code my way through a migration script, but that went similarly poorly.
+If anyone knows how to migrate from the Sqlite backend to Postgres, please let me know how. ~~I tried using `pgloader`, but it didn't work even with a ton of additional migrations afterwards. I got *almost* everything working except the chats; all chats with markdown code blocks (triple backticks) seemingly broke the renderer on the frontend? I have no idea why that happened, but it was enough to make me give up on the migration for now (especially considering it didn't seem to improve performance by quite as much as I'd hoped). Despite giving up, I tried to vibe code my way through a migration script, but that went similarly poorly.~~ UPDATE: This was a `pnpm` issue, and it occurred even before the migration. Changing to `npm` instead fixed the issue. I am currently in the process of migrating, but timestamps are seemingly a problem here.
 
 I'd personally recommend Postgres to anyone starting fresh since it will be more performant in the long run (currently, trying to export all chats from my sqlite-backed "production" instance crashes the docker container entirely) and is fairly simple to set up (just use the postgres docker image and set the `DATABASE_URL` environment variable to `postgresql://postgres:password@localhost:5432/open-webui` or whatever your Postgres instance is).
 
