@@ -138,41 +138,52 @@
 	let chatFiles = [];
 	let files = [];
 	let params = {};
+	let lastChatId = '';
 
-	$: if (chatIdProp) {
-		(async () => {
-			loading = true;
-			console.log(chatIdProp);
+	// Load chat and handle message linking, triggered when chatIdProp changes
+	async function loadAndLink() {
+		loading = true;
+		console.log('Loading chat', chatIdProp);
 
-			prompt = '';
-			files = [];
-			selectedToolIds = [];
-			webSearchEnabled = false;
-			imageGenerationEnabled = false;
+		prompt = '';
+		files = [];
+		selectedToolIds = [];
+		webSearchEnabled = false;
+		imageGenerationEnabled = false;
 
-			if (chatIdProp && (await loadChat())) {
-				await tick();
-				loading = false;
+		if (chatIdProp && (await loadChat())) {
+			await tick();
+			loading = false;
 
-				if (localStorage.getItem(`chat-input-${chatIdProp}`)) {
-					try {
-						const input = JSON.parse(localStorage.getItem(`chat-input-${chatIdProp}`));
-
-						prompt = input.prompt;
-						files = input.files;
-						selectedToolIds = input.selectedToolIds;
-						webSearchEnabled = input.webSearchEnabled;
-						imageGenerationEnabled = input.imageGenerationEnabled;
-					} catch (e) {}
-				}
-
-				window.setTimeout(() => scrollToBottom(), 0);
-				const chatInput = document.getElementById('chat-input');
-				chatInput?.focus();
-			} else {
-				await goto('/');
+			const saved = localStorage.getItem(`chat-input-${chatIdProp}`);
+			if (saved) {
+				try {
+					const input = JSON.parse(saved);
+					prompt = input.prompt;
+					files = input.files;
+					selectedToolIds = input.selectedToolIds;
+					webSearchEnabled = input.webSearchEnabled;
+					imageGenerationEnabled = input.imageGenerationEnabled;
+				} catch {}
 			}
-		})();
+
+			document.getElementById('chat-input')?.focus();
+			// Scroll: if linking to a message, scroll to it; else scroll to bottom
+			const targetMessageId = $page.url.searchParams.get('message');
+			if (targetMessageId && history.messages[targetMessageId]) {
+				await showMessage({ id: targetMessageId });
+			} else {
+				setTimeout(() => scrollToBottom(), 0);
+			}
+		} else {
+			await goto('/');
+		}
+	}
+
+	// Reactive watcher: when chatIdProp changes, reload
+	$: if (chatIdProp && chatIdProp !== lastChatId) {
+		lastChatId = chatIdProp;
+		loadAndLink();
 	}
 
 	$: if (selectedModels && chatIdProp !== '') {
