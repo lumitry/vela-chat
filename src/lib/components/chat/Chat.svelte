@@ -143,7 +143,6 @@
 	// Load chat and handle message linking, triggered when chatIdProp changes
 	async function loadAndLink() {
 		loading = true;
-		console.log('Loading chat', chatIdProp);
 
 		prompt = '';
 		files = [];
