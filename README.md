@@ -13,11 +13,21 @@ Current enhancements include:
 - Improve performance of the `/api/models` endpoint (no `/v1/` in the slug, that's a different endpoint) by optimizing for large model counts. I managed to reduce the time it takes to load the models from around 11 seconds to under a second, but this isn't necessarily a like-for-like comparison so take it with a grain of salt. What I can say is that it now takes ~4 or 5 seconds to load the same page that used to take 30, and then 14 (after the `/api/v1/folders` change above).
 
 Planned enhancements include:
+- (enh) typing in a single/double quote, parenthesis, or bracket while selecting text should automatically enclose that text instead of replacing it, similar to how it works in VSCode and other editors. ideally it would also close the marker automatically if you just type one without having anything selected, so typing in `(` would automatically add `)` after it, but IDK how to make it so that typing in the `)` yourself doesn't double it up. if that makes any sense
 - (perf) Serve images via URL, not base64, to reduce payload size, database size, and improve general performance.
   - (perf) Cache copies of model images, so if someone uploads the Anthropic logo four times, it only gets stored once & sent once.
   - Make this work for migrated DBs and not just new installations! Might be possible since the migration scripts are python? IDK
 - (perf) Don't bother loading in-chat images until after the chat itself has loaded.
 - (perf) Defer loading of model images.
+- (perf) Defer loading of models list?
+- (feat) Add a "Think" button to the chat input that, when clicked, modifies the request such that it uses chain-of-thought when generating the response. This would support:
+  - Adding `:thinking` to supported models (e.g. OpenRouter style) (actually, this would (_ideally_) be implemented as a setting on the model page where you can pick what model it toggles to yourself; if you wanted, `gemini-2.5-flash-preview-05-20` could toggle to `gemini-2.5-pro` for this, lol. The purpose of this is to allow you to toggle between `deepseek-v3-0324` and `deepseek-r1-0528`, since that isn't as simple as changing the model slug.)
+  - Adding `reasoning.effort` to requests for supported models (OpenAI & Grok style)
+  - Adding `reasoning.max_tokens` to requests for supported models (Gemini & Anthropic style)
+  - Toggling `/think` or `/no_think` being appended to the prompt (Qwen style)
+  - *Maybe* also supporting changes to the system prompt (IBM Granite, DeepHermes, some finetunes), but this could present issues (e.g. accidentally overwriting the system prompt; also, do we add to the beginning or the end? models may differ here)
+  - All of this would be selected on a per-model basis when setting it up. This means a lot of work on an individual level, but it's better than writing a very long switch statement that will outdated in the next month or so.
+  - I made a simple python script, [Mini-Mediator](https://github.com/lumitry/mini-mediator), that can be used to help test this (and other things). It just sends a response with the same data as the request, which can be useful if I decide to make the addition of the `:thinking` tag (or `/think`, etc.) invisible to the user, as well as for seeing the `reasoning` parameters (i.e. without having to pay real money lol)
 - (feat) Add the ability to link to a specific message (automatically navigates to the correct 'branch' in the conversation and scrolls to the message).
 - (enh) Renaming chats via modal instead of inline? Inline feels clunky to me.
 - (enh) Make chat moving be a button in the dropdown menu instead of drag-and-drop since drag-and-drop is laggy at the moment.
