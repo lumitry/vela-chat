@@ -16,6 +16,10 @@ Current enhancements include:
 - Improve performance of the `/api/models` endpoint (no `/v1/` in the slug, that's a different endpoint) by optimizing for large model counts.
   - I managed to reduce the time it takes to load the models from around 11 seconds to under a second, but this isn't necessarily a like-for-like comparison so take it with a grain of salt. What I can say is that it now takes ~4 or 5 seconds to load the same page that used to take 30, and then 14 (after the `/api/v1/folders` change above).
 - (feat) Added the ability to link to a specific message (automatically navigates to the correct 'branch' in the conversation and scrolls to the message). Just press the "Copy Link" button underneath the message.
+  - Note: Sometimes this can be buggy and not take you to the correct message, but it *should* get the branch correct, at the very least. It piggybacks off an existing "Go to message" function, which may need some work in the future. better than nothing IMO, at least for now.
+- (feat) Added in-chat search functionality that allows you to search the current chat for messages containing given text. This includes searching between branches! All without crashing the browser—though it *can* get pretty slow for large (multi-megabyte) conversations.
+  - This is access via `CMD+F` or `CTRL+F`, and replaces the browser's built-in search. There may be unintended accessibility issues with this, so please LMK if you find any (open an issue)
+  - See above note about the "Go to message" function; this is a similar situation.
 
 Planned enhancements include:
 - (enh) typing in a single/double quote, parenthesis, or bracket while selecting text should automatically enclose that text instead of replacing it, similar to how it works in VSCode and other editors. ideally it would also close the marker automatically if you just type one without having anything selected, so typing in `(` would automatically add `)` after it, but IDK how to make it so that typing in the `)` yourself doesn't double it up. if that makes any sense
@@ -35,7 +39,7 @@ Planned enhancements include:
   - I made a simple python script, [Mini-Mediator](https://github.com/lumitry/mini-mediator), that can be used to help test this (and other things). It just sends a response with the same data as the request, which can be useful if I decide to make the addition of the `:thinking` tag (or `/think`, etc.) invisible to the user, as well as for seeing the `reasoning` parameters (i.e. without having to pay real money lol)
 - (enh) Renaming chats via modal instead of inline? Inline feels clunky to me.
 - (enh) Make chat moving be a button in the dropdown menu instead of drag-and-drop since drag-and-drop is laggy at the moment.
-- (bug) Fix CMD+F(/CTRL+F) browser search crashing the browser due to OOM errors.
+- ~~(bug) Fix CMD+F(/CTRL+F) browser search crashing the browser due to OOM errors.~~ (UPDATE: I replaced it instead)
 - (bug) Only send the first few hundred characters of each message to the Overview feature, since only the first few words can be seen at once anyway, and Overview currently can crash the browser with large (multi-megabyte) conversations.
 - (bug) Always create new tags, not just in the chat elipsis/dropdown menu (i.e. so tags are created in the feedback form and model creation page as well)
 - (enh) Allow disabling of regeneration on CTRL/CMD+R since sometimes you just want to refresh the page.

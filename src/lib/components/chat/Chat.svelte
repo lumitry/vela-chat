@@ -1924,6 +1924,78 @@
 			}
 		}
 	};
+
+	let searchActive = false;
+	let searchQuery = '';
+	let includeHidden = false;
+	let matches: string[] = [];
+	let currentMatchIndex = -1;
+
+	function openSearch() {
+		searchActive = true;
+		tick().then(() => {
+			document.getElementById('chat-search-input')?.focus();
+		});
+	}
+
+	function closeSearch() {
+		searchActive = false;
+		searchQuery = '';
+		matches = [];
+		currentMatchIndex = -1;
+	}
+
+	function updateSearch() {
+		if (!searchQuery) {
+			matches = [];
+			currentMatchIndex = -1;
+			return;
+		}
+		const ids = Object.keys(history.messages);
+		const q = searchQuery.toLowerCase();
+		const found = [];
+		for (const id of ids) {
+			const msg = history.messages[id];
+			if (msg.content?.toLowerCase().includes(q)) {
+				if (includeHidden || document.getElementById(`message-${id}`)) {
+					found.push(id);
+				}
+			}
+		}
+		matches = found;
+		currentMatchIndex = found.length ? 0 : -1;
+		if (currentMatchIndex >= 0) navigateTo(found[0]);
+	}
+
+	function navigateTo(id: string) {
+		showMessage({ id });
+		currentMatchIndex = matches.indexOf(id);
+	}
+
+	function prevMatch() {
+		if (matches.length && currentMatchIndex > 0) {
+			navigateTo(matches[currentMatchIndex - 1]);
+		}
+	}
+
+	function nextMatch() {
+		if (matches.length && currentMatchIndex < matches.length - 1) {
+			navigateTo(matches[currentMatchIndex + 1]);
+		}
+	}
+
+	onMount(() => {
+		document.addEventListener('keydown', (e) => {
+			if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+				e.preventDefault();
+				openSearch();
+			}
+			if (searchActive && e.key === 'Escape') {
+				e.preventDefault();
+				closeSearch();
+			}
+		});
+	});
 </script>
 
 <svelte:head>
@@ -1997,6 +2069,74 @@
 					{initNewChat}
 				/>
 
+				{#if searchActive}
+					<div
+						class="absolute top-16 left-1/2 transform -translate-x-1/2 z-20
+						bg-white dark:bg-gray-800 p-2 rounded shadow
+						flex flex-col items-start space-y-2 min-w-[250px]"
+					>
+						<div class="flex items-center space-x-2 w-full">
+							<input
+								id="chat-search-input"
+								type="text"
+								bind:value={searchQuery}
+								placeholder="Search chat"
+								on:input={updateSearch}
+								on:keydown={(e) => {
+									if (e.key === 'Enter') {
+										e.preventDefault();
+										if (e.shiftKey) {
+											prevMatch();
+										} else {
+											nextMatch();
+										}
+									}
+								}}
+								class="border rounded px-2 py-1 focus:outline-none flex-1"
+							/>
+							<button
+								on:click={prevMatch}
+								disabled={currentMatchIndex <= 0}
+								class="px-2 disabled:opacity-50"
+							>
+								&lt;
+							</button>
+							<span
+								class="text-sm whitespace-nowrap flex-shrink-0 text-center"
+								style="min-width: {`${
+									Math.max(String(currentMatchIndex + 1).length, String(matches.length).length) *
+										2 +
+									1
+								}ch`}"
+							>
+								{matches.length ? currentMatchIndex + 1 : 0}/{matches.length}
+							</span>
+							<button
+								on:click={nextMatch}
+								disabled={currentMatchIndex < 0 || currentMatchIndex >= matches.length - 1}
+								class="px-2 disabled:opacity-50"
+							>
+								&gt;
+							</button>
+						</div>
+
+						<!-- second row: checkbox + close -->
+						<div class="flex items-center justify-between w-full">
+							<label class="flex items-center text-sm whitespace-nowrap">
+								<input
+									type="checkbox"
+									bind:checked={includeHidden}
+									on:change={updateSearch}
+									class="mr-1"
+								/>
+								Include hidden
+							</label>
+							<button on:click={closeSearch} class="px-2 text-xl leading-none"> &times; </button>
+						</div>
+					</div>
+					<!-- </div> -->
+				{/if}
+
 				<div class="flex flex-col flex-auto z-10 w-full @container">
 					{#if $settings?.landingPageMode === 'chat' || createMessagesList(history, history.currentId).length > 0}
 						<div
@@ -2026,6 +2166,8 @@
 									{chatActionHandler}
 									{addMessages}
 									bottomPadding={files.length > 0}
+									searchMatches={matches}
+									currentMatchId={matches[currentMatchIndex]}
 								/>
 							</div>
 						</div>

@@ -51,6 +51,9 @@
 	export let bottomPadding = false;
 	export let autoScroll;
 
+	export let searchMatches = [];
+	export let currentMatchId = '';
+
 	let messagesCount = 20;
 	let messagesLoading = false;
 
@@ -452,6 +455,8 @@
 							{addMessages}
 							{triggerScroll}
 							{readOnly}
+							searchMatch={searchMatches.includes(message.id)}
+							isCurrentSearch={message.id === currentMatchId}
 						/>
 					{/each}
 				</div>

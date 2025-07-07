@@ -39,12 +39,18 @@
 	export let addMessages;
 	export let triggerScroll;
 	export let readOnly = false;
+
+	export let searchMatch: boolean = false;
+	export let isCurrentSearch: boolean = false;
 </script>
 
 <div
+	id="message-{messageId}"
 	class="flex flex-col justify-between px-5 mb-3 w-full {($settings?.widescreenMode ?? null)
 		? 'max-w-full'
-		: 'max-w-5xl'} mx-auto rounded-lg group"
+		: 'max-w-5xl'} mx-auto rounded-lg group {searchMatch ? 'search-match' : ''} {isCurrentSearch
+		? 'search-current'
+		: ''}"
 >
 	{#if history.messages[messageId]}
 		{#if history.messages[messageId].role === 'user'}
@@ -110,3 +116,12 @@
 		{/if}
 	{/if}
 </div>
+
+<style>
+	.search-match {
+		background-color: rgba(255, 255, 0, 0.035);
+	}
+	.search-current {
+		background-color: rgba(255, 165, 0, 0.035);
+	}
+</style>
