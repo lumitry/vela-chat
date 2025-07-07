@@ -83,6 +83,12 @@
 
 		// Adjust positions based on siblings count to centralize vertical spacing
 		Object.keys(history.messages).forEach((id) => {
+			const messageObj = history.messages[id];
+			const rawContent = messageObj.content || '';
+			const contentWithoutReasoning = rawContent
+				.replace(/<details\b[^>]*\btype=["']reasoning["'][^>]*>[\s\S]*?<\/details>/g, '')
+				.trim();
+			const truncatedContent = createLabel(contentWithoutReasoning);
 			const pos = positionMap.get(id);
 			const xOffset = pos.position * siblingOffset;
 			const y = pos.level * levelOffset;
@@ -93,8 +99,8 @@
 				type: 'custom',
 				data: {
 					user: $user,
-					message: history.messages[id],
-					model: $models.find((model) => model.id === history.messages[id].model)
+					message: { ...messageObj, content: truncatedContent },
+					model: $models.find((model) => model.id === messageObj.model)
 				},
 				position: { x, y }
 			});
