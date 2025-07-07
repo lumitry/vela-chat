@@ -6,7 +6,7 @@ Current enhancements include:
 - Defer loading of the sidebar until after the chat has loaded, improving effective load times (since the sidebar is rarely the first thing a user interacts with).
 - Removed the floating buttons when text is selected, as they were not useful (cf. "opinionated fork").
 - Made the "New Chat" button work with CMD+click and CTRL+click to open in a new tab without changing the current tab.
-- Typing in the chat input now automatically focuses the chat input.
+- Typing on a chat page now automatically focuses the chat input.
 - Made formatting shortcuts (CTRL/CMD+I for italics, CTRL/CMD+B for bold, CTRL/CMD+E for code) work in the non-rich text chat input.
 - When the response contains hex codes, they are rendered with color swatches next to them. (Note: This does not occur in code blocks.)
 - Improved speed of `/api/v1/folders/` endpoint by streamlining the database query to avoid an N+1 query problem.
@@ -68,7 +68,7 @@ If you'd like to migrate your Sqlite installation to Postgres, you can see my no
 
 If you get issues loading chats containing code blocks, you should check to make sure you're using `npm` and not `pnpm`. PNPM has issues with codemirror in this repo. See [issue #1](https://github.com/lumitry/sensible-ui/issues/1) for more details.
 
-Additionally, don't mind the name. I'm bad at naming things so this is the best I could come up with lol, no shade to the maintainer or contributors! There's a reason I'm building on top of their awesome work, after all. 😄
+Additionally, don't mind the name. I'm bad at naming things so this is the best I could come up with lol, no shade to the maintainer or contributors! There's a reason I'm building on top of their awesome work, after all. 😄 (see also: [issue #9](https://github.com/lumitry/sensible-ui/issues/4))
 
 # Original README
 
