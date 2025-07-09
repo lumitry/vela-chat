@@ -2,7 +2,16 @@
 
 # --- Configuration ---
 SQLITE_DB="backend/data/webui.db"
-PSQL_CONN_STRING="postgresql://openwebui:password@localhost:5171/openwebui"
+# Load DATABASE_URL from .env if available, otherwise use default
+if [ -f .env ]; then
+    export $(grep -E '^DATABASE_URL=' .env | xargs)
+fi
+
+if [ -n "$DATABASE_URL" ]; then
+    PSQL_CONN_STRING="$DATABASE_URL"
+else
+    PSQL_CONN_STRING="postgresql://openwebui:password@localhost:5432/openwebui"
+fi
 DUMP_DIR="pg_dump"
 
 # --- Stop on error ---
@@ -12,6 +21,7 @@ set -e
 # This assumes your Open-WebUI backend can create the schema on an empty DB.
 # Make sure your target DB is empty and then start the backend once to do this.
 echo "IMPORTANT: Ensure your PostgreSQL database is created, empty, and that you have run the Open-WebUI backend at least once to create the table schema."
+echo "Current DATABASE_URL: ${PSQL_CONN_STRING}"
 read -p "Press enter to continue once the schema is ready..."
 
 # --- 2. Export data from SQLite to CSV files ---
