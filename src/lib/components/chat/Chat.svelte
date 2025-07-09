@@ -140,6 +140,9 @@
 	let params = {};
 	let lastChatId = '';
 
+	// Module-level timer for token speed calculation
+	let tokenTimerStart = 0;
+
 	// Load chat and handle message linking, triggered when chatIdProp changes
 	async function loadAndLink() {
 		loading = true;
@@ -1195,9 +1198,45 @@
 			message.selectedModelId = selected_model_id;
 			message.arena = true;
 		}
-
 		if (usage) {
+			// Calculate ESTIMATED tokens per second
+			const elapsedSeconds = (performance.now() - tokenTimerStart) / 1000;
+			let completionTokens = usage.completion_tokens || 0;
+			// If reasoning tokens are available, add them to completion tokens for a more accurate count
+			if (usage.completion_tokens_details?.reasoning_tokens) {
+				completionTokens += usage.completion_tokens_details.reasoning_tokens;
+			}
+			usage.tokens_per_second = parseFloat(
+				(completionTokens / Math.max(elapsedSeconds, 0.001)).toFixed(2)
+			);
 			message.usage = usage;
+
+			// Update the entire chat in database when we receive completion with tokens info
+			if (done && $chatId) {
+				// We need to update the entire chat record with the new usage data
+				const chatToUpdate = JSON.parse(JSON.stringify(history));
+
+				// Make sure the message with the updated usage info is included
+				if (message.id) {
+					chatToUpdate.messages[message.id] = message;
+				}
+
+				try {
+					updateChatById(localStorage.token, $chatId, {
+						chat: {
+							models: selectedModels,
+							messages: createMessagesList(chatToUpdate, chatToUpdate.currentId),
+							history: chatToUpdate,
+							params: params,
+							files: chatFiles
+						}
+					}).catch((err) => {
+						console.error('Failed to update chat usage data:', err);
+					});
+				} catch (err) {
+					console.error('Error updating chat with token speed data:', err);
+				}
+			}
 		}
 
 		history.messages[message.id] = message;
@@ -1364,6 +1403,9 @@
 		parentId: string,
 		{ modelId = null, modelIdx = null, newChat = false } = {}
 	) => {
+		// Reset token timer for each new prompt
+		tokenTimerStart = performance.now();
+
 		if (autoScroll) {
 			scrollToBottom();
 		}
