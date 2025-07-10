@@ -172,14 +172,14 @@
 
 					<div class="mb-2.5">
 						<div class="flex w-full justify-between items-center">
-							<div class="text-xs pr-2">
+							<!-- <div class="text-xs pr-2">
 								<div class="">
 									{$i18n.t('Help')}
 								</div>
 								<div class=" text-xs text-gray-500">
 									{$i18n.t('Discover how to use Open WebUI and seek support from the community.')}
 								</div>
-							</div>
+							</div> -->
 
 							<a
 								class="flex-shrink-0 text-xs font-medium underline"
@@ -215,7 +215,6 @@
 							</div>
 						</div>
 					</div>
-
 				</div>
 
 				<div class="mb-3">

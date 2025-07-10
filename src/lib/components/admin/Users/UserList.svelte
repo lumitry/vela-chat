@@ -488,7 +488,7 @@
 
 <Pagination bind:page count={users.length} />
 
-{#if !$config?.license_metadata}
+<!-- {#if !$config?.license_metadata}
 	{#if users.length > 50}
 		<div class="text-sm">
 			<Markdown
@@ -510,4 +510,4 @@
 			/>
 		</div>
 	{/if}
-{/if}
+{/if} -->

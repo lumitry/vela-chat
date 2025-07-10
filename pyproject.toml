@@ -1,8 +1,8 @@
 [project]
-name = "open-webui"
-description = "Open WebUI"
+name = "vela-chat"
+description = "VelaChat"
 authors = [
-    { name = "Timothy Jaeryang Baek", email = "tim@openwebui.com" }
+    { name = "Briggs Tucker", email = "briggs@briggstucker.com" }
 ]
 license = { file = "LICENSE" }
 dependencies = [

@@ -1,6 +1,6 @@
-# Sensible WebUI
+# VelaChat
 
-Sensible WebUI is an opinionated fork of Open-WebUI 0.6.5 designed to provide a more performant and user-friendly experience.
+VelaChat is an opinionated fork of Open-WebUI 0.6.5 designed to provide a more performant and user-friendly experience.
 
 Current enhancements include:
 - Defer loading of the sidebar until after the chat has loaded, improving effective load times (since the sidebar is rarely the first thing a user interacts with).
@@ -16,32 +16,23 @@ Current enhancements include:
 - Improve performance of the `/api/models` endpoint (no `/v1/` in the slug, that's a different endpoint) by optimizing for large model counts.
   - I managed to reduce the time it takes to load the models from around 11 seconds to under a second, but this isn't necessarily a like-for-like comparison so take it with a grain of salt. What I can say is that it now takes ~4 or 5 seconds to load the same page that used to take 30, and then 14 (after the `/api/v1/folders` change above).
 - (feat) Added the ability to link to a specific message (automatically navigates to the correct 'branch' in the conversation and scrolls to the message). Just press the "Copy Link" button underneath the message.
-  - Note: Sometimes this can be buggy and not take you to the correct message, but it *should* get the branch correct, at the very least. It piggybacks off an existing "Go to message" function, which may need some work in the future. better than nothing IMO, at least for now. See [issue #6](https://github.com/lumitry/sensible-ui/issues/6).
+  - Note: Sometimes this can be buggy and not take you to the correct message, but it *should* get the branch correct, at the very least. It piggybacks off an existing "Go to message" function, which may need some work in the future. better than nothing IMO, at least for now. See [issue #6](https://github.com/lumitry/vela-chat/issues/6).
 - (feat) Added in-chat search functionality that allows you to search the current chat for messages containing given text. This includes searching between branches! All without crashing the browser—though it *can* get pretty slow for large (multi-megabyte) conversations.
   - This is access via `CMD+F` or `CTRL+F`, and replaces the browser's built-in search. There may be unintended accessibility issues with this, so please LMK if you find any (open an issue).
   - See above note about the "Go to message" function; this is a similar situation.
-- (bug) Only send the first few hundred characters of each message to the Overview feature, since only the first few words can be seen at once anyway, and Overview currently can crash the browser with large (multi-megabyte) conversations. (see [issue #7](https://github.com/lumitry/sensible-ui/issues/7)).
+- (bug) Only send the first few hundred characters of each message to the Overview feature, since only the first few words can be seen at once anyway, and Overview currently can crash the browser with large (multi-megabyte) conversations. (see [issue #7](https://github.com/lumitry/vela-chat/issues/7)).
 
 Planned enhancements include:
 - (enh) typing in a single/double quote, parenthesis, or bracket while selecting text should automatically enclose that text instead of replacing it, similar to how it works in VSCode and other editors. ideally it would also close the marker automatically if you just type one without having anything selected, so typing in `(` would automatically add `)` after it, but IDK how to make it so that typing in the `)` yourself doesn't double it up. if that makes any sense
-- (perf) Serve images via URL, not base64, to reduce payload size, database size, and improve general performance.
-  - (perf) Cache copies of model images, so if someone uploads the Anthropic logo four times, it only gets stored once & sent once.
-  - Make this work for migrated DBs and not just new installations! Might be possible since the migration scripts are python? IDK
-- (perf) Don't bother loading in-chat images until after the chat itself has loaded.
-- (perf) Defer loading of model images.
+- (perf) Serve images via URL, not base64, to reduce payload size, database size, and improve general performance. (See [#2](https://github.com/lumitry/vela-chat/issues/2) and its sub-issues.)
+- (perf) Don't bother loading in-chat images until after the chat itself has loaded. ([#26](https://github.com/lumitry/vela-chat/issues/26))
+- (perf) Defer loading of model images. ([#23](https://github.com/lumitry/vela-chat/issues/23))
 - (perf) Defer loading of models list?
-- (feat) Add a "Think" button to the chat input that, when clicked, modifies the request such that it uses chain-of-thought when generating the response. This would support:
-  - Adding `:thinking` to supported models (e.g. OpenRouter style) (actually, this would (_ideally_) be implemented as a setting on the model page where you can pick what model it toggles to yourself; if you wanted, `gemini-2.5-flash-preview-05-20` could toggle to `gemini-2.5-pro` for this, lol. The purpose of this is to allow you to toggle between `deepseek-v3-0324` and `deepseek-r1-0528`, since that isn't as simple as changing the model slug.)
-  - Adding `reasoning.effort` to requests for supported models (OpenAI & Grok style)
-  - Adding `reasoning.max_tokens` to requests for supported models (Gemini & Anthropic style)
-  - Toggling `/think` or `/no_think` being appended to the prompt (Qwen style)
-  - *Maybe* also supporting changes to the system prompt (IBM Granite, DeepHermes, some finetunes), but this could present issues (e.g. accidentally overwriting the system prompt; also, do we add to the beginning or the end? models may differ here)
-  - All of this would be selected on a per-model basis when setting it up. This means a lot of work on an individual level, but it's better than writing a very long switch statement that will outdated in the next month or so.
-  - I made a simple python script, [Mini-Mediator](https://github.com/lumitry/mini-mediator), that can be used to help test this (and other things). It just sends a response with the same data as the request, which can be useful if I decide to make the addition of the `:thinking` tag (or `/think`, etc.) invisible to the user, as well as for seeing the `reasoning` parameters (i.e. without having to pay real money lol)
+- (feat) Add a "Think" button to the chat input that, when clicked, modifies the request such that it uses chain-of-thought when generating the response. See [issue #19](https://github.com/lumitry/vela-chat/issues/19) for more details.
 - (enh) Renaming chats via modal instead of inline? Inline feels clunky to me.
 - (enh) Make chat moving be a button in the dropdown menu instead of drag-and-drop since drag-and-drop is laggy at the moment.
-- ~~(bug) Fix CMD+F(/CTRL+F) browser search crashing the browser due to OOM errors.~~ (UPDATE: I replaced it instead)
-- (bug) Always create new tags, not just in the chat elipsis/dropdown menu (i.e. so tags are created in the feedback form and model creation page as well)
+  - UPDATE: Most of my qualms with drag-and-drop were fixed by making the folders endpoint faster, so this might not be necessary anymore.
+- (bug) Always create new tags, not just in the chat elipsis/dropdown menu (i.e. so tags are created in the feedback form and model creation page as well) ([#22](https://github.com/lumitry/vela-chat/issues/22))
 - (enh) Allow disabling of regeneration on CTRL/CMD+R since sometimes you just want to refresh the page.
 - (enh) Lazy-load or allow disabling of TTS features; I personally don't use them, and Kokoro TTS is 2MB of JS that doesn't need to be loaded. (I'm also not sure if Transformers.JS is being used for anything else; that's another 800KB.)
 
@@ -56,8 +47,9 @@ Future investigations include:
 - (feat) Maybe an "image library" for models? Would help for people who use official images (e.g. the OpenAI blossom, Gemini star, etc.) and don't want to have to locate the image on their computer every time (this would also help with deduplication/caching)
 - How to fix that one issue where if you upload images multiple times in the same chat without refreshing in between, it sometimes makes the page bug out and not show the response coming in?
 - (feat) Can we make it so that you can send a message and close the chat/tab/device (e.g. by streaming the response to the backend then forwarding it to the frontend while storing the response in memory then committing to DB when done)? this would be awesome for mobile users
+  - This actually already exists! There's an environment variable called [`ENABLE_REALTIME_CHAT_SAVE`](https://docs.openwebui.com/getting-started/env-configuration/#enable_realtime_chat_save). I haven't tested this but it *should* work. That said, perhaps the feature here would be automatically toggling this on when the user is on a mobile device?
 - (feat) Could there be a "Scratchpad" sidebar where you can just dump a ton of text that will get chunked and vectorized for RAG without having to create a knowledge base, upload files, or use really long context length? Would be nice for adding reference information that isn't important enough to need to stay in context the full time, especially when using local models where quality degrades heavily after ~16k tokens.
-- (bug) Why does my personal database cause the evaluations page to fail with a `TypeError: Cannot read properties of null (reading 'toString') at Leaderboard.svelte:121:33` error? I tried removing an evaluation with weird data (empty strings instead of `null`) in DataGrip but that didn't help. This occurs both in Postgres and Sqlite on my "production" instance running 0.6.5 main branch, so it's a legitimate bug, but IDK when it appeared or what the issue is.
+- (bug) Why does my personal database cause the evaluations page to fail with a `TypeError: Cannot read properties of null (reading 'toString') at Leaderboard.svelte:121:33` error? I tried removing an evaluation present with weird data (empty strings instead of `null`) in DataGrip but that didn't help. This occurs both in Postgres and Sqlite on my "production" instance running 0.6.5 main branch, so it's a legitimate bug, but IDK when it appeared or what the issue is.
 
 I chose Open-WebUI 0.6.5 because it is the last version that's been stable for me, and it's the last version before the contributor license agreement was introduced.
 
@@ -66,9 +58,18 @@ I'd personally recommend Postgres to anyone starting fresh since it will be more
 
 If you'd like to migrate your Sqlite installation to Postgres, you can see my notes on how to do this in [MIGRATE_SQLITE_TO_PSQL.md](MIGRATE_SQLITE_TO_PSQL.md) and the `migrate.sh` script in the root of the repository (will probably add these to a more permanent location later).
 
-If you get issues loading chats containing code blocks, you should check to make sure you're using `npm` and not `pnpm`. PNPM has issues with codemirror in this repo. See [issue #1](https://github.com/lumitry/sensible-ui/issues/1) for more details.
+If you get issues loading chats containing code blocks, you should check to make sure you're using `npm` and not `pnpm`. PNPM has issues with codemirror in this repo. See [issue #1](https://github.com/lumitry/vela-chat/issues/1) for more details.
 
-Additionally, don't mind the name. I'm bad at naming things so this is the best I could come up with lol, no shade to the maintainer or contributors! There's a reason I'm building on top of their awesome work, after all. 😄 (see also: [issue #9](https://github.com/lumitry/sensible-ui/issues/4))
+---
+
+This project is a derivative work based on Open WebUI v0.6.5 (or earlier),
+which was released under the BSD-3-Clause License.
+This fork maintains the BSD-3-Clause License for its core components.
+
+Original Copyright (c) 2023-2025 Timothy Jaeryang Baek (Open WebUI)
+
+VelaChat is an independent project and is not affiliated with, endorsed by,
+or maintained by the Open WebUI team.
 
 # Original README
 
