@@ -1,5 +1,7 @@
 # VelaChat
 
+![VelaChat Logo](https://raw.githubusercontent.com/lumitry/vela-chat/refs/heads/main/static/static/favicon-96x96.png)
+
 VelaChat is an opinionated fork of Open-WebUI 0.6.5 designed to provide a more performant and user-friendly experience.
 
 Current enhancements include:
