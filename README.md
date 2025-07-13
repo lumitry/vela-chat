@@ -23,6 +23,10 @@ Current enhancements include:
   - This is access via `CMD+F` or `CTRL+F`, and replaces the browser's built-in search. There may be unintended accessibility issues with this, so please LMK if you find any (open an issue).
   - See above note about the "Go to message" function; this is a similar situation.
 - (bug) Only send the first few hundred characters of each message to the Overview feature, since only the first few words can be seen at once anyway, and Overview currently can crash the browser with large (multi-megabyte) conversations. (see [issue #7](https://github.com/lumitry/vela-chat/issues/7)).
+- (enh) Tokens per second estimation added to usage data (just hover over the `(I)` icon at the bottom of a response message). Note that this is just an _estimation_! It isn't necessarily accurate.
+- (enh) Made the popover when hovering on the model name in chat messages show the model's ID; it formerly showed the model's name, which was redundant, since you were hovering over that already.
+- (enh) (**_OPPINIONATED_**) Changed `reasoning_effort` to be nested (`reasoning.effort`) in line with [OpenRouter's documentation](https://openrouter.ai/docs/use-cases/reasoning-tokens#reasoning-effort-level), since that's what I use.
+  - Please open an issue if you use [OpenAI](https://platform.openai.com/docs/api-reference/chat/create#chat-create-reasoning_effort) or [Grok](https://docs.x.ai/docs/guides/reasoning) directly and this breaks your workflow. I may be able to change the advanced parameter entry for it to support "Default", "Custom (OpenAI)", and "Custom (OpenRouter)" modes.
 
 Planned enhancements include:
 - (enh) typing in a single/double quote, parenthesis, or bracket while selecting text should automatically enclose that text instead of replacing it, similar to how it works in VSCode and other editors. ideally it would also close the marker automatically if you just type one without having anything selected, so typing in `(` would automatically add `)` after it, but IDK how to make it so that typing in the `)` yourself doesn't double it up. if that makes any sense

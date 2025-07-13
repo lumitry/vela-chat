@@ -16,7 +16,10 @@
 		seed: null,
 		stop: null,
 		temperature: null,
-		reasoning_effort: null,
+		reasoning: {
+			effort: null, // Reasoning effort for reasoning models
+			max_tokens: null // Maximum tokens for reasoning models
+		},
 		logit_bias: null,
 		frequency_penalty: null,
 		repeat_last_n: null,
@@ -272,10 +275,11 @@
 					class="p-1 px-3 text-xs flex rounded-sm transition shrink-0 outline-hidden"
 					type="button"
 					on:click={() => {
-						params.reasoning_effort = (params?.reasoning_effort ?? null) === null ? 'medium' : null;
+						if (!params.reasoning) params.reasoning = {};
+						params.reasoning.effort = (params?.reasoning.effort ?? null) === null ? 'medium' : null;
 					}}
 				>
-					{#if (params?.reasoning_effort ?? null) === null}
+					{#if (params?.reasoning?.effort ?? null) === null}
 						<span class="ml-2 self-center"> {$i18n.t('Default')} </span>
 					{:else}
 						<span class="ml-2 self-center"> {$i18n.t('Custom')} </span>
@@ -284,14 +288,14 @@
 			</div>
 		</Tooltip>
 
-		{#if (params?.reasoning_effort ?? null) !== null}
+		{#if (params?.reasoning?.effort ?? null) !== null}
 			<div class="flex mt-0.5 space-x-2">
 				<div class=" flex-1">
 					<input
 						class="w-full rounded-lg py-2 px-1 text-sm dark:text-gray-300 dark:bg-gray-850 outline-hidden"
 						type="text"
 						placeholder={$i18n.t('Enter reasoning effort')}
-						bind:value={params.reasoning_effort}
+						bind:value={params.reasoning.effort}
 						autocomplete="off"
 					/>
 				</div>

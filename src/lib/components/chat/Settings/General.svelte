@@ -50,7 +50,10 @@
 		function_calling: null,
 		seed: null,
 		temperature: null,
-		reasoning_effort: null,
+		reasoning: {
+			effort: null, // Reasoning effort for reasoning models
+			max_tokens: null // Maximum tokens for reasoning models
+		},
 		logit_bias: null,
 		frequency_penalty: null,
 		presence_penalty: null,
@@ -110,7 +113,7 @@
 				seed: (params.seed !== null ? params.seed : undefined) ?? undefined,
 				stop: params.stop ? params.stop.split(',').filter((e) => e) : undefined,
 				temperature: params.temperature !== null ? params.temperature : undefined,
-				reasoning_effort: params.reasoning_effort !== null ? params.reasoning_effort : undefined,
+				reasoning: params.reasoning !== null ? params.reasoning : undefined,
 				logit_bias: params.logit_bias !== null ? params.logit_bias : undefined,
 				frequency_penalty: params.frequency_penalty !== null ? params.frequency_penalty : undefined,
 				presence_penalty: params.frequency_penalty !== null ? params.frequency_penalty : undefined,

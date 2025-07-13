@@ -668,8 +668,8 @@ def apply_params_to_form_data(form_data, model):
         if "frequency_penalty" in params and params["frequency_penalty"] is not None:
             form_data["frequency_penalty"] = params["frequency_penalty"]
 
-        if "reasoning_effort" in params and params["reasoning_effort"] is not None:
-            form_data["reasoning_effort"] = params["reasoning_effort"]
+        if "reasoning" in params and params["reasoning"] is not None:
+            form_data["reasoning"] = params["reasoning"]
 
         if "logit_bias" in params and params["logit_bias"] is not None:
             try:
