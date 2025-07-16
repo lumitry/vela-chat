@@ -119,16 +119,25 @@
 				}
 			</style>
 
-			<img
-				id="logo"
-				style="
+			<style>
+				@keyframes boat-slide {
+					0%   { transform: translate(-100vw, -50%); }
+					20%, 80% { transform: translate(-50%, -50%); }
+					100% { transform: translate(100vw, -50%); }
+				}
+				.boat {
 					position: absolute;
-					width: auto;
-					height: 6rem;
 					top: 44%;
 					left: 50%;
-					transform: translateX(-50%);
-				"
+					height: 6rem;
+					animation: boat-slide 4s ease-in-out infinite;
+					transform: translate(-100vw, -50%); /* Start at initial position */
+				}
+			</style>
+
+			<img
+				id="logo"
+				class="boat"
 				src="/static/splash.png"
 			/>
 
