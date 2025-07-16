@@ -306,6 +306,54 @@
 	<div class=" py-0.5 w-full justify-between">
 		<Tooltip
 			content={$i18n.t(
+				'Sets the maximum number of tokens for reasoning models to use during their reasoning process. Only applicable to reasoning models from specific providers that support this parameter.'
+			)}
+			placement="top-start"
+			className="inline-tooltip"
+		>
+			<div class="flex w-full justify-between">
+				<div class=" self-center text-xs font-medium">
+					{$i18n.t('Max Tokens for Reasoning')}
+				</div>
+				<button
+					class="p-1 px-3 text-xs flex rounded-sm transition shrink-0 outline-hidden"
+					type="button"
+					on:click={() => {
+						if (!params.reasoning) params.reasoning = {};
+						params.reasoning.max_tokens =
+							(params?.reasoning?.max_tokens ?? null) === null ? 2000 : null;
+					}}
+				>
+					{#if (params?.reasoning?.max_tokens ?? null) === null}
+						<span class="ml-2 self-center"> {$i18n.t('Default')} </span>
+					{:else}
+						<span class="ml-2 self-center"> {$i18n.t('Custom')} </span>
+					{/if}
+				</button>
+			</div>
+		</Tooltip>
+
+		{#if (params?.reasoning?.max_tokens ?? null) !== null}
+			<div class="flex mt-0.5 space-x-2">
+				<div class=" flex-1">
+					<input
+						class="w-full rounded-lg py-2 px-1 text-sm dark:text-gray-300 dark:bg-gray-850 outline-hidden"
+						type="number"
+						placeholder={$i18n.t('Enter max tokens for reasoning')}
+						bind:value={params.reasoning.max_tokens}
+						autocomplete="off"
+						min="1"
+						max="100000"
+						step="1"
+					/>
+				</div>
+			</div>
+		{/if}
+	</div>
+
+	<div class=" py-0.5 w-full justify-between">
+		<Tooltip
+			content={$i18n.t(
 				'Boosting or penalizing specific tokens for constrained responses. Bias values will be clamped between -100 and 100 (inclusive). (Default: none)'
 			)}
 			placement="top-start"
