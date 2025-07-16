@@ -173,7 +173,7 @@
 									e.target.style.height = '';
 									e.target.style.height = `${e.target.scrollHeight}px`;
 								}}
-								on:keydown={(e) => {
+								on:keydown={async (e) => {
 									if (e.key === 'Escape') {
 										document.getElementById('close-edit-message-button')?.click();
 									}
@@ -183,6 +183,46 @@
 
 									if (isCmdOrCtrlPressed && isEnterPressed) {
 										document.getElementById('confirm-edit-message-button')?.click();
+									}
+
+									// Formatting hotkeys (Cmd/Ctrl + B/I/E)
+									if (isCmdOrCtrlPressed && ['b', 'i', 'e'].includes(e.key.toLowerCase())) {
+										e.preventDefault();
+										const textarea = e.target;
+										const start = textarea.selectionStart;
+										const end = textarea.selectionEnd;
+										const selectedText = editedContent.substring(start, end);
+
+										let prefix = '';
+										let suffix = '';
+
+										switch (e.key.toLowerCase()) {
+											case 'b':
+												prefix = '**';
+												suffix = '**';
+												break;
+											case 'i':
+												prefix = '_';
+												suffix = '_';
+												break;
+											case 'e':
+												prefix = '`';
+												suffix = '`';
+												break;
+										}
+
+										editedContent =
+											editedContent.substring(0, start) +
+											prefix +
+											selectedText +
+											suffix +
+											editedContent.substring(end);
+
+										await tick();
+										textarea.focus();
+										textarea.selectionStart = start + prefix.length;
+										textarea.selectionEnd = end + prefix.length;
+										return;
 									}
 								}}
 							/>
