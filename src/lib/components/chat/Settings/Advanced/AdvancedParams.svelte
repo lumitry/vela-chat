@@ -38,7 +38,23 @@
 		use_mlock: null,
 		num_thread: null,
 		num_gpu: null,
-		template: null
+		template: null,
+
+		// ORT-specific
+		provider: {
+			order: null, // List of provider slugs to try in order (e.g. ["anthropic", "openai"]).
+			allow_fallbacks: null, // Allow fallback to other providers if the first one fails. ORT default is true
+			require_parameters: null, // Require sampler parameters to be set for the provider. ORT default is false
+			data_collection: null, // Control whether to use providers that may store data. ORT default is "allow", other opt is "deny".
+			only: null, // String[] - List of provider slugs to allow for this request.
+			ignore: null, // String[] - List of provider slugs to skip for this request.
+			// quantizations // String[] - List of quantizations to allow for this request e.g. "int8" etc.
+			sort: null // String - Sort providers by price or throughput. (e.g. "price" or "throughput" or "latency").
+			// max_price: {prompt: null, completion: null, image: null}, // Maximum price per 1M tokens for prompt and completion.
+		}
+		// transforms: null, // ORT-specific. compress prompts > than max ctx length
+		// plugins: null // ORT-specific. List of plugins to use for this request. Useful for web search via "plugins": [{ "id": "web" }]
+		// web_search_options: null, // Options for web search plugins. if enabled, create an object with {search_context_size: "high"} (or "medium", "low") to set the search context size.
 	};
 
 	let customFieldName = '';
@@ -1450,5 +1466,319 @@
 				</div>
 			{/if}
 		</div> -->
+
+		<div class=" py-0.5 w-full justify-between">
+			<Tooltip
+				content={$i18n.t(
+					'Specifies the order in which providers should be attempted when making requests. Accepts a comma-separated list of provider names.'
+				)}
+				placement="top-start"
+				className="inline-tooltip"
+			>
+				<div class="flex w-full justify-between">
+					<div class=" self-center text-xs font-medium">
+						{$i18n.t('Provider Order')}
+					</div>
+
+					<button
+						class="p-1 px-3 text-xs flex rounded-sm transition shrink-0 outline-hidden"
+						type="button"
+						on:click={() => {
+							if (!params.provider) params.provider = {};
+							params.provider.order = (params?.provider?.order ?? null) === null ? '' : null;
+						}}
+					>
+						{#if (params?.provider?.order ?? null) === null}
+							<span class="ml-2 self-center">{$i18n.t('Default')}</span>
+						{:else}
+							<span class="ml-2 self-center">{$i18n.t('Custom')}</span>
+						{/if}
+					</button>
+				</div>
+			</Tooltip>
+
+			{#if (params?.provider?.order ?? null) !== null}
+				<div class="flex mt-0.5 space-x-2">
+					<div class=" flex-1">
+						<input
+							class="w-full rounded-lg py-2 px-1 text-sm dark:text-gray-300 dark:bg-gray-850 outline-hidden"
+							type="text"
+							placeholder={$i18n.t('Enter provider order (comma-separated)')}
+							bind:value={params.provider.order}
+							autocomplete="off"
+						/>
+					</div>
+				</div>
+			{/if}
+		</div>
+
+		<div class=" py-0.5 w-full justify-between">
+			<Tooltip
+				content={$i18n.t(
+					'When enabled, allows automatic fallback to alternative providers if the primary provider fails. This ensures better reliability and uptime for your requests.'
+				)}
+				placement="top-start"
+				className="inline-tooltip"
+			>
+				<div class="flex w-full justify-between">
+					<div class=" self-center text-xs font-medium">
+						{$i18n.t('Allow Fallbacks')}
+					</div>
+
+					<button
+						class="p-1 px-3 text-xs flex rounded-sm transition shrink-0 outline-hidden"
+						type="button"
+						on:click={() => {
+							if (!params.provider) params.provider = {};
+							params.provider.allow_fallbacks =
+								(params?.provider?.allow_fallbacks ?? null) === null ? true : null;
+						}}
+					>
+						{#if (params?.provider?.allow_fallbacks ?? null) === null}
+							<span class="ml-2 self-center">{$i18n.t('Default')}</span>
+						{:else}
+							<span class="ml-2 self-center">{$i18n.t('Custom')}</span>
+						{/if}
+					</button>
+				</div>
+			</Tooltip>
+
+			{#if (params?.provider?.allow_fallbacks ?? null) !== null}
+				<div class="flex justify-between items-center mt-1">
+					<div class="text-xs text-gray-500">
+						{params.provider.allow_fallbacks ? 'Enabled' : 'Disabled'}
+					</div>
+
+					<div class=" pr-2">
+						<Switch bind:state={params.provider.allow_fallbacks} />
+					</div>
+				</div>
+			{/if}
+		</div>
+
+		<div class=" py-0.5 w-full justify-between">
+			<Tooltip
+				content={$i18n.t(
+					'Whether to only use providers that support all of the sampler parameters in your request (e.g. temperature, top_p, etc.). Default is disabled.'
+				)}
+				placement="top-start"
+				className="inline-tooltip"
+			>
+				<div class="flex w-full justify-between">
+					<div class=" self-center text-xs font-medium">
+						{$i18n.t('Require Parameters')}
+					</div>
+
+					<button
+						class="p-1 px-3 text-xs flex rounded-sm transition shrink-0 outline-hidden"
+						type="button"
+						on:click={() => {
+							if (!params.provider) params.provider = {};
+							params.provider.require_parameters =
+								(params?.provider?.require_parameters ?? null) === null ? false : null;
+						}}
+					>
+						{#if (params?.provider?.require_parameters ?? null) === null}
+							<span class="ml-2 self-center">{$i18n.t('Default')}</span>
+						{:else}
+							<span class="ml-2 self-center">{$i18n.t('Custom')}</span>
+						{/if}
+					</button>
+				</div>
+			</Tooltip>
+
+			{#if (params?.provider?.require_parameters ?? null) !== null}
+				<div class="flex justify-between items-center mt-1">
+					<div class="text-xs text-gray-500">
+						{params.provider.require_parameters ? 'Enabled' : 'Disabled'}
+					</div>
+
+					<div class=" pr-2">
+						<Switch bind:state={params.provider.require_parameters} />
+					</div>
+				</div>
+			{/if}
+		</div>
+
+		<div class=" py-0.5 w-full justify-between">
+			<Tooltip
+				content={$i18n.t(
+					'Control whether to use providers that may store data. "Allow" permits data-storing providers, "Deny" restricts to providers that don\'t store data.'
+				)}
+				placement="top-start"
+				className="inline-tooltip"
+			>
+				<div class="flex w-full justify-between">
+					<div class=" self-center text-xs font-medium">
+						{$i18n.t('Data Collection')}
+					</div>
+
+					<button
+						class="p-1 px-3 text-xs flex rounded-sm transition shrink-0 outline-hidden"
+						type="button"
+						on:click={() => {
+							if (!params.provider) params.provider = {};
+							params.provider.data_collection =
+								(params?.provider?.data_collection ?? null) === null ? 'allow' : null;
+						}}
+					>
+						{#if (params?.provider?.data_collection ?? null) === null}
+							<span class="ml-2 self-center">{$i18n.t('Default')}</span>
+						{:else}
+							<span class="ml-2 self-center">{$i18n.t('Custom')}</span>
+						{/if}
+					</button>
+				</div>
+			</Tooltip>
+
+			{#if (params?.provider?.data_collection ?? null) !== null}
+				<div class="flex mt-0.5 space-x-2">
+					<div class=" flex-1">
+						<select
+							class="w-full rounded-lg py-2 px-1 text-sm dark:text-gray-300 dark:bg-gray-850 outline-hidden"
+							bind:value={params.provider.data_collection}
+						>
+							<option value="allow">{$i18n.t('Allow')}</option>
+							<option value="deny">{$i18n.t('Deny')}</option>
+						</select>
+					</div>
+				</div>
+			{/if}
+		</div>
+
+		<div class=" py-0.5 w-full justify-between">
+			<Tooltip
+				content={$i18n.t(
+					'Specifies which providers should be used exclusively. When set, only the listed providers will be considered for requests.'
+				)}
+				placement="top-start"
+				className="inline-tooltip"
+			>
+				<div class="flex w-full justify-between">
+					<div class=" self-center text-xs font-medium">
+						{$i18n.t('Only Providers')}
+					</div>
+
+					<button
+						class="p-1 px-3 text-xs flex rounded-sm transition shrink-0 outline-hidden"
+						type="button"
+						on:click={() => {
+							if (!params.provider) params.provider = {};
+							params.provider.only = (params?.provider?.only ?? null) === null ? '' : null;
+						}}
+					>
+						{#if (params?.provider?.only ?? null) === null}
+							<span class="ml-2 self-center">{$i18n.t('Default')}</span>
+						{:else}
+							<span class="ml-2 self-center">{$i18n.t('Custom')}</span>
+						{/if}
+					</button>
+				</div>
+			</Tooltip>
+
+			{#if (params?.provider?.only ?? null) !== null}
+				<div class="flex mt-0.5 space-x-2">
+					<div class=" flex-1">
+						<input
+							class="w-full rounded-lg py-2 px-1 text-sm dark:text-gray-300 dark:bg-gray-850 outline-hidden"
+							type="text"
+							placeholder={$i18n.t('Enter providers to use only (comma-separated)')}
+							bind:value={params.provider.only}
+							autocomplete="off"
+						/>
+					</div>
+				</div>
+			{/if}
+		</div>
+
+		<div class=" py-0.5 w-full justify-between">
+			<Tooltip
+				content={$i18n.t(
+					'Specifies providers that should be ignored and excluded from consideration. These providers will not be used even if they are available.'
+				)}
+				placement="top-start"
+				className="inline-tooltip"
+			>
+				<div class="flex w-full justify-between">
+					<div class=" self-center text-xs font-medium">
+						{$i18n.t('Ignore Providers')}
+					</div>
+
+					<button
+						class="p-1 px-3 text-xs flex rounded-sm transition shrink-0 outline-hidden"
+						type="button"
+						on:click={() => {
+							if (!params.provider) params.provider = {};
+							params.provider.ignore = (params?.provider?.ignore ?? null) === null ? '' : null;
+						}}
+					>
+						{#if (params?.provider?.ignore ?? null) === null}
+							<span class="ml-2 self-center">{$i18n.t('Default')}</span>
+						{:else}
+							<span class="ml-2 self-center">{$i18n.t('Custom')}</span>
+						{/if}
+					</button>
+				</div>
+			</Tooltip>
+
+			{#if (params?.provider?.ignore ?? null) !== null}
+				<div class="flex mt-0.5 space-x-2">
+					<div class=" flex-1">
+						<input
+							class="w-full rounded-lg py-2 px-1 text-sm dark:text-gray-300 dark:bg-gray-850 outline-hidden"
+							type="text"
+							placeholder={$i18n.t('Enter providers to ignore (comma-separated)')}
+							bind:value={params.provider.ignore}
+							autocomplete="off"
+						/>
+					</div>
+				</div>
+			{/if}
+		</div>
+
+		<div class=" py-0.5 w-full justify-between">
+			<Tooltip
+				content={$i18n.t(
+					'Defines the sorting criteria for provider selection. This determines how providers are ranked and prioritized when multiple options are available.'
+				)}
+				placement="top-start"
+				className="inline-tooltip"
+			>
+				<div class="flex w-full justify-between">
+					<div class=" self-center text-xs font-medium">
+						{$i18n.t('Provider Sort')}
+					</div>
+
+					<button
+						class="p-1 px-3 text-xs flex rounded-sm transition shrink-0 outline-hidden"
+						type="button"
+						on:click={() => {
+							if (!params.provider) params.provider = {};
+							params.provider.sort = (params?.provider?.sort ?? null) === null ? '' : null;
+						}}
+					>
+						{#if (params?.provider?.sort ?? null) === null}
+							<span class="ml-2 self-center">{$i18n.t('Default')}</span>
+						{:else}
+							<span class="ml-2 self-center">{$i18n.t('Custom')}</span>
+						{/if}
+					</button>
+				</div>
+			</Tooltip>
+
+			{#if (params?.provider?.sort ?? null) !== null}
+				<div class="flex mt-0.5 space-x-2">
+					<div class=" flex-1">
+						<input
+							class="w-full rounded-lg py-2 px-1 text-sm dark:text-gray-300 dark:bg-gray-850 outline-hidden"
+							type="text"
+							placeholder={$i18n.t('Enter sort criteria ("price", "throughput", or "latency")')}
+							bind:value={params.provider.sort}
+							autocomplete="off"
+						/>
+					</div>
+				</div>
+			{/if}
+		</div>
 	{/if}
 </div>

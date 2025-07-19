@@ -71,7 +71,23 @@
 		num_batch: null,
 		num_keep: null,
 		max_tokens: null,
-		num_gpu: null
+		num_gpu: null,
+
+		// ORT-specific
+		provider: {
+			order: null, // List of provider slugs to try in order (e.g. ["anthropic", "openai"]).
+			allow_fallbacks: null, // Allow fallback to other providers if the first one fails. ORT default is true
+			require_parameters: null, // Require parameters to be set for the provider. ORT default is false
+			data_collection: null, // Control whether to use providers that may store data. ORT default is "allow", other opt is "deny".
+			only: null, // String[] - List of provider slugs to allow for this request.
+			ignore: null, // String[] - List of provider slugs to skip for this request.
+			// quantizations // String[] - List of quantizations to allow for this request e.g. "int8" etc.
+			sort: null // String - Sort providers by price or throughput. (e.g. "price" or "throughput" or "latency").
+			// max_price: {prompt: null, completion: null, image: null}, // Maximum price per 1M tokens for prompt and completion.
+		}
+		// transforms: null, // ORT-specific. compress prompts > than max ctx length
+		// plugins: null // ORT-specific. List of plugins to use for this request. Useful for web search via "plugins": [{ "id": "web" }]
+		// web_search_options: null, // Options for web search plugins. if enabled, create an object with {search_context_size: "high"} (or "medium", "low") to set the search context size.
 	};
 
 	const validateJSON = (json) => {
@@ -133,7 +149,8 @@
 				use_mmap: params.use_mmap !== null ? params.use_mmap : undefined,
 				use_mlock: params.use_mlock !== null ? params.use_mlock : undefined,
 				num_thread: params.num_thread !== null ? params.num_thread : undefined,
-				num_gpu: params.num_gpu !== null ? params.num_gpu : undefined
+				num_gpu: params.num_gpu !== null ? params.num_gpu : undefined,
+				provider: params.provider !== null ? params.provider : undefined
 			},
 			keepAlive: keepAlive ? (isNaN(keepAlive) ? keepAlive : parseInt(keepAlive)) : undefined,
 			requestFormat: requestFormat !== null ? requestFormat : undefined

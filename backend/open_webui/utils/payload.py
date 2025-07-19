@@ -64,6 +64,7 @@ def apply_model_params_to_body_openai(params: dict, form_data: dict) -> dict:
         "stop": lambda x: [bytes(s, "utf-8").decode("unicode_escape") for s in x],
         "logit_bias": lambda x: x,
         "response_format": dict,
+        "provider": lambda x: transform_provider_params(x), # NOTE: It seems like this is never called? I tried hardcoding things and it didn't work.
     }
     return apply_model_params_to_body(params, form_data, mappings)
 
@@ -265,3 +266,40 @@ def convert_payload_openai_to_ollama(openai_payload: dict) -> dict:
             ollama_payload["format"] = format
 
     return ollama_payload
+
+
+def transform_provider_params(provider_params: dict) -> dict:
+    """
+    Transform provider parameters from frontend format to backend format.
+    Converts comma-separated strings to arrays where needed.
+    """
+    if not isinstance(provider_params, dict):
+        return provider_params
+    
+    # Create a completely new dict to ensure changes are detected
+    transformed = {}
+    
+    # Copy all values first
+    for key, value in provider_params.items():
+        transformed[key] = value
+    
+    # Convert comma-separated strings to arrays
+    for key in ['order', 'only', 'ignore']:
+        if key in transformed and transformed[key]:
+            if isinstance(transformed[key], str):
+                # Split comma-separated strings
+                transformed[key] = [item.strip() for item in transformed[key].split(',') if item.strip()]
+    
+    # Handle boolean values (these should already be correct from frontend)
+    for key in ['allow_fallbacks', 'require_parameters']:
+        if key in transformed and transformed[key] is not None:
+            if isinstance(transformed[key], str):
+                transformed[key] = transformed[key].lower() in ('true', '1', 'yes')
+    
+    # Handle string values (ensure they're stripped)
+    for key in ['data_collection', 'sort']:
+        if key in transformed and transformed[key] is not None:
+            if isinstance(transformed[key], str):
+                transformed[key] = transformed[key].strip()
+    
+    return transformed

@@ -671,6 +671,37 @@ def apply_params_to_form_data(form_data, model):
         if "reasoning" in params and params["reasoning"] is not None:
             form_data["reasoning"] = params["reasoning"]
 
+        if "provider" in params and params["provider"] is not None:
+            # Transform provider parameters (convert comma-separated strings to arrays)
+            provider_params = params["provider"]
+            if isinstance(provider_params, dict):
+                # Create a new dict with all original values
+                transformed = {}
+                for key, value in provider_params.items():
+                    transformed[key] = value
+                
+                # Convert comma-separated strings to arrays
+                for key in ['order', 'only', 'ignore']:
+                    if key in transformed and transformed[key]:
+                        if isinstance(transformed[key], str):
+                            transformed[key] = [item.strip() for item in transformed[key].split(',') if item.strip()]
+                
+                # Handle boolean values
+                for key in ['allow_fallbacks', 'require_parameters']:
+                    if key in transformed and transformed[key] is not None:
+                        if isinstance(transformed[key], str):
+                            transformed[key] = transformed[key].lower() in ('true', '1', 'yes')
+                
+                # Handle string values (ensure they're stripped)
+                for key in ['data_collection', 'sort']:
+                    if key in transformed and transformed[key] is not None:
+                        if isinstance(transformed[key], str):
+                            transformed[key] = transformed[key].strip()
+                
+                form_data["provider"] = transformed
+            else:
+                form_data["provider"] = params["provider"]
+
         if "logit_bias" in params and params["logit_bias"] is not None:
             try:
                 form_data["logit_bias"] = json.loads(
