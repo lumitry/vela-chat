@@ -28,7 +28,8 @@ Current enhancements include:
 - (enh) (**_OPPINIONATED_**) Changed `reasoning_effort` to be nested (`reasoning.effort`) in line with [OpenRouter's documentation](https://openrouter.ai/docs/use-cases/reasoning-tokens#reasoning-effort-level), since that's what I use.
   - Please open an issue if you use [OpenAI](https://platform.openai.com/docs/api-reference/chat/create#chat-create-reasoning_effort) or [Grok](https://docs.x.ai/docs/guides/reasoning) directly and this breaks your workflow. I may be able to change the advanced parameter entry for it to support "Default", "Custom (OpenAI)", and "Custom (OpenRouter)" modes.
 - (enh) (**_OPPINIONATED_**) Added support for OpenRouter-specific routing parameters (the `provider` object).
-  - TODO: Make it clearer that these are ORT-specific!
+  - TODO: Make it clearer in the UI that these are ORT-specific!
+- (enh/UI) Added the current chat's title and folder (if applicable) to the top of the chat page. This is clickable! If you click on it, you'll get scrolled to the right folder in the sidebar. It'll be expanded if it wasn't already. (It's also reactive to title and folder change!)
 
 Planned enhancements include:
 - (enh) typing in a single/double quote, parenthesis, or bracket while selecting text should automatically enclose that text instead of replacing it, similar to how it works in VSCode and other editors. ideally it would also close the marker automatically if you just type one without having anything selected, so typing in `(` would automatically add `)` after it, but IDK how to make it so that typing in the `)` yourself doesn't double it up. if that makes any sense
