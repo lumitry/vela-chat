@@ -13,7 +13,8 @@
 		showControls,
 		showSidebar,
 		temporaryChatEnabled,
-		user
+		user,
+		chats
 	} from '$lib/stores';
 
 	import { slide } from 'svelte/transition';
@@ -75,6 +76,29 @@
 	} else {
 		currentFolderName = null;
 	}
+
+	// Reactive statement to refresh chat details when chats list changes (indicating title or folder changes)
+	$: if ($chats && $chatId && currentChatDetails) {
+		refreshChatDetails();
+	}
+
+	const refreshChatDetails = async () => {
+		// Re-fetch the chat details to get updated title and folder_id
+		try {
+			const updatedChatDetails = await getChatById(localStorage.token, $chatId);
+			if (updatedChatDetails && currentChatDetails) {
+				// Update both title and folder_id if they changed
+				if (updatedChatDetails.title !== currentChatDetails.title) {
+					currentChatDetails.title = updatedChatDetails.title;
+				}
+				if (updatedChatDetails.folder_id !== currentChatDetails.folder_id) {
+					currentChatDetails.folder_id = updatedChatDetails.folder_id;
+				}
+			}
+		} catch (error) {
+			console.error('Failed to refresh chat details:', error);
+		}
+	};
 
 	const loadCurrentChatDetails = async () => {
 		try {
