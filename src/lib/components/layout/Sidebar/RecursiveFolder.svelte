@@ -41,6 +41,9 @@
 
 	export let parentDragged = false;
 
+	// Track expansion timestamp to detect programmatic changes
+	let lastExpansionTimestamp = 0;
+
 	let folderElement;
 
 	let edit = false;
@@ -203,6 +206,7 @@
 
 	onMount(async () => {
 		open = folders[folderId].is_expanded;
+
 		if (folderElement) {
 			folderElement.addEventListener('dragover', onDragOver);
 			folderElement.addEventListener('drop', onDrop);
@@ -223,6 +227,15 @@
 			editHandler();
 		}
 	});
+
+	// React to expansion timestamp changes (programmatic expansion during navigation)
+	$: if (
+		folders[folderId]?.expansionTimestamp &&
+		folders[folderId].expansionTimestamp > lastExpansionTimestamp
+	) {
+		lastExpansionTimestamp = folders[folderId].expansionTimestamp;
+		open = true;
+	}
 
 	onDestroy(() => {
 		if (folderElement) {
@@ -361,7 +374,12 @@
 	</DragGhost>
 {/if}
 
-<div bind:this={folderElement} class="relative {className}" draggable="true">
+<div
+	bind:this={folderElement}
+	class="relative {className}"
+	draggable="true"
+	data-folder-id={folderId}
+>
 	{#if draggedOver}
 		<div
 			class="absolute top-0 left-0 w-full h-full rounded-xs bg-gray-100/50 dark:bg-gray-700/20 bg-opacity-50 dark:bg-opacity-10 z-50 pointer-events-none touch-none"

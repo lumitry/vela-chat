@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { getContext, onMount } from 'svelte';
+	import { getContext, onMount, tick } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import {
@@ -32,6 +32,7 @@
 	import Banner from '../common/Banner.svelte';
 	import { getChatById } from '$lib/apis/chats';
 	import { getFolders } from '$lib/apis/folders';
+	import { navigateToChat, navigateToFolder } from '$lib/stores/sidebar';
 
 	const i18n = getContext('i18n');
 
@@ -108,6 +109,23 @@
 			currentChatDetails = null;
 		}
 	};
+
+	const handleChatTitleClick = async () => {
+		// 1. Open the sidebar if it's closed
+		if (!$showSidebar) {
+			showSidebar.set(true);
+			await tick(); // Wait for sidebar to open
+		}
+
+		// 2. Use the sidebar navigation store to handle the navigation
+		if (currentChatDetails?.folder_id) {
+			// Navigate to the folder containing the chat
+			navigateToFolder(currentChatDetails.folder_id);
+		} else {
+			// Navigate directly to the chat (not in a folder)
+			navigateToChat($chatId);
+		}
+	};
 </script>
 
 <ShareChatModal bind:show={showShareChatModal} chatId={$chatId} />
@@ -153,8 +171,10 @@
 							{/if}
 
 							{#if $chatId && currentChatDetails}
-								<div
-									class="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center justify-center text-center px-2 pointer-events-none"
+								<button
+									class="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center justify-center text-center px-2 pointer-events-auto cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-850 rounded-lg transition-colors"
+									on:click={handleChatTitleClick}
+									aria-label="Navigate to chat location in sidebar"
 								>
 									{#if currentFolderName}
 										<div
@@ -168,7 +188,7 @@
 									>
 										{currentChatDetails.title || $i18n.t('Untitled Chat')}
 									</div>
-								</div>
+								</button>
 							{/if}
 						</div>
 					</div>

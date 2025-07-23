@@ -246,6 +246,7 @@
 	bind:this={itemElement}
 	class=" w-full {className} relative group"
 	draggable={draggable && !confirmEdit}
+	data-chat-id={id}
 >
 	{#if confirmEdit}
 		<div

@@ -39,8 +39,14 @@
 		updateChatFolderIdById,
 		importChat
 	} from '$lib/apis/chats';
-	import { createNewFolder, getFolders, updateFolderParentIdById } from '$lib/apis/folders';
+	import {
+		createNewFolder,
+		getFolders,
+		updateFolderParentIdById,
+		updateFolderIsExpandedById
+	} from '$lib/apis/folders';
 	import { WEBUI_BASE_URL } from '$lib/constants';
+	import { sidebarNavigationCommand, type SidebarNavigationCommand } from '$lib/stores/sidebar';
 
 	import ArchivedChatsModal from './Sidebar/ArchivedChatsModal.svelte';
 	import UserMenu from './Sidebar/UserMenu.svelte';
@@ -159,6 +165,142 @@
 			newFolderId = res.id;
 			await initFolders();
 		}
+	};
+
+	const handleNavigationCommand = async (command: SidebarNavigationCommand | null) => {
+		try {
+			if (command?.type === 'navigateToChat') {
+				await navigateToChat(command.target);
+			} else if (command?.type === 'navigateToFolder') {
+				await navigateToFolder(command.target);
+			}
+		} catch (error) {
+			console.error('Error handling navigation command:', error);
+		}
+	};
+
+	const navigateToChat = async (chatId: string) => {
+		// First get the chat details to see if it's in a folder
+		try {
+			const chatDetails = await getChatById(localStorage.token, chatId);
+			if (chatDetails?.folder_id) {
+				// If chat is in a folder, expand the folder hierarchy first
+				await expandFolderHierarchy(chatDetails.folder_id);
+
+				// Wait for DOM updates after expansion
+				await tick();
+				await new Promise((resolve) => setTimeout(resolve, 100));
+
+				// Then scroll to the specific chat within the expanded folder
+				await scrollToChat(chatId);
+			} else {
+				// Chat is not in a folder, just scroll to it in the main list
+				await scrollToChat(chatId);
+			}
+		} catch (error) {
+			console.error('Failed to navigate to chat:', error);
+			// Fallback: try to scroll to chat anyway
+			await scrollToChat(chatId);
+		}
+	};
+
+	const navigateToFolder = async (folderId: string) => {
+		// Expand the entire folder hierarchy to make the target folder visible
+		await expandFolderHierarchy(folderId);
+
+		// Wait for all DOM updates to complete
+		await tick();
+		await new Promise((resolve) => setTimeout(resolve, 100));
+
+		// Scroll to the folder
+		await scrollToFolder(folderId);
+	};
+
+	const expandFolderHierarchy = async (folderId: string) => {
+		// Build folder hierarchy from current folders data
+		const folderMap = { ...folders };
+
+		// Find all parent folders that need to be expanded
+		const foldersToExpand = [];
+		let currentFolder = folderMap[folderId];
+
+		while (currentFolder) {
+			foldersToExpand.unshift(currentFolder.id);
+			currentFolder = currentFolder.parent_id ? folderMap[currentFolder.parent_id] : null;
+		}
+
+		// Expand each folder in the hierarchy from root to target
+		for (const folderIdToExpand of foldersToExpand) {
+			const folder = folderMap[folderIdToExpand];
+			if (folder) {
+				try {
+					// Update backend if not already expanded
+					if (!folder.is_expanded) {
+						await updateFolderIsExpandedById(localStorage.token, folderIdToExpand, true);
+					}
+
+					// Always update local state to trigger UI expansion
+					folders = {
+						...folders,
+						[folderIdToExpand]: {
+							...folders[folderIdToExpand],
+							is_expanded: true,
+							expansionTimestamp: Date.now() // Force UI expansion regardless of previous state
+						}
+					};
+
+					// Wait for DOM to update
+					await tick();
+					await new Promise((resolve) => setTimeout(resolve, 50));
+				} catch (error) {
+					console.error(`Failed to expand folder ${folderIdToExpand}:`, error);
+				}
+			}
+		}
+	};
+
+	const scrollToFolder = async (folderId: string) => {
+		// Use a retry mechanism to find the element
+		const maxAttempts = 10;
+		const delay = 50;
+
+		for (let attempt = 0; attempt < maxAttempts; attempt++) {
+			const folderElement = document.querySelector(`[data-folder-id="${folderId}"]`);
+			if (folderElement) {
+				folderElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+				return; // Success
+			}
+
+			// Wait before trying again
+			await new Promise((resolve) => setTimeout(resolve, delay));
+		}
+
+		console.warn(
+			`Folder element with ID ${folderId} not found for scrolling after ${maxAttempts} attempts`
+		);
+	};
+
+	const scrollToChat = async (chatId: string) => {
+		// Use a retry mechanism to find the element
+		const maxAttempts = 10;
+		const delay = 50;
+
+		for (let attempt = 0; attempt < maxAttempts; attempt++) {
+			const chatElement =
+				document.querySelector(`[data-chat-id="${chatId}"]`) ||
+				document.querySelector(`[href="/c/${chatId}"]`);
+			if (chatElement) {
+				chatElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+				return; // Success
+			}
+
+			// Wait before trying again
+			await new Promise((resolve) => setTimeout(resolve, delay));
+		}
+
+		console.warn(
+			`Chat element with ID ${chatId} not found for scrolling after ${maxAttempts} attempts`
+		);
 	};
 
 	const initChannels = async () => {
@@ -392,6 +534,15 @@
 
 		await initChannels();
 		await initChatList();
+
+		// Listen for navigation commands from other components
+		sidebarNavigationCommand.subscribe(async (command) => {
+			if (command) {
+				await handleNavigationCommand(command);
+				// Clear the command after handling
+				sidebarNavigationCommand.set(null);
+			}
+		});
 
 		window.addEventListener('keydown', onKeyDown);
 		window.addEventListener('keyup', onKeyUp);
