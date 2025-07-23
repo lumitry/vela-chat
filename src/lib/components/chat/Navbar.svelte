@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { getContext } from 'svelte';
+	import { getContext, onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import {
@@ -29,6 +29,8 @@
 
 	import PencilSquare from '../icons/PencilSquare.svelte';
 	import Banner from '../common/Banner.svelte';
+	import { getChatById } from '$lib/apis/chats';
+	import { getFolders } from '$lib/apis/folders';
 
 	const i18n = getContext('i18n');
 
@@ -43,6 +45,45 @@
 
 	let showShareChatModal = false;
 	let showDownloadChatModal = false;
+
+	// State for current chat info
+	let currentChatDetails = null;
+	let currentFolderName = null;
+	let folders = {};
+
+	// Load folders on mount
+	onMount(async () => {
+		try {
+			const folderList = await getFolders(localStorage.token);
+			folders = {};
+			for (const folder of folderList) {
+				folders[folder.id] = folder;
+			}
+		} catch (error) {
+			console.error('Failed to load folders:', error);
+		}
+	});
+
+	// Reactive statement to load current chat details when chatId changes
+	$: if ($chatId && localStorage.token) {
+		loadCurrentChatDetails();
+	}
+
+	// Reactive statement to update folder name when folders or chat details change
+	$: if (currentChatDetails?.folder_id && folders[currentChatDetails.folder_id]) {
+		currentFolderName = folders[currentChatDetails.folder_id].name;
+	} else {
+		currentFolderName = null;
+	}
+
+	const loadCurrentChatDetails = async () => {
+		try {
+			currentChatDetails = await getChatById(localStorage.token, $chatId);
+		} catch (error) {
+			console.error('Failed to load chat details:', error);
+			currentChatDetails = null;
+		}
+	};
 </script>
 
 <ShareChatModal bind:show={showShareChatModal} chatId={$chatId} />
@@ -76,12 +117,37 @@
 
 				<div
 					class="flex-1 overflow-hidden max-w-full py-0.5
-			{$showSidebar ? 'ml-1' : ''}
-			"
+            {$showSidebar ? 'ml-1' : ''}
+            "
 				>
-					{#if showModelSelector}
-						<ModelSelector bind:selectedModels showSetDefault={!shareEnabled} />
-					{/if}
+					<div class="flex flex-col gap-1">
+						<div class="relative flex items-center">
+							{#if showModelSelector}
+								<div class="flex-shrink-0">
+									<ModelSelector bind:selectedModels showSetDefault={!shareEnabled} />
+								</div>
+							{/if}
+
+							{#if $chatId && currentChatDetails}
+								<div
+									class="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center justify-center text-center px-2 pointer-events-none"
+								>
+									{#if currentFolderName}
+										<div
+											class="text-xs text-gray-500 dark:text-gray-400 truncate whitespace-nowrap"
+										>
+											{currentFolderName}
+										</div>
+									{/if}
+									<div
+										class="text-sm font-medium text-gray-700 dark:text-gray-200 truncate whitespace-nowrap"
+									>
+										{currentChatDetails.title || $i18n.t('Untitled Chat')}
+									</div>
+								</div>
+							{/if}
+						</div>
+					</div>
 				</div>
 
 				<div class="self-start flex flex-none items-center text-gray-600 dark:text-gray-400">
