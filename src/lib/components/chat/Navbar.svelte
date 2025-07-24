@@ -53,17 +53,79 @@
 	let currentFolderName = null;
 	let folders = {};
 
-	// Load folders on mount
-	onMount(async () => {
-		try {
-			const folderList = await getFolders(localStorage.token);
-			folders = {};
-			for (const folder of folderList) {
-				folders[folder.id] = folder;
-			}
-		} catch (error) {
-			console.error('Failed to load folders:', error);
+	// Lightweight collision detection
+	let chatTitleButton = null;
+	let modelSelectorElement = null;
+
+	const adjustTitlePosition = () => {
+		// Early returns for efficiency
+		if (!chatTitleButton || !modelSelectorElement) return;
+		if (window.innerWidth < 768) return; // Only run on desktop/tablet
+		if (!currentChatDetails) return; // No positioning needed if no chat
+
+		// Get the positioning container (the flex-1 container with relative positioning)
+		const positioningContainer = chatTitleButton.parentElement.parentElement;
+		if (!positioningContainer) return;
+
+		const containerRect = positioningContainer.getBoundingClientRect();
+		const modelRect = modelSelectorElement.getBoundingClientRect();
+		const buttonRect = chatTitleButton.getBoundingClientRect();
+
+		// Calculate where the title would be if centered in the container
+		const containerCenter = containerRect.width / 2;
+		const buttonHalfWidth = buttonRect.width / 2;
+		const centeredLeftPosition = containerCenter - buttonHalfWidth;
+
+		// Calculate model selector right edge relative to positioning container
+		const modelRightEdge = modelRect.right - containerRect.left;
+
+		// Check if centering would cause overlap (with 16px margin for better spacing)
+		const wouldOverlap = centeredLeftPosition < modelRightEdge + 16;
+
+		if (wouldOverlap) {
+			// Position to the right of model selector with margin
+			const offset = modelRightEdge + 16;
+			chatTitleButton.style.left = `${offset}px`;
+			chatTitleButton.style.transform = 'none';
+		} else {
+			// Use centered position
+			chatTitleButton.style.left = '50%';
+			chatTitleButton.style.transform = 'translateX(-50%)';
 		}
+	};
+
+	// Load folders on mount
+	onMount(() => {
+		// Load folders
+		const loadFolders = async () => {
+			try {
+				const folderList = await getFolders(localStorage.token);
+				folders = {};
+				for (const folder of folderList) {
+					folders[folder.id] = folder;
+				}
+			} catch (error) {
+				console.error('Failed to load folders:', error);
+			}
+		};
+
+		loadFolders();
+
+		// Debounced resize listener to avoid excessive calls
+		let resizeTimeout;
+		const handleResize = () => {
+			clearTimeout(resizeTimeout);
+			resizeTimeout = setTimeout(() => {
+				requestAnimationFrame(adjustTitlePosition);
+			}, 100); // 100ms debounce
+		};
+
+		window.addEventListener('resize', handleResize);
+
+		return () => {
+			window.removeEventListener('resize', handleResize);
+			clearTimeout(resizeTimeout);
+		};
 	});
 
 	// Reactive statement to load current chat details when chatId changes
@@ -81,6 +143,14 @@
 	// Reactive statement to refresh chat details when chats list changes (indicating title or folder changes)
 	$: if ($chats && $chatId && currentChatDetails) {
 		refreshChatDetails();
+	}
+
+	// Only trigger position adjustment when elements are first available or when content that affects layout changes
+	$: if (chatTitleButton && modelSelectorElement && currentChatDetails) {
+		// Use tick to ensure DOM is updated, then position
+		tick().then(() => {
+			requestAnimationFrame(adjustTitlePosition);
+		});
 	}
 
 	const refreshChatDetails = async () => {
@@ -104,6 +174,7 @@
 	const loadCurrentChatDetails = async () => {
 		try {
 			currentChatDetails = await getChatById(localStorage.token, $chatId);
+			// Position adjustment will be triggered by reactive statement
 		} catch (error) {
 			console.error('Failed to load chat details:', error);
 			currentChatDetails = null;
@@ -158,21 +229,22 @@
 				</div>
 
 				<div
-					class="flex-1 overflow-hidden max-w-full py-0.5
+					class="flex-1 overflow-hidden max-w-full py-0.5 relative
             {$showSidebar ? 'ml-1' : ''}
             "
 				>
 					<div class="flex flex-col gap-1">
 						<div class="relative flex items-center">
 							{#if showModelSelector}
-								<div class="flex-shrink-0">
+								<div class="flex-shrink-0 z-10" bind:this={modelSelectorElement}>
 									<ModelSelector bind:selectedModels showSetDefault={!shareEnabled} />
 								</div>
 							{/if}
 
 							{#if $chatId && currentChatDetails}
 								<button
-									class="hidden md:flex absolute left-1/2 transform -translate-x-1/2 flex-col items-center justify-center text-center px-2 pointer-events-auto cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-850 rounded-lg transition-colors"
+									bind:this={chatTitleButton}
+									class="hidden md:flex flex-col items-center justify-center text-center px-2 pointer-events-auto cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-850 rounded-lg transition-colors absolute"
 									on:click={handleChatTitleClick}
 									aria-label="Navigate to chat location in sidebar"
 								>
