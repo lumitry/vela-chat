@@ -94,6 +94,8 @@
 				'richtextinput',
 				'pasteasmarkdown',
 				'richpaste',
+				'showcolorswatches',
+				'hexcolorswatches',
 				'background',
 				'chatbackground',
 				'chatbackgroundimage',

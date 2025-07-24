@@ -10,7 +10,7 @@ Current enhancements include:
 - Made the "New Chat" button work with CMD+click and CTRL+click to open in a new tab without changing the current tab.
 - Typing on a chat page now automatically focuses the chat input.
 - Made formatting shortcuts (CTRL/CMD+I for italics, CTRL/CMD+B for bold, CTRL/CMD+E for code) work in the non-rich text chat input.
-- When the response contains hex codes, they are rendered with color swatches next to them. (Note: This does not occur in code blocks.)
+- When the response contains hex codes, they are rendered with color swatches next to them. (Note: This does not occur in code blocks.) (Toggleable under Interface settings!)
 - Improved speed of `/api/v1/folders/` endpoint by streamlining the database query to avoid an N+1 query problem.
   - I measured 7084ms for the old query (running via Docker with Postgres DB; it took 11.75 seconds for an equivalent Sqlite DB) vs 135ms (running via `npm run dev` with Postgres DB) for the new query with 30 folders in my personal database, which is a 50x improvement.
   - In the real world, this gave me a ~2x improvement in page load time for a chat I've been using for testing, from 30 seconds to 14 seconds.
@@ -30,6 +30,7 @@ Current enhancements include:
 - (enh) (**_OPPINIONATED_**) Added support for OpenRouter-specific routing parameters (the `provider` object).
   - TODO: Make it clearer in the UI that these are ORT-specific!
 - (enh/UI) Added the current chat's title and folder (if applicable) to the top of the chat page. This is clickable! If you click on it, you'll get scrolled to the right folder in the sidebar. It'll be expanded if it wasn't already. (It's also reactive to title and folder change!)
+- (enh) Support pasting formatted text into the plain text chat input ([#46](https://github.com/lumitry/vela-chat/issues/46)) (Can be toggled in user settings > "Interface" page)
 
 Planned enhancements include:
 - (enh) typing in a single/double quote, parenthesis, or bracket while selecting text should automatically enclose that text instead of replacing it, similar to how it works in VSCode and other editors. ideally it would also close the marker automatically if you just type one without having anything selected, so typing in `(` would automatically add `)` after it, but IDK how to make it so that typing in the `)` yourself doesn't double it up. if that makes any sense

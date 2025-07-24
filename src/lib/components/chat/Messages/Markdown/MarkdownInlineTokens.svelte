@@ -9,6 +9,7 @@
 
 	import { WEBUI_BASE_URL } from '$lib/constants';
 	import { copyToClipboard, unescapeHtml } from '$lib/utils';
+	import { settings } from '$lib/stores';
 
 	import Image from '$lib/components/common/Image.svelte';
 	import KatexRenderer from './KatexRenderer.svelte';
@@ -76,18 +77,21 @@
 			onload="this.style.height=(this.contentWindow.document.body.scrollHeight+20)+'px';"
 		></iframe>
 	{:else if token.type === 'text'}
-		{#each token.raw.split(hexColorRegex) as part, i}
-		<!-- TODO: this should be toggle-able in settings probably -->
-			{#if i % 2 === 1}
-				<span class="inline-flex items-center">
-					<span
-						class="inline-block w-4 h-4 mr-1 border border-gray-300 dark:border-gray-600 rounded-sm"
-						style="background-color: {part};"
-					></span>{part}</span
-				>
-			{:else}
-				{part}
-			{/if}
-		{/each}
+		{#if $settings?.showHexColorSwatches ?? true}
+			{#each token.raw.split(hexColorRegex) as part, i}
+				{#if i % 2 === 1}
+					<span class="inline-flex items-center">
+						<span
+							class="inline-block w-4 h-4 mr-1 border border-gray-300 dark:border-gray-600 rounded-sm"
+							style="background-color: {part};"
+						></span>{part}</span
+					>
+				{:else}
+					{part}
+				{/if}
+			{/each}
+		{:else}
+			{token.raw}
+		{/if}
 	{/if}
 {/each}
