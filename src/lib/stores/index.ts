@@ -143,6 +143,7 @@ type Settings = {
 	splitLargeDeltas?: boolean;
 	chatDirection: 'LTR' | 'RTL' | 'auto';
 	ctrlEnterToSend?: boolean;
+	customThemeColor?: string;
 
 	system?: string;
 	requestFormat?: string;

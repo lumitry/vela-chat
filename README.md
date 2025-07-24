@@ -31,6 +31,7 @@ Current enhancements include:
   - TODO: Make it clearer in the UI that these are ORT-specific!
 - (enh/UI) Added the current chat's title and folder (if applicable) to the top of the chat page. This is clickable! If you click on it, you'll get scrolled to the right folder in the sidebar. It'll be expanded if it wasn't already. (It's also reactive to title and folder change!)
 - (enh) Support pasting formatted text into the plain text chat input ([#46](https://github.com/lumitry/vela-chat/issues/46)) (Can be toggled in user settings > "Interface" page)
+- (enh/UI) Added support for arbitrary custom color schemes! In the General page of user settings, you can select any color you want from a color picker (or use the randomizer button!) then click "Apply" and it will be applied to the UI. This even works with image backgrounds!
 
 Planned enhancements include:
 - (enh) typing in a single/double quote, parenthesis, or bracket while selecting text should automatically enclose that text instead of replacing it, similar to how it works in VSCode and other editors. ideally it would also close the marker automatically if you just type one without having anything selected, so typing in `(` would automatically add `)` after it, but IDK how to make it so that typing in the `)` yourself doesn't double it up. if that makes any sense

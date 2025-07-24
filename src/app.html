@@ -58,6 +58,10 @@
 					document.documentElement.classList.add('dark');
 					document.documentElement.classList.add('her');
 					metaThemeColorTag.setAttribute('content', '#983724');
+				} else if (localStorage.theme === 'custom') {
+					document.documentElement.classList.add('dark');
+					document.documentElement.classList.add('custom');
+					metaThemeColorTag.setAttribute('content', '#171717');
 				} else {
 					document.documentElement.classList.add('dark');
 					metaThemeColorTag.setAttribute('content', '#171717');

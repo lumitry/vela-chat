@@ -2,6 +2,7 @@
 	import { toast } from 'svelte-sonner';
 	import { createEventDispatcher, onMount, getContext } from 'svelte';
 	import { getLanguages, changeLanguage } from '$lib/i18n';
+	import { applyCustomThemeColors, resetToDefaultGrayColors, hslToHex } from '$lib/utils/theme';
 	const dispatch = createEventDispatcher();
 
 	import { models, settings, theme, user } from '$lib/stores';
@@ -15,8 +16,9 @@
 	export let getModels: Function;
 
 	// General
-	let themes = ['dark', 'light', 'rose-pine dark', 'rose-pine-dawn light', 'oled-dark'];
 	let selectedTheme = 'system';
+	let customThemeColor = '#6366f1'; // Default indigo color
+	let pendingCustomColor = '#6366f1'; // Color being edited but not yet applied
 
 	let languages: Awaited<ReturnType<typeof getLanguages>> = [];
 	let lang = $i18n.language;
@@ -123,6 +125,7 @@
 
 		saveSettings({
 			system: system !== '' ? system : undefined,
+			customThemeColor: customThemeColor,
 			params: {
 				stream_response: params.stream_response !== null ? params.stream_response : undefined,
 				function_calling: params.function_calling !== null ? params.function_calling : undefined,
@@ -160,9 +163,12 @@
 		requestFormat =
 			typeof requestFormat === 'object' ? JSON.stringify(requestFormat, null, 2) : requestFormat;
 	};
-
 	onMount(async () => {
 		selectedTheme = localStorage.theme ?? 'system';
+
+		// Initialize custom theme color from settings
+		customThemeColor = $settings.customThemeColor ?? '#6366f1';
+		pendingCustomColor = customThemeColor;
 
 		languages = await getLanguages();
 
@@ -181,31 +187,48 @@
 		params.stop = $settings?.params?.stop ? ($settings?.params?.stop ?? []).join(',') : null;
 	});
 
-	const applyTheme = (_theme: string) => {
+	const applyTheme = (_theme: string): void => {
 		let themeToApply = _theme === 'oled-dark' ? 'dark' : _theme;
 
 		if (_theme === 'system') {
 			themeToApply = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 		}
 
-		if (themeToApply === 'dark' && !_theme.includes('oled')) {
+		// Reset all CSS custom properties first
+		resetToDefaultGrayColors();
+
+		if (themeToApply === 'dark' && !_theme.includes('oled') && _theme !== 'custom') {
 			document.documentElement.style.setProperty('--color-gray-800', '#333');
 			document.documentElement.style.setProperty('--color-gray-850', '#262626');
 			document.documentElement.style.setProperty('--color-gray-900', '#171717');
 			document.documentElement.style.setProperty('--color-gray-950', '#0d0d0d');
 		}
 
-		themes
-			.filter((e) => e !== themeToApply)
-			.forEach((e) => {
-				e.split(' ').forEach((e) => {
-					document.documentElement.classList.remove(e);
-				});
+		// Remove all theme classes first
+		['dark', 'light', 'rose-pine', 'rose-pine-dawn', 'oled-dark', 'her', 'custom'].forEach(
+			(cls) => {
+				document.documentElement.classList.remove(cls);
+			}
+		);
+
+		// Handle custom theme
+		if (_theme === 'custom') {
+			document.documentElement.classList.add('dark');
+			document.documentElement.classList.add('custom');
+			if ($settings.customThemeColor) {
+				applyCustomThemeColors($settings.customThemeColor);
+			}
+		} else {
+			// Add the new theme classes
+			themeToApply.split(' ').forEach((e) => {
+				document.documentElement.classList.add(e);
 			});
 
-		themeToApply.split(' ').forEach((e) => {
-			document.documentElement.classList.add(e);
-		});
+			// Add dark class for special themes
+			if (['her'].includes(_theme)) {
+				document.documentElement.classList.add('dark');
+			}
+		}
 
 		const metaThemeColor = document.querySelector('meta[name="theme-color"]');
 		if (metaThemeColor) {
@@ -213,10 +236,8 @@
 				const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches
 					? 'dark'
 					: 'light';
-				console.log('Setting system meta theme color: ' + systemTheme);
 				metaThemeColor.setAttribute('content', systemTheme === 'light' ? '#ffffff' : '#171717');
 			} else {
-				console.log('Setting meta theme color: ' + _theme);
 				metaThemeColor.setAttribute(
 					'content',
 					_theme === 'dark'
@@ -225,7 +246,9 @@
 							? '#000000'
 							: _theme === 'her'
 								? '#983724'
-								: '#ffffff'
+								: _theme === 'custom'
+									? '#171717' // Will be overridden by custom color
+									: '#ffffff'
 				);
 			}
 		}
@@ -241,15 +264,54 @@
 			document.documentElement.style.setProperty('--color-gray-950', '#000000');
 			document.documentElement.classList.add('dark');
 		}
-
-		console.log(_theme);
 	};
-
-	const themeChangeHandler = (_theme: string) => {
+	const themeChangeHandler = (_theme: string): void => {
 		theme.set(_theme);
 		localStorage.setItem('theme', _theme);
 		applyTheme(_theme);
+
+		// Reset pending color when switching away from custom theme
+		if (_theme !== 'custom') {
+			pendingCustomColor = customThemeColor;
+		}
 	};
+
+	const handleCustomColorChange = (color: string): void => {
+		// Only update the pending color, don't apply yet
+		pendingCustomColor = color;
+	};
+
+	const applyCustomTheme = async (): Promise<void> => {
+		// Update the stored custom color
+		customThemeColor = pendingCustomColor;
+
+		// Update settings
+		$settings.customThemeColor = customThemeColor;
+		await saveSettings($settings);
+
+		// Switch to custom theme if not already selected
+		if (selectedTheme !== 'custom') {
+			selectedTheme = 'custom';
+			themeChangeHandler('custom');
+		} else {
+			// If already on custom theme, just apply the new color
+			applyCustomThemeColors(customThemeColor);
+		}
+	};
+
+	const randomizeThemeColor = (): void => {
+		// Generate a random vibrant color using HSL for better control
+		const hue = Math.floor(Math.random() * 360); // Full range of hues
+		const saturation = 60 + Math.floor(Math.random() * 40); // 60-100% saturation for vibrant colors
+		const lightness = 40 + Math.floor(Math.random() * 20); // 40-60% lightness for good contrast
+
+		const randomColor = hslToHex(hue, saturation, lightness);
+		pendingCustomColor = randomColor;
+		applyCustomTheme();
+	};
+
+	// Check if the current pending color is different from applied color
+	$: isColorChanged = pendingCustomColor !== customThemeColor;
 </script>
 
 <div class="flex flex-col h-full justify-between text-sm">
@@ -271,9 +333,41 @@
 						<option value="oled-dark">🌃 {$i18n.t('OLED Dark')}</option>
 						<option value="light">☀️ {$i18n.t('Light')}</option>
 						<option value="her">🌷 Her</option>
+						<option value="custom">� Custom</option>
 						<!-- <option value="rose-pine dark">🪻 {$i18n.t('Rosé Pine')}</option>
-						<option value="rose-pine-dawn light">🌷 {$i18n.t('Rosé Pine Dawn')}</option> -->
+						<option value="rose-pine-dawn light">� {$i18n.t('Rosé Pine Dawn')}</option> -->
 					</select>
+				</div>
+			</div>
+
+			<!-- Custom Theme Color Picker -->
+			<div class="flex w-full justify-between items-center">
+				<div class="self-center text-xs font-medium">Custom Color</div>
+				<div class="flex items-center space-x-2">
+					<button
+						type="button"
+						on:click={randomizeThemeColor}
+						class="w-8 h-6 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition flex items-center justify-center text-sm"
+						title="Randomize theme color"
+					>
+						🔄
+					</button>
+					<input
+						type="color"
+						bind:value={pendingCustomColor}
+						on:input={(e) => handleCustomColorChange(e.target.value)}
+						class="w-8 h-6 rounded border border-gray-300 dark:border-gray-600 cursor-pointer"
+						title="Choose custom theme color"
+					/>
+					<button
+						type="button"
+						on:click={applyCustomTheme}
+						class="text-xs px-2 py-1 rounded-sm border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition"
+						class:opacity-50={!isColorChanged && selectedTheme === 'custom'}
+						disabled={!isColorChanged && selectedTheme === 'custom'}
+					>
+						{selectedTheme === 'custom' && !isColorChanged ? 'Applied' : 'Apply'}
+					</button>
 				</div>
 			</div>
 

@@ -18,6 +18,7 @@
 	import { getTools } from '$lib/apis/tools';
 	import { getBanners } from '$lib/apis/configs';
 	import { getUserSettings } from '$lib/apis/users';
+	import { applyCustomThemeColors } from '$lib/utils/theme';
 
 	import { WEBUI_VERSION } from '$lib/constants';
 	import { compareVersion } from '$lib/utils';
@@ -85,6 +86,11 @@
 
 			if (userSettings) {
 				settings.set(userSettings.ui);
+
+				// Apply custom theme if selected
+				if (localStorage.theme === 'custom' && userSettings.ui?.customThemeColor) {
+					applyCustomThemeColors(userSettings.ui.customThemeColor);
+				}
 			} else {
 				let localStorageSettings = {} as Parameters<(typeof settings)['set']>[0];
 
@@ -95,6 +101,11 @@
 				}
 
 				settings.set(localStorageSettings);
+
+				// Apply custom theme if selected
+				if (localStorage.theme === 'custom' && localStorageSettings?.customThemeColor) {
+					applyCustomThemeColors(localStorageSettings.customThemeColor);
+				}
 			}
 
 			models.set(

@@ -1,0 +1,17 @@
+/* Sunset Theme - Subtle warm theme for Open WebUI */
+
+html.sunset {
+  /* Subtle warm color palette - very close to default dark but warmer */
+  --color-gray-50: #fefbf8;    /* Barely warm white */
+  --color-gray-100: #f7f3f0;   /* Very light warm gray */
+  --color-gray-200: #f0e8e2;   /* Light warm gray */
+  --color-gray-300: #e1d2c7;   /* Soft warm gray */
+  --color-gray-400: #c4b5a8;   /* Medium warm gray */
+  --color-gray-500: #a59186;   /* Warm gray */
+  --color-gray-600: #7a6b5e;   /* Dark warm gray */
+  --color-gray-700: #5a4f45;   /* Darker warm gray */
+  --color-gray-800: #3d342d;   /* Dark warm brown (was #333) */
+  --color-gray-850: #2f2621;   /* Darker warm brown (was #262626) */
+  --color-gray-900: #1f1b17;   /* Very dark warm brown (was #171717) */
+  --color-gray-950: #151310;   /* Almost black warm brown (was #0d0d0d) */
+}

@@ -90,6 +90,7 @@
 			</button>
 
 			{#if role === 'admin'}
+				<!-- TODO: make these buttons, not anchor tags! unless that'd cause issues -->
 				<a
 					class="flex rounded-md py-2 px-3 w-full hover:bg-gray-50 dark:hover:bg-gray-800 transition"
 					href="/playground"

@@ -1,0 +1,43 @@
+/* Global fixes for theming issues */
+
+/* Fix anchor tags that should look like buttons */
+html.sunset a.flex.rounded-md.py-2.px-3.w-full,
+html.ocean a.flex.rounded-md.py-2.px-3.w-full,
+html.forest a.flex.rounded-md.py-2.px-3.w-full,
+html.her a.flex.rounded-md.py-2.px-3.w-full {
+  color: inherit !important;
+  text-decoration: none !important;
+}
+
+html.sunset a.flex.rounded-md.py-2.px-3.w-full:hover,
+html.ocean a.flex.rounded-md.py-2.px-3.w-full:hover,
+html.forest a.flex.rounded-md.py-2.px-3.w-full:hover,
+html.her a.flex.rounded-md.py-2.px-3.w-full:hover {
+  background-color: var(--color-gray-800) !important;
+}
+
+/* Ensure all themes apply dark mode styling */
+html.sunset,
+html.ocean,
+html.forest {
+  color-scheme: dark;
+}
+
+/* Fix any remaining bright colors that might clash */
+html.sunset .text-red-500,
+html.ocean .text-red-500,
+html.forest .text-red-500 {
+  color: #ef4444 !important;
+}
+
+html.sunset .text-green-500,
+html.ocean .text-green-500,
+html.forest .text-green-500 {
+  color: #10b981 !important;
+}
+
+html.sunset .text-blue-500,
+html.ocean .text-blue-500,
+html.forest .text-blue-500 {
+  color: #3b82f6 !important;
+}

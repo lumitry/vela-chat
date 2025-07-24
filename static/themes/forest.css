@@ -1,0 +1,17 @@
+/* Forest Theme - Subtle green theme for Open WebUI */
+
+html.forest {
+  /* Subtle green color palette - very close to default dark but with green tint */
+  --color-gray-50: #f9fbf9;    /* Barely green white */
+  --color-gray-100: #f2f6f2;   /* Very light green-gray */
+  --color-gray-200: #e4ebe4;   /* Light green-gray */
+  --color-gray-300: #c9d3c9;   /* Soft green-gray */
+  --color-gray-400: #abb7ab;   /* Medium green-gray */
+  --color-gray-500: #8d978d;   /* Green-gray */
+  --color-gray-600: #677067;   /* Dark green-gray */
+  --color-gray-700: #4d544d;   /* Darker green-gray */
+  --color-gray-800: #343a34;   /* Dark green-gray (was #333) */
+  --color-gray-850: #262a26;   /* Darker green-gray (was #262626) */
+  --color-gray-900: #181b18;   /* Very dark green-gray (was #171717) */
+  --color-gray-950: #0f120f;   /* Almost black green-gray (was #0d0d0d) */
+}

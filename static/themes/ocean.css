@@ -1,0 +1,17 @@
+/* Ocean Theme - Subtle cool theme for Open WebUI */
+
+html.ocean {
+  /* Subtle cool color palette - very close to default dark but cooler */
+  --color-gray-50: #f8fafb;    /* Barely cool white */
+  --color-gray-100: #f0f4f6;   /* Very light cool gray */
+  --color-gray-200: #e2e8ec;   /* Light cool gray */
+  --color-gray-300: #c7d2d9;   /* Soft cool gray */
+  --color-gray-400: #a8b5c1;   /* Medium cool gray */
+  --color-gray-500: #869199;   /* Cool gray */
+  --color-gray-600: #5e6b75;   /* Dark cool gray */
+  --color-gray-700: #454f57;   /* Darker cool gray */
+  --color-gray-800: #2d3439;   /* Dark blue-gray (was #333) */
+  --color-gray-850: #212629;   /* Darker blue-gray (was #262626) */
+  --color-gray-900: #171b1d;   /* Very dark blue-gray (was #171717) */
+  --color-gray-950: #101315;   /* Almost black blue-gray (was #0d0d0d) */
+}
