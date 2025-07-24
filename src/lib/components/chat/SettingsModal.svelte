@@ -92,6 +92,8 @@
 				'scrollbehavior',
 				'richtext',
 				'richtextinput',
+				'pasteasmarkdown',
+				'richpaste',
 				'background',
 				'chatbackground',
 				'chatbackgroundimage',

@@ -3,6 +3,7 @@
 	import { v4 as uuidv4 } from 'uuid';
 	import { createPicker, getAuthToken } from '$lib/utils/google-drive-picker';
 	import { pickAndDownloadFile } from '$lib/utils/onedrive-file-picker';
+	import TurndownService from 'turndown';
 
 	import { onMount, tick, getContext, createEventDispatcher, onDestroy } from 'svelte';
 	const dispatch = createEventDispatcher();
@@ -55,6 +56,13 @@
 	import Wrench from '../icons/Wrench.svelte';
 
 	const i18n = getContext('i18n');
+
+	// Configure TurndownService for HTML to Markdown conversion
+	const turndownService = new TurndownService({
+		codeBlockStyle: 'fenced',
+		headingStyle: 'atx'
+	});
+	turndownService.escape = (string) => string;
 
 	export let transparentBackground = false;
 
@@ -1053,6 +1061,21 @@
 												const clipboardData = e.clipboardData || window.clipboardData;
 
 												if (clipboardData && clipboardData.items) {
+													let hasImage = false;
+													let hasHtml = false;
+													let htmlContent = '';
+
+													// First pass: check what types of content we have
+													for (const item of clipboardData.items) {
+														if (item.type.indexOf('image') !== -1) {
+															hasImage = true;
+														} else if (item.type === 'text/html') {
+															hasHtml = true;
+															htmlContent = clipboardData.getData('text/html');
+														}
+													}
+
+													// Process content based on what we found
 													for (const item of clipboardData.items) {
 														if (item.type.indexOf('image') !== -1) {
 															const blob = item.getAsFile();
@@ -1069,7 +1092,88 @@
 															};
 
 															reader.readAsDataURL(blob);
-														} else if (item.type === 'text/plain') {
+														} else if (
+															item.type === 'text/html' &&
+															hasHtml &&
+															($settings?.pasteAsMarkdown ?? true)
+														) {
+															// Convert HTML to Markdown and insert at cursor position (only if enabled)
+															e.preventDefault();
+															const textarea = e.target;
+
+															try {
+																// Convert HTML to markdown
+																const markdownText = turndownService.turndown(htmlContent);
+
+																// Use document.execCommand to maintain undo functionality
+																// First, focus the textarea to ensure it's the active element
+																textarea.focus();
+
+																// Insert the markdown text using execCommand for proper undo support
+																if (
+																	document.execCommand &&
+																	document.execCommand('insertText', false, markdownText)
+																) {
+																	// execCommand worked, update the prompt binding
+																	prompt = textarea.value;
+																} else {
+																	// Fallback for browsers that don't support execCommand
+																	const startPos = textarea.selectionStart;
+																	const endPos = textarea.selectionEnd;
+																	const beforeText = prompt.substring(0, startPos);
+																	const afterText = prompt.substring(endPos);
+																	prompt = beforeText + markdownText + afterText;
+
+																	// Set cursor position after inserted text
+																	setTimeout(() => {
+																		const newPos = startPos + markdownText.length;
+																		textarea.setSelectionRange(newPos, newPos);
+																	}, 0);
+																}
+
+																// Trigger textarea resize
+																setTimeout(() => {
+																	textarea.style.height = '';
+																	textarea.style.height =
+																		Math.min(textarea.scrollHeight, 320) + 'px';
+																}, 0);
+															} catch (error) {
+																console.error('Error converting HTML to markdown:', error);
+																// Fall back to plain text if conversion fails
+																const plainText = clipboardData.getData('text/plain');
+																if (plainText) {
+																	textarea.focus();
+																	if (
+																		document.execCommand &&
+																		document.execCommand('insertText', false, plainText)
+																	) {
+																		prompt = textarea.value;
+																	} else {
+																		const startPos = textarea.selectionStart;
+																		const endPos = textarea.selectionEnd;
+																		const beforeText = prompt.substring(0, startPos);
+																		const afterText = prompt.substring(endPos);
+																		prompt = beforeText + plainText + afterText;
+
+																		setTimeout(() => {
+																			const newPos = startPos + plainText.length;
+																			textarea.setSelectionRange(newPos, newPos);
+																		}, 0);
+																	}
+
+																	// Trigger textarea resize
+																	setTimeout(() => {
+																		textarea.style.height = '';
+																		textarea.style.height =
+																			Math.min(textarea.scrollHeight, 320) + 'px';
+																	}, 0);
+																}
+															}
+														} else if (
+															item.type === 'text/plain' &&
+															(!hasHtml || !($settings?.pasteAsMarkdown ?? true))
+														) {
+															// Only process plain text if there's no HTML content
 															if ($settings?.largeTextAsFile ?? false) {
 																const text = clipboardData.getData('text/plain');
 
@@ -1400,7 +1504,7 @@
 														>
 															<path
 																fill-rule="evenodd"
-																d="M8 14a.75.75 0 0 1-.75-.75V4.56L4.03 7.78a.75.75 0 0 1-1.06-1.06l4.5-4.5a.75.75 0 0 1 1.06 0l4.5 4.5a.75.75 0 0 1-1.06 1.06L8.75 4.56v8.69A.75.75 0 0 1 8 14Z"
+																d="M8 14a.75.75 0 01-.75-.75V4.56L4.03 7.78a.75.75 0 01-1.06-1.06l4.5-4.5a.75.75 0 01 1.06 0l4.5 4.5a.75.75 0 01-1.06 1.06L8.75 4.56v8.69A.75.75 0 018 14Z"
 																clip-rule="evenodd"
 															/>
 														</svg>
