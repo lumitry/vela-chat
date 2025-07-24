@@ -172,7 +172,7 @@
 
 							{#if $chatId && currentChatDetails}
 								<button
-									class="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center justify-center text-center px-2 pointer-events-auto cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-850 rounded-lg transition-colors"
+									class="hidden md:flex absolute left-1/2 transform -translate-x-1/2 flex-col items-center justify-center text-center px-2 pointer-events-auto cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-850 rounded-lg transition-colors"
 									on:click={handleChatTitleClick}
 									aria-label="Navigate to chat location in sidebar"
 								>
