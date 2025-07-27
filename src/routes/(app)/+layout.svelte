@@ -206,8 +206,8 @@
 
 			// TODO more thorough testing, and make this toggleable in settings?
 			document.addEventListener('keydown', (e) => {
-				// Check if any modifier keys are pressed
-				if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) {
+				// Check if modifier keys are pressed (but allow Shift for normal typing)
+				if (e.ctrlKey || e.metaKey || e.altKey) {
 					return;
 				}
 
