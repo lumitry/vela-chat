@@ -92,7 +92,11 @@
 		price_per_1m_input_tokens: null as number | null,
 		price_per_1m_output_tokens: null as number | null,
 		max_context_length: null as number | null,
-		price_per_1k_images: null as number | null
+		price_per_1k_images: null as number | null,
+		reasoning_behavior: 'none' as string,
+		reasoning_target_model: null as string | null,
+		reasoning_effort: null as number | null,
+		reasoning_max_tokens: null as number | null
 	};
 
 	let showModelDetails = false;
@@ -132,7 +136,11 @@
 			modelDetails.price_per_1m_output_tokens !== null ||
 			modelDetails.max_context_length !== null ||
 			modelDetails.price_per_1k_images !== null ||
-			modelDetails.response_structure !== 'Classical'
+			modelDetails.response_structure !== 'Classical' ||
+			modelDetails.reasoning_behavior !== 'none' ||
+			modelDetails.reasoning_target_model !== null ||
+			modelDetails.reasoning_effort !== null ||
+			modelDetails.reasoning_max_tokens !== null
 		) {
 			info.meta.model_details = modelDetails;
 		} else {
@@ -222,15 +230,16 @@
 			if (matchingModel.pricing) {
 				if (matchingModel.pricing.prompt) {
 					modelDetails.price_per_1m_input_tokens =
-						parseFloat(matchingModel.pricing.prompt) * 1000000;
+						Math.round(parseFloat(matchingModel.pricing.prompt) * 1000000 * 10000) / 10000;
 				}
 				if (matchingModel.pricing.completion) {
 					modelDetails.price_per_1m_output_tokens =
-						parseFloat(matchingModel.pricing.completion) * 1000000;
+						Math.round(parseFloat(matchingModel.pricing.completion) * 1000000 * 10000) / 10000;
 				}
 				if (matchingModel.pricing.image) {
 					// Convert from per-image to per-1K images
-					modelDetails.price_per_1k_images = parseFloat(matchingModel.pricing.image) * 1000;
+					modelDetails.price_per_1k_images =
+						Math.round(parseFloat(matchingModel.pricing.image) * 1000 * 10000) / 10000;
 				}
 			}
 
@@ -928,6 +937,72 @@
 										/>
 									</div>
 								</div>
+
+								<div>
+									<div class="text-xs font-semibold mb-1">{$i18n.t('Reasoning Behavior')}</div>
+									<select
+										class="text-sm w-full bg-transparent outline-hidden p-2 border border-gray-200 dark:border-gray-700 rounded-lg"
+										bind:value={modelDetails.reasoning_behavior}
+									>
+										<option value="none">None (default behavior)</option>
+										<option value="change_model">Change model</option>
+										<option value="set_effort">Set reasoning.effort in request</option>
+										<option value="set_max_tokens">Set reasoning.max_tokens in request</option>
+										<option value="toggle_think_prompt"
+											>Toggle /think and /no_think in prompt</option
+										>
+									</select>
+								</div>
+
+								{#if modelDetails.reasoning_behavior === 'change_model'}
+									<div>
+										<div class="text-xs font-semibold mb-1">{$i18n.t('Target Model')}</div>
+										<select
+											class="text-sm w-full bg-transparent outline-hidden p-2 border border-gray-200 dark:border-gray-700 rounded-lg"
+											bind:value={modelDetails.reasoning_target_model}
+										>
+											<option value={null}>Select a model</option>
+											{#each $models.filter((m) => m.id !== (model?.id || id)) as targetModel}
+												<option value={targetModel.id}>{targetModel.name} ({targetModel.id})</option
+												>
+											{/each}
+										</select>
+									</div>
+								{/if}
+
+								{#if modelDetails.reasoning_behavior === 'set_effort'}
+									<div>
+										<div class="text-xs font-semibold mb-1">{$i18n.t('Reasoning Effort')}</div>
+										<select
+											class="text-sm w-full bg-transparent outline-hidden p-2 border border-gray-200 dark:border-gray-700 rounded-lg"
+											bind:value={modelDetails.reasoning_effort}
+										>
+											<option value={null}>None</option>
+											<option value="low">Low</option>
+											<option value="medium">Medium</option>
+											<option value="high">High</option>
+										</select>
+										<div class="text-xs text-gray-500 mt-1">
+											{$i18n.t('How much effort to put into reasoning steps')}
+										</div>
+									</div>
+								{/if}
+
+								{#if modelDetails.reasoning_behavior === 'set_max_tokens'}
+									<div>
+										<div class="text-xs font-semibold mb-1">{$i18n.t('Max Reasoning Tokens')}</div>
+										<input
+											class="text-sm w-full bg-transparent outline-hidden p-2 border border-gray-200 dark:border-gray-700 rounded-lg"
+											type="number"
+											min="1"
+											placeholder="e.g. 10000"
+											bind:value={modelDetails.reasoning_max_tokens}
+										/>
+										<div class="text-xs text-gray-500 mt-1">
+											{$i18n.t('Maximum tokens to use for reasoning steps')}
+										</div>
+									</div>
+								{/if}
 							</div>
 						{/if}
 					</div>
