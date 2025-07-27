@@ -87,6 +87,16 @@
 
 	let accessControl = {};
 
+	let modelDetails = {
+		response_structure: 'Classical',
+		price_per_1m_input_tokens: null as number | null,
+		price_per_1m_output_tokens: null as number | null,
+		max_context_length: null as number | null,
+		price_per_1k_images: null as number | null
+	};
+
+	let showModelDetails = false;
+
 	const addUsage = (base_model_id) => {
 		const baseModel = $models.find((m) => m.id === base_model_id);
 
@@ -116,6 +126,20 @@
 
 		info.access_control = accessControl;
 		info.meta.capabilities = capabilities;
+
+		if (
+			modelDetails.price_per_1m_input_tokens !== null ||
+			modelDetails.price_per_1m_output_tokens !== null ||
+			modelDetails.max_context_length !== null ||
+			modelDetails.price_per_1k_images !== null ||
+			modelDetails.response_structure !== 'Classical'
+		) {
+			info.meta.model_details = modelDetails;
+		} else {
+			if (info.meta.model_details) {
+				delete info.meta.model_details;
+			}
+		}
 
 		if (enableDescription) {
 			info.meta.description = info.meta.description.trim() === '' ? null : info.meta.description;
@@ -166,6 +190,71 @@
 
 		loading = false;
 		success = false;
+	};
+
+	const fetchFromOpenRouter = async () => {
+		if (!id && !model?.id) {
+			toast.error('Model ID is required to fetch from OpenRouter');
+			return;
+		}
+
+		// Strip prefix up to the first "." if present
+		const rawModelId = id || model?.id || '';
+		const modelId = rawModelId.includes('.')
+			? rawModelId.slice(rawModelId.indexOf('.') + 1)
+			: rawModelId;
+
+		try {
+			const response = await fetch('https://openrouter.ai/api/v1/models');
+			if (!response.ok) {
+				throw new Error('Failed to fetch from OpenRouter');
+			}
+
+			const data = await response.json();
+			const matchingModel = data.data.find((m) => m.id === modelId);
+
+			if (!matchingModel) {
+				toast.error(`Model "${modelId}" not found in OpenRouter database`);
+				return;
+			}
+
+			// Convert pricing from per-token to per-1M tokens
+			if (matchingModel.pricing) {
+				if (matchingModel.pricing.prompt) {
+					modelDetails.price_per_1m_input_tokens =
+						parseFloat(matchingModel.pricing.prompt) * 1000000;
+				}
+				if (matchingModel.pricing.completion) {
+					modelDetails.price_per_1m_output_tokens =
+						parseFloat(matchingModel.pricing.completion) * 1000000;
+				}
+				if (matchingModel.pricing.image) {
+					// Convert from per-image to per-1K images
+					modelDetails.price_per_1k_images = parseFloat(matchingModel.pricing.image) * 1000;
+				}
+			}
+
+			// Set context length
+			if (matchingModel.context_length) {
+				modelDetails.max_context_length = matchingModel.context_length;
+			} else if (matchingModel.top_provider?.context_length) {
+				modelDetails.max_context_length = matchingModel.top_provider.context_length;
+			}
+
+			// Enable vision if model supports image input
+			if (matchingModel.architecture?.input_modalities?.includes('image')) {
+				capabilities.vision = true;
+			}
+
+			// Force reactivity update
+			modelDetails = { ...modelDetails };
+			capabilities = { ...capabilities };
+
+			toast.success('Model details updated from OpenRouter');
+		} catch (error) {
+			console.error('Error fetching from OpenRouter:', error);
+			toast.error('Failed to fetch model details from OpenRouter');
+		}
 	};
 
 	onMount(async () => {
@@ -230,6 +319,10 @@
 				}
 			});
 			capabilities = { ...capabilities, ...(model?.meta?.capabilities ?? {}) };
+
+			if (model?.meta?.model_details) {
+				modelDetails = { ...modelDetails, ...model.meta.model_details };
+			}
 
 			if ('access_control' in model) {
 				accessControl = model.access_control;
@@ -715,6 +808,128 @@
 
 					<div class="my-2">
 						<Capabilities bind:capabilities />
+					</div>
+
+					<hr class=" border-gray-100 dark:border-gray-850 my-1.5" />
+
+					<div class="my-2">
+						<div class="flex w-full justify-between">
+							<div class=" self-center text-sm font-semibold">{$i18n.t('Model Details')}</div>
+
+							<button
+								class="p-1 px-3 text-xs flex rounded-sm transition"
+								type="button"
+								on:click={() => {
+									showModelDetails = !showModelDetails;
+								}}
+							>
+								{#if showModelDetails}
+									<span class="ml-2 self-center">{$i18n.t('Hide')}</span>
+								{:else}
+									<span class="ml-2 self-center">{$i18n.t('Show')}</span>
+								{/if}
+							</button>
+						</div>
+
+						{#if showModelDetails}
+							<div class="mt-2 space-y-3">
+								<div>
+									<div class="text-xs font-semibold mb-1">{$i18n.t('Response Structure')}</div>
+									<select
+										class="text-sm w-full bg-transparent outline-hidden p-2 border border-gray-200 dark:border-gray-700 rounded-lg"
+										bind:value={modelDetails.response_structure}
+									>
+										<option value="Classical">Classical</option>
+										<option value="Native Chain-of-Thought Reasoning"
+											>Native Chain-of-Thought Reasoning</option
+										>
+										<option value="Hybrid CoT Reasoning">Hybrid CoT Reasoning</option>
+									</select>
+								</div>
+
+								<div class="flex justify-end">
+									<button
+										type="button"
+										class="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition flex items-center gap-1"
+										on:click={fetchFromOpenRouter}
+									>
+										<svg
+											xmlns="http://www.w3.org/2000/svg"
+											viewBox="0 0 20 20"
+											fill="currentColor"
+											class="w-3 h-3"
+										>
+											<path
+												fill-rule="evenodd"
+												d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z"
+												clip-rule="evenodd"
+											/>
+										</svg>
+										Get from OpenRouter
+									</button>
+								</div>
+
+								<div class="grid grid-cols-2 gap-3">
+									<div>
+										<div class="text-xs font-semibold mb-1">
+											{$i18n.t('Price per 1M Input Tokens ($)')}
+										</div>
+										<input
+											class="text-sm w-full bg-transparent outline-hidden p-2 border border-gray-200 dark:border-gray-700 rounded-lg"
+											type="number"
+											step="0.0001"
+											min="0"
+											placeholder="0.00"
+											bind:value={modelDetails.price_per_1m_input_tokens}
+										/>
+									</div>
+
+									<div>
+										<div class="text-xs font-semibold mb-1">
+											{$i18n.t('Price per 1M Output Tokens ($)')}
+										</div>
+										<input
+											class="text-sm w-full bg-transparent outline-hidden p-2 border border-gray-200 dark:border-gray-700 rounded-lg"
+											type="number"
+											step="0.0001"
+											min="0"
+											placeholder="0.00"
+											bind:value={modelDetails.price_per_1m_output_tokens}
+										/>
+									</div>
+								</div>
+
+								<div class="grid grid-cols-2 gap-3">
+									<div>
+										<div class="text-xs font-semibold mb-1">{$i18n.t('Max Context Length')}</div>
+										<input
+											class="text-sm w-full bg-transparent outline-hidden p-2 border border-gray-200 dark:border-gray-700 rounded-lg"
+											type="number"
+											min="0"
+											placeholder="e.g. 128000"
+											bind:value={modelDetails.max_context_length}
+										/>
+										<div class="text-xs text-gray-500 mt-1">
+											{$i18n.t('Informational only - does not limit response length')}
+										</div>
+									</div>
+
+									<div>
+										<div class="text-xs font-semibold mb-1">
+											{$i18n.t('Price per 1K Images ($)')}
+										</div>
+										<input
+											class="text-sm w-full bg-transparent outline-hidden p-2 border border-gray-200 dark:border-gray-700 rounded-lg"
+											type="number"
+											step="0.0001"
+											min="0"
+											placeholder="0.00"
+											bind:value={modelDetails.price_per_1k_images}
+										/>
+									</div>
+								</div>
+							</div>
+						{/if}
 					</div>
 
 					<div class="my-2 text-gray-300 dark:text-gray-700">
