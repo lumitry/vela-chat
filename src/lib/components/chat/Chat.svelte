@@ -2218,7 +2218,7 @@
 							<MessageInput
 								{history}
 								{taskIds}
-								{selectedModels}
+								bind:selectedModels
 								bind:files
 								bind:prompt
 								bind:autoScroll

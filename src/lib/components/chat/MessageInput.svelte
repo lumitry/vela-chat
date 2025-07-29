@@ -51,9 +51,21 @@
 	import PhotoSolid from '../icons/PhotoSolid.svelte';
 	import Photo from '../icons/Photo.svelte';
 	import CommandLine from '../icons/CommandLine.svelte';
+	import LightBlub from '../icons/LightBlub.svelte';
 	import { KokoroWorker } from '$lib/workers/KokoroWorker';
 	import ToolServersModal from './ToolServersModal.svelte';
 	import Wrench from '../icons/Wrench.svelte';
+
+	import {
+		isReasoningCapable,
+		shouldIlluminateThinking,
+		isThinkingClickable,
+		getReasoningTargetModel,
+		createReasoningState,
+		persistReasoningState,
+		loadReasoningState,
+		type ReasoningState
+	} from '$lib/utils/reasoning';
 
 	const i18n = getContext('i18n');
 
@@ -73,7 +85,7 @@
 	export let autoScroll = false;
 
 	export let atSelectedModel: Model | undefined = undefined;
-	export let selectedModels: [''];
+	export let selectedModels: string[];
 
 	let selectedModelIds = [];
 	$: selectedModelIds = atSelectedModel !== undefined ? [atSelectedModel.id] : selectedModels;
@@ -92,6 +104,10 @@
 	export let webSearchEnabled = false;
 	export let codeInterpreterEnabled = false;
 
+	// Reasoning mode state
+	let reasoningState: ReasoningState | null = null;
+	let currentReasoningModel: Model | undefined = undefined;
+
 	$: onChange({
 		prompt,
 		files,
@@ -99,6 +115,125 @@
 		imageGenerationEnabled,
 		webSearchEnabled
 	});
+
+	// Load reasoning state when history changes
+	$: if (history) {
+		reasoningState = loadReasoningState(history);
+	}
+
+	// Handle model changes while in thinking mode
+	$: if (currentModel && reasoningState?.isThinkingMode) {
+		// If user switched to a different model while in thinking mode, update reasoning state accordingly
+		if (
+			currentModel.id !== reasoningState.reasoningModel &&
+			currentModel.id !== reasoningState.baseModel
+		) {
+			// User switched to a completely different model, reset reasoning state
+			reasoningState = null;
+			persistReasoningState(history, null);
+		}
+	}
+
+	// Get the current selected model
+	$: currentModel =
+		atSelectedModel ||
+		(selectedModels?.[0] ? $models.find((m) => m.id === selectedModels[0]) : undefined);
+
+	// Determine if thinking button should be illuminated
+	$: isThinkingIlluminated = currentModel
+		? shouldIlluminateThinking(currentModel, $models, reasoningState || undefined)
+		: false;
+
+	// Determine if thinking button should be clickable
+	$: isThinkingEnabled =
+		(currentModel ? isThinkingClickable(currentModel, $models) : false) ||
+		(reasoningState?.isThinkingMode ?? false);
+
+	// Determine if thinking button should be visible
+	$: shouldShowThinkingButton =
+		(currentModel ? isReasoningCapable(currentModel, $models) : false) ||
+		(reasoningState?.isThinkingMode ?? false) ||
+		(currentModel?.info?.meta as any)?.model_details?.response_structure ===
+			'Native Chain-of-Thought Reasoning' ||
+		(currentModel?.info?.meta as any)?.model_details?.response_structure === 'Hybrid CoT Reasoning';
+
+	// Debug reactive variables
+	$: {
+		// console.log('Reactive update:', {
+		// 	currentModel: currentModel?.id,
+		// 	isThinkingIlluminated,
+		// 	isThinkingEnabled,
+		// 	shouldShowThinkingButton,
+		// 	reasoningState: reasoningState?.isThinkingMode ? 'thinking' : 'normal',
+		// 	atSelectedModel: atSelectedModel?.id,
+		// 	selectedModels: selectedModels?.[0]
+		// });
+	}
+
+	// Toggle reasoning mode
+	const toggleReasoningMode = () => {
+		console.log('toggleReasoningMode called:', {
+			currentModel: currentModel?.id,
+			isThinkingEnabled,
+			reasoningState
+		});
+
+		if (!currentModel || !isThinkingEnabled) {
+			console.log('Early return - no current model or thinking not enabled');
+			return;
+		}
+
+		if (reasoningState?.isThinkingMode) {
+			console.log('Exiting thinking mode');
+			// Exit thinking mode - return to base model
+			const baseModelId = reasoningState.baseModel;
+			const baseModel = $models.find((m) => m.id === baseModelId);
+
+			if (baseModel) {
+				// Switch back to base model
+				if (atSelectedModel) {
+					atSelectedModel = baseModel;
+				} else {
+					selectedModels = [baseModelId];
+				}
+			}
+
+			// Clear reasoning state
+			reasoningState = null;
+			persistReasoningState(history, null);
+		} else {
+			console.log('Entering thinking mode');
+			// Enter thinking mode
+			const models = getReasoningTargetModel(currentModel, $models);
+			console.log('Reasoning models found:', models);
+
+			if (models) {
+				const { base, target } = models;
+
+				// Create reasoning state
+				reasoningState = createReasoningState(base, target);
+				persistReasoningState(history, reasoningState);
+
+				// Switch to reasoning model
+				if (atSelectedModel) {
+					atSelectedModel = target;
+				} else {
+					selectedModels = [target.id];
+				}
+			} else {
+				console.log('No target model found or same model, using same model reasoning');
+				// For non-switching behaviors (reasoning effort, etc.), just set the state
+				reasoningState = {
+					isThinkingMode: true,
+					baseModel: currentModel.id,
+					reasoningModel: currentModel.id
+				};
+				persistReasoningState(history, reasoningState);
+			}
+		}
+
+		console.log('toggleReasoningMode finished:', { reasoningState });
+	};
 
 	let showTools = false;
 
@@ -1341,6 +1476,28 @@
 															<span
 																class="hidden @xl:block whitespace-nowrap overflow-hidden text-ellipsis translate-y-[0.5px]"
 																>{$i18n.t('Code Interpreter')}</span
+															>
+														</button>
+													</Tooltip>
+												{/if}
+
+												<!-- Thinking button -->
+												{#if shouldShowThinkingButton}
+													<Tooltip content={$i18n.t('Toggle reasoning mode')} placement="top">
+														<button
+															on:click|preventDefault={toggleReasoningMode}
+															type="button"
+															disabled={!isThinkingEnabled}
+															class="px-1.5 @xl:px-2.5 py-1.5 flex gap-1.5 items-center text-sm rounded-full font-medium transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden border {isThinkingIlluminated
+																? 'bg-blue-100 dark:bg-blue-500/20 border-blue-400/20 text-blue-500 dark:text-blue-400'
+																: !isThinkingEnabled
+																	? 'bg-transparent border-transparent text-gray-400 dark:text-gray-600 cursor-not-allowed'
+																	: 'bg-transparent border-transparent text-gray-600 dark:text-gray-300 border-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'}"
+														>
+															<LightBlub className="size-5" strokeWidth="1.75" />
+															<span
+																class="hidden @xl:block whitespace-nowrap overflow-hidden text-ellipsis translate-y-[0.5px]"
+																>{$i18n.t('Thinking')}</span
 															>
 														</button>
 													</Tooltip>
