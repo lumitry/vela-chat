@@ -1,0 +1,129 @@
+shape: sequence_diagram
+
+# define constants
+user: "User"
+chat: "Chat page"
+modelinfo: "Model Info"
+model: "LLM"
+
+user -> chat: Open Chat
+
+# CASE 1: Classical to CoT
+# Note that nothing says that the two models have to be from the same lineup! So you could have it change from DSV3 to Qwen 3 235B-A22B-0725-Thinking, or something similar.
+# In fact, the "Thinking" model doesn't even have to be a CoT model since we have no reason to enforce it, so in theory someone could switch from DSV3 to LLaMA 3.3 with that button. It's all up to the user.
+case 1: "CASE 1: Classical to CoT" {
+  user -> chat: Set model to "Deepseek V3-0324"
+  user -> chat: Click "Thinking" button
+  chat -> modelinfo: Get model info # this would already be loaded, so this isn't an API call, but i'm showing it for clarity
+  modelinfo -> chat: Return model info
+  chat -> chat: Set 'base' model to "Deepseek V3-0324"
+  chat -> chat: Set 'thinking' model to "Deepseek R1-0528"
+  chat -> chat: Set 'current' model to "Deepseek R1-0528"
+  chat -> user: Illuminate "Thinking" button
+}
+
+# CASE 2: CoT to Classical
+
+case 2: "CASE 2: CoT to Classical" {
+  user -> chat: Set model to "Deepseek R1-0528"
+  chat -> user: Illuminate "Thinking" button # Actually, this illumination depends on reading the model info, so I should technically re-arrange these diagrams, but for the sake of simplicity I'll keep things as-is, especially because the model info is already loaded.
+  user -> chat: Click "Thinking" button
+  chat -> modelinfo: Get model info # this would already be loaded
+  modelinfo -> chat: Return model info
+  chat -> chat: Set 'base' model to "Deepseek V3-0324"
+  chat -> chat: Set 'thinking' model to "Deepseek R1-0528"
+  chat -> chat: Set 'current' model to "Deepseek V3-0324"
+  chat -> user: Un-illuminate "Thinking" button
+}
+
+# CASE 3: No reasoning behavior set; Classical model
+case 3: "CASE 3: No reasoning behavior set (classical model)" {
+  user -> chat: Set model to "LLaMA 3.1 8B"
+  chat -> user: Do not show "Thinking" button at all (or grey it out/make it unclickable?)
+}
+
+# CASE 4: No reasoning behavior set; CoT model
+case 4: "CASE 4: No reasoning behavior set (CoT model)" {
+  user -> chat: Set model to "Qwen 3 Coder 480B-A35B" # AFAIK this model is CoT but doesn't support any modifications to reasoning behavior, aside from changing max_tokens I guess? Not sure.
+  chat -> user: Illuminate "Thinking" button
+}
+
+# Case 5: Set reasoning effort (hybrid model)
+# Note that reasoning.max_tokens is also supported for this, if that's your thing.
+case 5: "CASE 5: Set reasoning effort (hybrid model)" {
+  user -> chat: Set model to "Gemini 2.5 Flash Lite" # this model is hybrid but behaves classically by default
+  chat -> user: Un-illuminate "Thinking" button
+  user -> chat: Click "Thinking" button
+  chat -> modelinfo: Get model info # this would already be loaded
+  modelinfo -> chat: Return model info
+  chat -> chat: Invisibly set reasoning effort to 'high' # or whatever the user set in the 'reasoning behavior' settings
+  chat -> user: Illuminate "Thinking" button
+  user -> chat: Click "Thinking" button again
+  chat -> chat: Clear invisible reasoning effort setting # now the model's default reasoning effort (null) is used, and it will behave classically
+  chat -> user: Un-illuminate "Thinking" button
+}
+
+# CASE 6: Redundant reasoning behavior
+# For models that already do CoT reasoning by default, and are not hybrid models, users may wish to have the "Thinking" button simply change the reasoning effort, e.g. from "high" to "low".
+# This case is identical to case 5 in terms of UI implementation and functionality, but I wanted to highlight it since it's a valid use case.
+case 6: "CASE 6: Redundant reasoning behavior" {
+  user -> chat: Set model to "Grok 3 Mini" # This is a built-in CoT model that does not support classical behavior, but does support changing reasoning effort.
+  chat -> user: Illuminate "Thinking" button
+  # In this case, the user has set up the "Reasoning behavior" setting for the model such that it is showing as CoT reasoning model, which is technically correct.
+  # Note that we're assuming they set reasoning effort to 'high' in the model's settings, and that the "Reasoning behavior" setting is to change reasoning effort to 'low'.
+  user -> chat: Click "Thinking" button
+  chat -> modelinfo: Get model info # this would already be loaded
+  modelinfo -> chat: Return model info
+  chat -> chat: Invisibly set reasoning effort to 'low'
+  chat -> user: Un-illuminate the "Thinking" button # Even though 'low' effort is still CoT reasoning, the button would assume that the user has switched to a classical model, so it would un-illuminate the button. This may not be the best UX, but it's better then adding a setting for edge cases like this.
+  user -> chat: Click "Thinking" button again
+  chat -> chat: Clear invisible reasoning effort setting # now the model's default reasoning effort ('high') is used
+  chat -> user: Illuminate "Thinking" button
+}
+
+# CASE 7: Hybrid prompt modification
+# For models like Qwen 3 (other than the 235B-A22B-0725 models) that support reasoning by adding a string to the prompt
+# Here, we invisibly add the '/think' or '/no_think' string to the prompt. This is not stored in the chat history since these models seem to be able to find that string anywhere in the chat history.
+case 7: "CASE 7: Hybrid prompt modification" {
+  user -> chat: Set model to "Qwen 3 32B"
+  chat -> user: Illuminate "Thinking" button # Qwen 3 does CoT by default
+  user -> chat: Click "Thinking" button
+  chat -> modelinfo: Get model info # this would already be loaded
+  modelinfo -> chat: Return model info
+  chat -> chat: Invisibly set the prompt_add_string to '/no_think' # disables CoT (TODO: is this stuff only stored in UI state, or do we store it in the chat JSON?)
+  chat -> user: Un-illuminate "Thinking" button
+  user -> chat: Send message "What is the capital of France?"
+  chat -> model: Send "What is the capital of France? /no_think"
+  model -> chat: Return "Paris" # if only models were this concise lol
+  chat -> user: Show response
+  user -> chat: Click "Thinking" button again
+  chat -> chat: Invisibly set the prompt_add_string to '/think' # explicitly enables CoT
+  chat -> user: Illuminate "Thinking" button
+  user -> chat: Send message "What is the capital of France?"
+  chat -> model: Send "What is the capital of France? /think"
+  model -> chat: Return "<think>Hmm. The user is wondering (...)</think> Paris" # the model does CoT reasoning and returns a response
+  chat -> user: Show response
+}
+
+# CASE 8: Toggle system prompt
+# For models that toggle reasoning via the system prompt (e.g., Nvidia's LLaMA 3.x Nemotron models, IBM Granite, DeepHermes 3, etc.)
+# Here we're doing Nemotron as an example, and assuming the model's default system prompt is currently "You are a helpful assistant." (so no CoT reasoning)
+case 8: "CASE 8: Toggle system prompt" {
+  user -> chat: Set model to "LLaMA 3.3 Nemotron Super 49B"
+  chat -> user: Un-illuminate "Thinking" button # LLaMA 3.3 Nemotron Super 49B does not use CoT by default
+  user -> chat: Click "Thinking" button
+  chat -> modelinfo: Get model info # this would already be loaded
+  modelinfo -> chat: Return model info
+  chat -> chat: Invisibly prepend the current system prompt with 'detailed thinking on'
+  # this was set in the "reasoning behavior" settings (Note: We prepend in case the chat is using a non-default system prompt)
+  # Sending a msg here would have CoT reasoning enabled
+  chat -> user: Illuminate "Thinking" button
+  user -> chat: Click "Thinking" button again
+  chat -> chat: Remove the invisible system prompt modification
+  chat -> user: Un-illuminate "Thinking" button
+  # Now CoT reasoning is disabled, and the model will behave like a classical model.
+}
+
+# CASE 9: Toggle prefill?
+# TODO: IDK if this is possible or not given the access we have, but ideally we'd also be able to add a prefill to the chat response for models like Mistral Thinker. I've also heard that many other models can support CoT reasoning by simply adding a `<think>\nHmm. Let me solve this step by step.\n` prefill (or similar) to the response.
+# Not sure how this one would work in practice. I know it's doable in SillyTavern (e.g. MistralThinker), but I'm not sure what the technical implementation is, so no diagram for this one.
