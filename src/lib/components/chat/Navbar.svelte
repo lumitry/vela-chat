@@ -61,7 +61,12 @@
 		// Early returns for efficiency
 		if (!chatTitleButton || !modelSelectorElement) return;
 		if (window.innerWidth < 768) return; // Only run on desktop/tablet
-		if (!currentChatDetails) return; // No positioning needed if no chat
+		if (!currentChatDetails) {
+			// Reset any positioning styles when no chat details
+			chatTitleButton.style.left = '';
+			chatTitleButton.style.transform = '';
+			return;
+		}
 
 		// Get the positioning container (the flex-1 container with relative positioning)
 		const positioningContainer = chatTitleButton.parentElement.parentElement;
@@ -229,12 +234,12 @@
 				</div>
 
 				<div
-					class="flex-1 overflow-hidden max-w-full py-0.5 relative
+					class="flex-1 max-w-full py-0.5 relative
             {$showSidebar ? 'ml-1' : ''}
             "
 				>
 					<div class="flex flex-col gap-1">
-						<div class="relative flex items-center">
+						<div class="relative flex items-center overflow-visible">
 							{#if showModelSelector}
 								<div class="flex-shrink-0 z-10" bind:this={modelSelectorElement}>
 									<ModelSelector bind:selectedModels showSetDefault={!shareEnabled} />
