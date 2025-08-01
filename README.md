@@ -10,7 +10,7 @@ Current enhancements include:
 - Made the "New Chat" button work with CMD+click and CTRL+click to open in a new tab without changing the current tab.
 - Typing on a chat page now automatically focuses the chat input.
 - Made formatting shortcuts (CTRL/CMD+I for italics, CTRL/CMD+B for bold, CTRL/CMD+E for code) work in the non-rich text chat input.
-- When the response contains hex codes, they are rendered with color swatches next to them. (Note: This does not occur in code blocks.) (Toggleable under Interface settings!)
+- When the response contains hex codes, they are rendered with color swatches next to them. (Note: This does not occur in code blocks.) (Toggleable under Interface settings!) (Clicking on the swatch copies to clipboard.)
 - Improved speed of `/api/v1/folders/` endpoint by streamlining the database query to avoid an N+1 query problem.
   - I measured 7084ms for the old query (running via Docker with Postgres DB; it took 11.75 seconds for an equivalent Sqlite DB) vs 135ms (running via `npm run dev` with Postgres DB) for the new query with 30 folders in my personal database, which is a 50x improvement.
   - In the real world, this gave me a ~2x improvement in page load time for a chat I've been using for testing, from 30 seconds to 14 seconds.
@@ -33,6 +33,8 @@ Current enhancements include:
 - (enh) Support pasting formatted text into the plain text chat input ([#46](https://github.com/lumitry/vela-chat/issues/46)) (Can be toggled in user settings > "Interface" page)
 - (enh/UI) Added support for arbitrary custom color schemes! In the General page of user settings, you can select any color you want from a color picker (or use the randomizer button!) then click "Apply" and it will be applied to the UI. This even works with image backgrounds!
 - (enh) (***WIP*** as of 2025-07-29) Added a "Thinking" button to the chat input that, when clicked, modifies the request such that it uses chain-of-thought when generating the response. This is only available for models that have been configured to support reasoning behavior. See [issue #19](https://github.com/lumitry/vela-chat/issues/19) for details.
+- (UI) Hidden models are now shown greyed out in the admin model reorder modal
+- (enh/UX) Added copy table to clipboard button next to export to CSV button (in chat)
 
 Planned enhancements include:
 - (enh) typing in a single/double quote, parenthesis, or bracket while selecting text should automatically enclose that text instead of replacing it, similar to how it works in VSCode and other editors. ideally it would also close the marker automatically if you just type one without having anything selected, so typing in `(` would automatically add `)` after it, but IDK how to make it so that typing in the `)` yourself doesn't double it up. if that makes any sense
