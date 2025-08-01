@@ -177,6 +177,7 @@
 									}}
 								>
 									<div class="text-xs text-gray-500">{$i18n.t('Reorder Models')}</div>
+									<!-- TODO: make it clearer that you can click on that div! I literally didn't find this out until I looked at the code, which is not great UX -->
 
 									{#if sortKey === 'model'}
 										<span class="font-normal self-center">
