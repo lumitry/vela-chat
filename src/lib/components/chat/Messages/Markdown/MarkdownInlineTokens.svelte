@@ -81,9 +81,15 @@
 			{#each token.raw.split(hexColorRegex) as part, i}
 				{#if i % 2 === 1}
 					<span class="inline-flex items-center">
+						<!-- svelte-ignore a11y-click-events-have-key-events -->
+						<!-- svelte-ignore a11y-no-static-element-interactions -->
 						<span
-							class="inline-block w-4 h-4 mr-1 border border-gray-300 dark:border-gray-600 rounded-sm"
+							class="inline-block w-4 h-4 mr-1 border border-gray-300 dark:border-gray-600 rounded-sm cursor-pointer"
 							style="background-color: {part};"
+							on:click={() => {
+								copyToClipboard(part);
+								toast.success($i18n.t('Copied to clipboard'));
+							}}
 						></span>{part}</span
 					>
 				{:else}
