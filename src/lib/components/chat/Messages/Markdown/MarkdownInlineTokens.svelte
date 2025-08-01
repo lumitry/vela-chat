@@ -19,7 +19,7 @@
 	export let tokens: Token[];
 	export let onSourceClick: Function = () => {};
 
-	const hexColorRegex = /(#[0-9a-fA-F]{3,8})\b/g;
+	const hexColorRegex = /(#[0-9a-fA-F]{6,8})\b/g;
 </script>
 
 {#each tokens as token}
