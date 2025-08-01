@@ -1,13 +1,14 @@
 <script lang="ts">
 	import DOMPurify from 'dompurify';
 	import { createEventDispatcher, onMount, getContext } from 'svelte';
+	import { toast } from 'svelte-sonner';
 	const i18n = getContext('i18n');
 
 	import fileSaver from 'file-saver';
 	const { saveAs } = fileSaver;
 
 	import { marked, type Token } from 'marked';
-	import { unescapeHtml } from '$lib/utils';
+	import { unescapeHtml, copyToClipboard } from '$lib/utils';
 
 	import { WEBUI_BASE_URL } from '$lib/constants';
 
@@ -18,6 +19,7 @@
 	import Collapsible from '$lib/components/common/Collapsible.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import ArrowDownTray from '$lib/components/icons/ArrowDownTray.svelte';
+	import Clipboard from '$lib/components/icons/Clipboard.svelte';
 
 	import Source from './Source.svelte';
 	import { settings } from '$lib/stores';
@@ -72,6 +74,36 @@
 
 		// Use FileSaver.js's saveAs function to save the generated CSV file.
 		saveAs(blob, `table-${id}-${tokenIdx}.csv`);
+	};
+
+	const copyTableToClipboardHandler = (token) => {
+		console.log('Copying table to clipboard');
+
+		// Extract header row text for markdown
+		const headerRow = token.header.map((headerCell) => headerCell.text).join(' | ');
+
+		// Create separator row for markdown table
+		const separatorRow = token.header.map(() => '---').join(' | ');
+
+		// Extract data rows
+		const dataRows = token.rows.map((row) =>
+			row
+				.map((cell) => {
+					// Map tokens into a single text
+					return cell.tokens.map((token) => token.text).join('');
+				})
+				.join(' | ')
+		);
+
+		// Combine all parts to create markdown table
+		const markdownTable = [
+			`| ${headerRow} |`,
+			`| ${separatorRow} |`,
+			...dataRows.map((row) => `| ${row} |`)
+		].join('\n');
+
+		copyToClipboard(markdownTable);
+		toast.success($i18n.t('Copied to clipboard'));
 	};
 </script>
 
@@ -160,17 +192,30 @@
 			</div>
 
 			<div class=" absolute top-1 right-1.5 z-20 invisible group-hover:visible">
-				<Tooltip content={$i18n.t('Export to CSV')}>
-					<button
-						class="p-1 rounded-lg bg-transparent transition"
-						on:click={(e) => {
-							e.stopPropagation();
-							exportTableToCSVHandler(token, tokenIdx);
-						}}
-					>
-						<ArrowDownTray className=" size-3.5" strokeWidth="1.5" />
-					</button>
-				</Tooltip>
+				<div class="flex gap-1">
+					<Tooltip content={$i18n.t('Copy table to clipboard')}>
+						<button
+							class="p-1 rounded-lg bg-transparent transition"
+							on:click={(e) => {
+								e.stopPropagation();
+								copyTableToClipboardHandler(token);
+							}}
+						>
+							<Clipboard className=" size-3.5" strokeWidth="1.5" />
+						</button>
+					</Tooltip>
+					<Tooltip content={$i18n.t('Export to CSV')}>
+						<button
+							class="p-1 rounded-lg bg-transparent transition"
+							on:click={(e) => {
+								e.stopPropagation();
+								exportTableToCSVHandler(token, tokenIdx);
+							}}
+						>
+							<ArrowDownTray className=" size-3.5" strokeWidth="1.5" />
+						</button>
+					</Tooltip>
+				</div>
 			</div>
 		</div>
 	{:else if token.type === 'blockquote'}
