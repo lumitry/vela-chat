@@ -39,6 +39,10 @@
 		}
 	};
 
+	const isModelHidden = (model: any) => {
+		return model?.meta?.hidden === true || model?.info?.meta?.hidden === true;
+	};
+
 	$: if (modelIds) {
 		init();
 	}
@@ -63,14 +67,22 @@
 {#if modelIds.length > 0}
 	<div class="flex flex-col -translate-x-1" bind:this={modelListElement}>
 		{#each modelIds as modelId, modelIdx (modelId)}
-			<div class=" flex gap-2 w-full justify-between items-center" id="model-item-{modelId}">
+			{@const model = $models.find((m) => m.id === modelId)}
+			{@const isHidden = isModelHidden(model)}
+			<div
+				class=" flex gap-2 w-full justify-between items-center"
+				id="model-item-{modelId}"
+				class:opacity-70={isHidden}
+			>
 				<Tooltip content={modelId} placement="top-start">
 					<div class="flex items-center gap-1 flex-1">
-						<EllipsisVertical className="size-4 cursor-move item-handle" />
+						<div class="size-4 cursor-move item-handle" class:text-gray-400={isHidden}>
+							<EllipsisVertical className="size-4" />
+						</div>
 
-						<div class=" text-sm flex-1 py-1 rounded-lg">
-							{#if $models.find((model) => model.id === modelId)}
-								{$models.find((model) => model.id === modelId)?.name}
+						<div class=" text-sm flex-1 py-1 rounded-lg" class:text-gray-500={isHidden}>
+							{#if model}
+								{model.name}
 							{:else}
 								{modelId}
 							{/if}
