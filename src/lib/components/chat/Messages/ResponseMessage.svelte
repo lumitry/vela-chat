@@ -1453,6 +1453,44 @@
 								{/if}
 							{/if}
 						{/if}
+
+						{#if message.usage && message.done}
+							{@const tokensPerSecond =
+								message.usage['response_token/s'] || message.usage.estimates?.tokens_per_second}
+							{@const promptTokens = message.usage.prompt_eval_count || message.usage.prompt_tokens}
+							{@const completionTokens =
+								message.usage.eval_count || message.usage.completion_tokens}
+							{@const reasoningTokens = message.usage.completion_tokens_details?.reasoning_tokens}
+							{@const generationTime = message.usage.eval_duration
+								? message.usage.eval_duration / 1000000000
+								: message.usage.estimates?.generation_time}
+
+							{#if tokensPerSecond || promptTokens || completionTokens || generationTime}
+								<div
+									class="text-xs text-gray-500 dark:text-gray-400 ml-2 flex items-center gap-2 whitespace-nowrap"
+								>
+									{#if tokensPerSecond}
+										<span>{tokensPerSecond.toFixed(2)} TPS</span>
+									{/if}
+									{#if promptTokens}
+										{#if tokensPerSecond}<span>•</span>{/if}
+										<span>{promptTokens} prompt</span>
+									{/if}
+									{#if completionTokens}
+										{#if tokensPerSecond || promptTokens}<span>•</span>{/if}
+										<span
+											>{completionTokens} comp{reasoningTokens
+												? ` (+ ${reasoningTokens} CoT)`
+												: ''}</span
+										>
+									{/if}
+									{#if generationTime}
+										{#if tokensPerSecond || promptTokens || completionTokens}<span>•</span>{/if}
+										<span>{generationTime.toFixed(2)}s</span>
+									{/if}
+								</div>
+							{/if}
+						{/if}
 					</div>
 
 					{#if message.done && showRateComment}
