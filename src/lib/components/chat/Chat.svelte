@@ -1230,39 +1230,45 @@
 			message.arena = true;
 		}
 		if (usage) {
-			// Calculate ESTIMATED tokens per second
-			let shouldCalculate = false;
-			let elapsedSeconds = 0;
-			usage.estimates = {};
+			// Check if this is an Ollama response that already has detailed metrics
+			const hasOllamaMetrics =
+				usage['response_token/s'] || usage.eval_duration || usage.prompt_eval_count;
 
-			if (isStreamingResponse) {
-				// For streaming: only calculate if we received the first token
-				shouldCalculate = firstTokenReceived && tokenTimerStart > 0;
-				elapsedSeconds = (performance.now() - tokenTimerStart) / 1000;
-			} else {
-				// For non-streaming: timer was started when request was made
-				shouldCalculate = tokenTimerStart > 0;
-				elapsedSeconds = (performance.now() - tokenTimerStart) / 1000;
-			}
+			if (!hasOllamaMetrics) {
+				// Calculate ESTIMATED tokens per second for non-Ollama responses
+				let shouldCalculate = false;
+				let elapsedSeconds = 0;
+				usage.estimates = {};
 
-			if (shouldCalculate) {
-				let completionTokens = usage.completion_tokens || 0;
-				// If reasoning tokens are available, add them to completion tokens for a more accurate count
-				if (usage.completion_tokens_details?.reasoning_tokens) {
-					completionTokens += usage.completion_tokens_details.reasoning_tokens;
+				if (isStreamingResponse) {
+					// For streaming: only calculate if we received the first token
+					shouldCalculate = firstTokenReceived && tokenTimerStart > 0;
+					elapsedSeconds = (performance.now() - tokenTimerStart) / 1000;
+				} else {
+					// For non-streaming: timer was started when request was made
+					shouldCalculate = tokenTimerStart > 0;
+					elapsedSeconds = (performance.now() - tokenTimerStart) / 1000;
 				}
-				usage.estimates.tokens_per_second = parseFloat(
-					(completionTokens / Math.max(elapsedSeconds, 0.001)).toFixed(2)
-				);
-				console.log(
-					`Estimated tokens per second: ${usage.estimates.tokens_per_second} from ${elapsedSeconds}s and ${completionTokens} tokens`
-				);
-				usage.estimates.generation_time = parseFloat(elapsedSeconds.toFixed(3));
-			}
 
-			// Add time to first token metric for streaming responses
-			if (isStreamingResponse && message.time_to_first_token !== undefined) {
-				usage.estimates.time_to_first_token = message.time_to_first_token;
+				if (shouldCalculate) {
+					let completionTokens = usage.completion_tokens || 0;
+					// If reasoning tokens are available, add them to completion tokens for a more accurate count
+					if (usage.completion_tokens_details?.reasoning_tokens) {
+						completionTokens += usage.completion_tokens_details.reasoning_tokens;
+					}
+					usage.estimates.tokens_per_second = parseFloat(
+						(completionTokens / Math.max(elapsedSeconds, 0.001)).toFixed(2)
+					);
+					console.log(
+						`Estimated tokens per second: ${usage.estimates.tokens_per_second} from ${elapsedSeconds}s and ${completionTokens} tokens`
+					);
+					usage.estimates.generation_time = parseFloat(elapsedSeconds.toFixed(3));
+				}
+
+				// Add time to first token metric for streaming responses
+				if (isStreamingResponse && message.time_to_first_token !== undefined) {
+					usage.estimates.time_to_first_token = message.time_to_first_token;
+				}
 			}
 
 			message.usage = usage;
