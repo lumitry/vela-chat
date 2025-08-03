@@ -142,6 +142,9 @@
 
 	// Module-level timer for token speed calculation
 	let tokenTimerStart = 0;
+	let firstTokenReceived = false;
+	let isStreamingResponse = false;
+	let streamRequestStart = 0; // Timer for when streaming request was initiated
 
 	// Load chat and handle message linking, triggered when chatIdProp changes
 	async function loadAndLink() {
@@ -1122,11 +1125,23 @@
 
 		if (choices) {
 			if (choices[0]?.message?.content) {
-				// Non-stream response
+				// Non-stream response - timer was already started when request was made
 				message.content += choices[0]?.message?.content;
 			} else {
 				// Stream response
 				let value = choices[0]?.delta?.content ?? '';
+				// Start timing on first received delta (even if it's just whitespace/newline)
+				if (!firstTokenReceived) {
+					firstTokenReceived = true;
+					tokenTimerStart = performance.now();
+					// Calculate time to first token for streaming responses
+					if (isStreamingResponse && streamRequestStart > 0) {
+						const ttft = (tokenTimerStart - streamRequestStart) / 1000; // Convert to seconds
+						// Store TTFT in the message for later injection into usage
+						message.time_to_first_token = parseFloat(ttft.toFixed(3));
+					}
+				}
+
 				if (message.content == '' && value == '\n') {
 					console.log('Empty response');
 				} else {
@@ -1161,9 +1176,25 @@
 				}
 			}
 		}
-
 		if (content) {
 			// REALTIME_CHAT_SAVE is disabled
+
+			if (isStreamingResponse) {
+				// For streaming responses, start timing on first content
+				if (!firstTokenReceived) {
+					firstTokenReceived = true;
+					tokenTimerStart = performance.now();
+
+					// Calculate time to first token for streaming responses
+					if (streamRequestStart > 0) {
+						const ttft = (tokenTimerStart - streamRequestStart) / 1000; // Convert to seconds
+						// Store TTFT in the message for later injection into usage
+						message.time_to_first_token = parseFloat(ttft.toFixed(3));
+					}
+				}
+			}
+			// For non-streaming, timer was already started when request was made
+
 			message.content = content;
 
 			if (navigator.vibrate && ($settings?.hapticFeedback ?? false)) {
@@ -1200,15 +1231,40 @@
 		}
 		if (usage) {
 			// Calculate ESTIMATED tokens per second
-			const elapsedSeconds = (performance.now() - tokenTimerStart) / 1000;
-			let completionTokens = usage.completion_tokens || 0;
-			// If reasoning tokens are available, add them to completion tokens for a more accurate count
-			if (usage.completion_tokens_details?.reasoning_tokens) {
-				completionTokens += usage.completion_tokens_details.reasoning_tokens;
+			let shouldCalculate = false;
+			let elapsedSeconds = 0;
+			usage.estimates = {};
+
+			if (isStreamingResponse) {
+				// For streaming: only calculate if we received the first token
+				shouldCalculate = firstTokenReceived && tokenTimerStart > 0;
+				elapsedSeconds = (performance.now() - tokenTimerStart) / 1000;
+			} else {
+				// For non-streaming: timer was started when request was made
+				shouldCalculate = tokenTimerStart > 0;
+				elapsedSeconds = (performance.now() - tokenTimerStart) / 1000;
 			}
-			usage.tokens_per_second = parseFloat(
-				(completionTokens / Math.max(elapsedSeconds, 0.001)).toFixed(2)
-			);
+
+			if (shouldCalculate) {
+				let completionTokens = usage.completion_tokens || 0;
+				// If reasoning tokens are available, add them to completion tokens for a more accurate count
+				if (usage.completion_tokens_details?.reasoning_tokens) {
+					completionTokens += usage.completion_tokens_details.reasoning_tokens;
+				}
+				usage.estimates.tokens_per_second = parseFloat(
+					(completionTokens / Math.max(elapsedSeconds, 0.001)).toFixed(2)
+				);
+				console.log(
+					`Estimated tokens per second: ${usage.estimates.tokens_per_second} from ${elapsedSeconds}s and ${completionTokens} tokens`
+				);
+				usage.estimates.elapsed_seconds = parseFloat(elapsedSeconds.toFixed(3));
+			}
+
+			// Add time to first token metric for streaming responses
+			if (isStreamingResponse && message.time_to_first_token !== undefined) {
+				usage.estimates.time_to_first_token = message.time_to_first_token;
+			}
+
 			message.usage = usage;
 
 			// Update the entire chat in database when we receive completion with tokens info
@@ -1403,8 +1459,11 @@
 		parentId: string,
 		{ modelId = null, modelIdx = null, newChat = false } = {}
 	) => {
-		// Reset token timer for each new prompt
-		tokenTimerStart = performance.now();
+		// Reset token timer flag for each new prompt
+		firstTokenReceived = false;
+		tokenTimerStart = 0;
+		isStreamingResponse = false;
+		streamRequestStart = 0;
 
 		if (autoScroll) {
 			scrollToBottom();
@@ -1565,6 +1624,16 @@
 			$settings?.params?.stream_response ??
 			params?.stream_response ??
 			true;
+
+		// Track if this is a streaming response and start timer for non-streaming
+		isStreamingResponse = stream;
+		if (!isStreamingResponse) {
+			// For non-streaming responses, start timer when request is made
+			tokenTimerStart = performance.now();
+		} else {
+			// For streaming responses, start timer to measure time to first token
+			streamRequestStart = performance.now();
+		}
 
 		let messages = [
 			params?.system || $settings.system || (responseMessage?.userContext ?? null)
@@ -1901,6 +1970,19 @@
 					if (mergedResponse.content == '' && value == '\n') {
 						continue;
 					} else {
+						// Start timing on first meaningful token for merged responses
+						if (!firstTokenReceived && value && value.trim()) {
+							firstTokenReceived = true;
+							tokenTimerStart = performance.now();
+
+							// Calculate time to first token for merged streaming responses
+							if (isStreamingResponse && streamRequestStart > 0) {
+								const ttft = (tokenTimerStart - streamRequestStart) / 1000; // Convert to seconds
+								// Store TTFT in the message for later injection into usage
+								message.time_to_first_token = parseFloat(ttft.toFixed(3));
+							}
+						}
+
 						mergedResponse.content += value;
 						history.messages[messageId] = message;
 					}
