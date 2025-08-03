@@ -1475,7 +1475,11 @@
 									{/if}
 									{#if totalCost}
 										{#if tokensPerSecond}<span>•</span>{/if}
-										<span>${totalCost.toFixed(6)}</span>
+										<span
+											>{totalCost < 0.1 // less than $0.1 AKA 10 cents
+												? `${(totalCost * 100).toFixed(4)}¢`
+												: `$${totalCost.toFixed(6)}`}</span
+										>
 									{/if}
 									{#if promptTokens}
 										{#if tokensPerSecond || totalCost}<span>•</span>{/if}
