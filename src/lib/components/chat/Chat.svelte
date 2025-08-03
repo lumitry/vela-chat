@@ -1257,7 +1257,7 @@
 				console.log(
 					`Estimated tokens per second: ${usage.estimates.tokens_per_second} from ${elapsedSeconds}s and ${completionTokens} tokens`
 				);
-				usage.estimates.elapsed_seconds = parseFloat(elapsedSeconds.toFixed(3));
+				usage.estimates.generation_time = parseFloat(elapsedSeconds.toFixed(3));
 			}
 
 			// Add time to first token metric for streaming responses
