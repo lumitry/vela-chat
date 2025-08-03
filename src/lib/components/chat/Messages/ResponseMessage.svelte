@@ -1464,28 +1464,35 @@
 							{@const generationTime = message.usage.eval_duration
 								? message.usage.eval_duration / 1000000000
 								: message.usage.estimates?.generation_time}
+							{@const totalCost = message.usage.estimates?.total_cost}
 
-							{#if tokensPerSecond || promptTokens || completionTokens || generationTime}
+							{#if tokensPerSecond || totalCost || promptTokens || completionTokens || generationTime}
 								<div
 									class="text-xs text-gray-500 dark:text-gray-400 ml-2 flex items-center gap-2 whitespace-nowrap"
 								>
 									{#if tokensPerSecond}
 										<span>{tokensPerSecond.toFixed(2)} TPS</span>
 									{/if}
-									{#if promptTokens}
+									{#if totalCost}
 										{#if tokensPerSecond}<span>•</span>{/if}
-										<span>{promptTokens} prompt</span>
+										<span>${totalCost.toFixed(6)}</span>
+									{/if}
+									{#if promptTokens}
+										{#if tokensPerSecond || totalCost}<span>•</span>{/if}
+										<span>{promptTokens} in</span>
 									{/if}
 									{#if completionTokens}
-										{#if tokensPerSecond || promptTokens}<span>•</span>{/if}
+										{#if tokensPerSecond || totalCost || promptTokens}<span>•</span>{/if}
 										<span
-											>{completionTokens} comp{reasoningTokens
+											>{completionTokens} out{reasoningTokens
 												? ` (+ ${reasoningTokens} CoT)`
 												: ''}</span
 										>
 									{/if}
 									{#if generationTime}
-										{#if tokensPerSecond || promptTokens || completionTokens}<span>•</span>{/if}
+										{#if tokensPerSecond || totalCost || promptTokens || completionTokens}<span
+												>•</span
+											>{/if}
 										<span>{generationTime.toFixed(2)}s</span>
 									{/if}
 								</div>

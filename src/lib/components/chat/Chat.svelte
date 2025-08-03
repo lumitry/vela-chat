@@ -1259,10 +1259,37 @@
 					usage.estimates.tokens_per_second = parseFloat(
 						(completionTokens / Math.max(elapsedSeconds, 0.001)).toFixed(2)
 					);
-					console.log(
-						`Estimated tokens per second: ${usage.estimates.tokens_per_second} from ${elapsedSeconds}s and ${completionTokens} tokens`
-					);
+					// console.log(
+					// 	`Estimated tokens per second: ${usage.estimates.tokens_per_second} from ${elapsedSeconds}s and ${completionTokens} tokens`
+					// );
 					usage.estimates.generation_time = parseFloat(elapsedSeconds.toFixed(3));
+				}
+
+				// Calculate cost estimates if model pricing is available
+				const model = $models.find((m) => m.id === message.model);
+				// console.log('Model for cost estimates:', model);
+				const inputTokens = usage.prompt_tokens || 0;
+				const outputTokens =
+					(usage.completion_tokens || 0) + (usage.completion_tokens_details?.reasoning_tokens || 0);
+
+				// Safely access pricing with proper null checking
+				const inputPrice = model?.info?.meta?.model_details?.price_per_1m_input_tokens;
+				const outputPrice = model?.info?.meta?.model_details?.price_per_1m_output_tokens;
+
+				if (inputPrice && typeof inputPrice === 'number' && inputTokens > 0) {
+					usage.estimates.input_cost = (inputTokens / 1_000_000) * inputPrice;
+				}
+
+				if (outputPrice && typeof outputPrice === 'number' && outputTokens > 0) {
+					usage.estimates.output_cost = (outputTokens / 1_000_000) * outputPrice;
+				}
+
+				if (usage.estimates.input_cost !== undefined && usage.estimates.output_cost !== undefined) {
+					usage.estimates.total_cost = usage.estimates.input_cost + usage.estimates.output_cost;
+				} else if (usage.estimates.input_cost !== undefined) {
+					usage.estimates.total_cost = usage.estimates.input_cost;
+				} else if (usage.estimates.output_cost !== undefined) {
+					usage.estimates.total_cost = usage.estimates.output_cost;
 				}
 
 				// Add time to first token metric for streaming responses
