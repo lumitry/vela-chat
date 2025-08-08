@@ -314,6 +314,7 @@
 						bind:value={params.reasoning.effort}
 						autocomplete="off"
 					/>
+					<!-- TODO: make this a select box (minimal, low, medium, high; see ModelEditor.svelte) -->
 				</div>
 			</div>
 		{/if}

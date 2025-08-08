@@ -978,6 +978,8 @@
 											bind:value={modelDetails.reasoning_effort}
 										>
 											<option value={null}>None</option>
+											<option value="minimal">Minimal</option>
+											<!-- (minimal is only available on GPT-5 at the moment) -->
 											<option value="low">Low</option>
 											<option value="medium">Medium</option>
 											<option value="high">High</option>
