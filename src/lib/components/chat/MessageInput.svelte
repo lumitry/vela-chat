@@ -57,6 +57,7 @@
 	import { KokoroWorker } from '$lib/workers/KokoroWorker';
 	import ToolServersModal from './ToolServersModal.svelte';
 	import Wrench from '../icons/Wrench.svelte';
+	import ChatBubbleOvalEllipsis from '../icons/ChatBubbleOvalEllipsis.svelte';
 
 	import {
 		isReasoningCapable,
@@ -115,7 +116,8 @@
 		files,
 		selectedToolIds,
 		imageGenerationEnabled,
-		webSearchEnabled
+		webSearchEnabled,
+		verbosity: history?.verbosity
 	});
 
 	// Load reasoning state when history changes
@@ -235,6 +237,31 @@
 		if (!effort) return 'Default';
 		return effort.charAt(0).toUpperCase() + effort.slice(1);
 	})(currentModel); // Toggle reasoning mode or open effort menu
+
+	// Verbosity functionality
+	$: supportsVerbosity = currentModel?.info?.meta?.capabilities?.verbosity === true;
+
+	// Initialize verbosity to medium if not set
+	$: if (supportsVerbosity && history && !history.verbosity) {
+		history.verbosity = 'medium';
+	}
+
+	// Get current verbosity display text
+	$: currentVerbosityDisplay = ((currentModel) => {
+		// including currentModel so that this updates on model change
+		const verbosity = history?.verbosity ?? 'medium';
+		return verbosity.charAt(0).toUpperCase() + verbosity.slice(1);
+	})(currentModel);
+
+	// Apply selected verbosity choice
+	const applyVerbosityChoice = (verbosity: 'low' | 'medium' | 'high') => {
+		if (!currentModel) return;
+
+		// Update verbosity setting on history so message creation can add it to the request body
+		if (history) {
+			history.verbosity = verbosity;
+		}
+	};
 
 	const toggleReasoningMode = () => {
 		console.log('toggleReasoningMode called:', {
@@ -1753,6 +1780,110 @@
 															</button>
 														</Tooltip>
 													{/if}
+												{/if}
+
+												<!-- Verbosity dropdown -->
+												{#if supportsVerbosity}
+													<DropdownMenu.Root>
+														<DropdownMenu.Trigger asChild let:builder>
+															<Tooltip content={$i18n.t('Select verbosity level')} placement="top">
+																<button
+																	use:builder.action
+																	{...builder}
+																	type="button"
+																	class="px-1.5 @xl:px-2.5 py-1.5 flex gap-1.5 items-center text-sm rounded-full font-medium transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden border bg-transparent border-transparent text-gray-600 dark:text-gray-300 border-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800"
+																>
+																	<ChatBubbleOvalEllipsis className="size-5" strokeWidth="1.75" />
+																	<span
+																		class="hidden @xl:block whitespace-nowrap overflow-hidden text-ellipsis translate-y-[0.5px]"
+																		>{currentVerbosityDisplay}...</span
+																	>
+																</button>
+															</Tooltip>
+														</DropdownMenu.Trigger>
+
+														<DropdownMenu.Content
+															class="w-44 rounded-xl px-1 py-1 border border-gray-300/30 dark:border-gray-700/50 z-50 bg-white dark:bg-gray-850 dark:text-white shadow-lg"
+															sideOffset={10}
+															alignOffset={0}
+															side="top"
+															align="end"
+															transition={flyAndScale}
+														>
+															<DropdownMenu.Item
+																class="flex gap-2 items-center px-3 py-1.5 text-sm font-medium cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl {history?.verbosity ===
+																'low'
+																	? 'bg-gray-50 dark:bg-gray-700/50'
+																	: ''}"
+																on:click={() => applyVerbosityChoice('low')}
+															>
+																<div class="w-4 h-4 flex items-center justify-center">
+																	{#if history?.verbosity === 'low'}
+																		<svg
+																			class="w-3 h-3 text-grey-900"
+																			fill="currentColor"
+																			viewBox="0 0 20 20"
+																		>
+																			<path
+																				fill-rule="evenodd"
+																				d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+																				clip-rule="evenodd"
+																			/>
+																		</svg>
+																	{/if}
+																</div>
+																Low
+															</DropdownMenu.Item>
+															<DropdownMenu.Item
+																class="flex gap-2 items-center px-3 py-1.5 text-sm font-medium cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl {history?.verbosity ===
+																'medium'
+																	? 'bg-gray-50 dark:bg-gray-700/50'
+																	: ''}"
+																on:click={() => applyVerbosityChoice('medium')}
+															>
+																<div class="w-4 h-4 flex items-center justify-center">
+																	{#if history?.verbosity === 'medium'}
+																		<svg
+																			class="w-3 h-3 text-grey-900"
+																			fill="currentColor"
+																			viewBox="0 0 20 20"
+																		>
+																			<path
+																				fill-rule="evenodd"
+																				d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+																				clip-rule="evenodd"
+																			/>
+																		</svg>
+																	{/if}
+																</div>
+																Medium
+															</DropdownMenu.Item>
+															<DropdownMenu.Item
+																class="flex gap-2 items-center px-3 py-1.5 text-sm font-medium cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl {history?.verbosity ===
+																'high'
+																	? 'bg-gray-50 dark:bg-gray-700/50'
+																	: ''}"
+																on:click={() => applyVerbosityChoice('high')}
+															>
+																<div class="w-4 h-4 flex items-center justify-center">
+																	{#if history?.verbosity === 'high'}
+																		<svg
+																			class="w-3 h-3 text-grey-900"
+																			fill="currentColor"
+																			viewBox="0 0 20 20"
+																		>
+																			<path
+																				fill-rule="evenodd"
+																				d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+																				clip-rule="evenodd"
+																			/>
+																		</svg>
+																	{/if}
+																</div>
+																High
+															</DropdownMenu.Item>
+														</DropdownMenu.Content>
+													</DropdownMenu.Root>
 												{/if}
 											{/if}
 										</div>

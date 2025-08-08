@@ -1756,7 +1756,8 @@
 							delete existingReasoning.max_tokens;
 						}
 
-						return {
+						// Apply verbosity if model supports it
+						let finalParams = {
 							...baseParams,
 							...(Object.keys(existingReasoning).length > 0
 								? { reasoning: existingReasoning }
@@ -1765,15 +1766,29 @@
 							keep_alive: $settings.keepAlive ?? undefined,
 							stop: normalizedStop
 						};
+
+						// Add verbosity parameter if supported
+						if (model?.info?.meta?.capabilities?.verbosity && history?.verbosity) {
+							finalParams.verbosity = history.verbosity;
+						}
+
+						return finalParams;
 					}
 
 					// Default case: let backend handle parameter merging
-					return {
+					let finalParams = {
 						...baseParams,
 						format: $settings.requestFormat ?? undefined,
 						keep_alive: $settings.keepAlive ?? undefined,
 						stop: normalizedStop
 					};
+
+					// Add verbosity parameter if supported
+					if (model?.info?.meta?.capabilities?.verbosity && history?.verbosity) {
+						finalParams.verbosity = history.verbosity;
+					}
+
+					return finalParams;
 				})(),
 
 				files: (files?.length ?? 0) > 0 ? files : undefined,

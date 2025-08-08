@@ -72,6 +72,7 @@ def apply_model_params_to_body_openai(params: dict, form_data: dict) -> dict:
         "logit_bias": lambda x: x,
         "response_format": dict,
         "provider": lambda x: transform_provider_params(x), # NOTE: It seems like this is never called? I tried hardcoding things and it didn't work.
+        "verbosity": str,
     }
     return apply_model_params_to_body(params, form_data, mappings)
 

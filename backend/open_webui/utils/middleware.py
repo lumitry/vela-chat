@@ -671,6 +671,9 @@ def apply_params_to_form_data(form_data, model):
         if "reasoning" in params and params["reasoning"] is not None:
             form_data["reasoning"] = params["reasoning"]
 
+        if "verbosity" in params and params["verbosity"] is not None:
+            form_data["verbosity"] = params["verbosity"]
+
         if "provider" in params and params["provider"] is not None:
             # Transform provider parameters (convert comma-separated strings to arrays)
             provider_params = params["provider"]
