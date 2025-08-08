@@ -47,7 +47,14 @@ def apply_model_params_to_body(
 
     for key, cast_func in mappings.items():
         if (value := params.get(key)) is not None:
-            form_data[key] = cast_func(value)
+            # Special handling for reasoning: merge instead of replace
+            if key == "reasoning" and key in form_data and isinstance(form_data[key], dict):
+                # Merge model params reasoning with existing frontend reasoning
+                # Frontend reasoning takes precedence
+                merged_reasoning = {**cast_func(value), **form_data[key]}
+                form_data[key] = merged_reasoning
+            else:
+                form_data[key] = cast_func(value)
 
     return form_data
 

@@ -3,7 +3,6 @@ import type { Model } from '$lib/stores';
 export interface ReasoningBehavior {
 	type: 'change_model' | 'set_effort' | 'set_max_tokens' | 'toggle_think_prompt';
 	target_model?: string;
-	reasoning_effort?: 'low' | 'medium' | 'high';
 	max_tokens?: number;
 	reasoning_prompt?: string;
 	reasoning_system_prompt?: string;
@@ -17,7 +16,6 @@ export interface ModelDetails {
 	price_per_1k_images?: number;
 	reasoning_behavior?: string; // This is a simple string like 'change_model', 'set_effort', etc.
 	reasoning_target_model?: string;
-	reasoning_effort?: string | null;
 	reasoning_max_tokens?: number | null;
 }
 
@@ -99,7 +97,8 @@ export function isReasoningCapable(model: Model, availableModels: Model[]): bool
 export function shouldIlluminateThinking(
 	model: Model,
 	availableModels: Model[],
-	currentReasoningState?: ReasoningState
+	currentReasoningState?: ReasoningState,
+	currentEffort?: string | null
 ): boolean {
 	// If we're in thinking mode, illuminate the button if we're on the reasoning model
 	if (currentReasoningState?.isThinkingMode) {
@@ -126,6 +125,7 @@ export function shouldIlluminateThinking(
 	if (!modelDetails) {
 		return false;
 	}
+	// console.log(currentReasoningState);
 
 	// If model has reasoning behavior configured, check if it should be illuminated
 	if (modelDetails.reasoning_behavior && modelDetails.reasoning_behavior !== 'none') {
@@ -135,9 +135,18 @@ export function shouldIlluminateThinking(
 			return modelDetails.response_structure === 'Native Chain-of-Thought Reasoning';
 		}
 
+		if (modelDetails.reasoning_behavior === 'set_effort') {
+			// For set_effort models, illuminate if:
+			// 1. The model has Native CoT response structure, OR
+			// 2. There's a non-null effort value set (indicating reasoning is active)
+			const hasNativeCoT = modelDetails.response_structure === 'Native Chain-of-Thought Reasoning';
+			const hasActiveEffort = !!(currentEffort && currentEffort !== null);
+			
+			return hasNativeCoT || hasActiveEffort;
+		}
+
 		// For other behaviors, illuminate if model has non-classical response
 		if (
-			modelDetails.reasoning_behavior === 'set_effort' ||
 			modelDetails.reasoning_behavior === 'set_max_tokens' ||
 			modelDetails.reasoning_behavior === 'toggle_think_prompt'
 		) {
@@ -270,17 +279,7 @@ export function applyReasoningConfiguration(model: Model, reasoningState: Reason
 
 	const updates: any = {};
 
-	// For reasoning effort, update the model configuration
     // TODO: does this work? implement it in MessageInput.svelte
-    // I'm specifically worried about making sure models where the user has already set the model's default effort (e.g. to "high"):
-    // 1) get seen as reasoning models
-    // 2) get the correct reasoning effort applied (e.g. None(AKA null))
-    // For example, will this require checking the model's default reasoning effort in shouldIlluminateThinking etc. to see if it's set to reason by default?
-    // In an ideal world, users would create workspace models with the reasoning effort set to whatever they wanted it to be and just use the switch model behavior instead, but that's so much work. This would be a far simpler UX.
-	if (modelDetails.reasoning_behavior === 'set_effort' && modelDetails.reasoning_effort) {
-		// This would typically map to specific model parameters
-		updates.reasoning_effort = modelDetails.reasoning_effort;
-	}
 
 	// For max tokens, update the model configuration
 	if (modelDetails.reasoning_behavior === 'set_max_tokens' && modelDetails.reasoning_max_tokens) {

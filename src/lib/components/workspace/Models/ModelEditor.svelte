@@ -95,7 +95,6 @@
 		price_per_1k_images: null as number | null,
 		reasoning_behavior: 'none' as string,
 		reasoning_target_model: null as string | null,
-		reasoning_effort: null as number | null,
 		reasoning_max_tokens: null as number | null
 	};
 
@@ -139,7 +138,6 @@
 			modelDetails.response_structure !== 'Classical' ||
 			modelDetails.reasoning_behavior !== 'none' ||
 			modelDetails.reasoning_target_model !== null ||
-			modelDetails.reasoning_effort !== null ||
 			modelDetails.reasoning_max_tokens !== null
 		) {
 			info.meta.model_details = modelDetails;
@@ -946,7 +944,7 @@
 									>
 										<option value="none">None (default behavior)</option>
 										<option value="change_model">Change model</option>
-										<option value="set_effort">Set reasoning.effort in request</option>
+										<option value="set_effort">Show a reasoning.effort selector</option>
 										<option value="set_max_tokens">Set reasoning.max_tokens in request</option>
 										<option value="toggle_think_prompt"
 											>Toggle /think and /no_think in prompt</option
@@ -967,26 +965,6 @@
 												>
 											{/each}
 										</select>
-									</div>
-								{/if}
-
-								{#if modelDetails.reasoning_behavior === 'set_effort'}
-									<div>
-										<div class="text-xs font-semibold mb-1">{$i18n.t('Reasoning Effort')}</div>
-										<select
-											class="text-sm w-full bg-transparent outline-hidden p-2 border border-gray-200 dark:border-gray-700 rounded-lg"
-											bind:value={modelDetails.reasoning_effort}
-										>
-											<option value={null}>None</option>
-											<option value="minimal">Minimal</option>
-											<!-- (minimal is only available on GPT-5 at the moment) -->
-											<option value="low">Low</option>
-											<option value="medium">Medium</option>
-											<option value="high">High</option>
-										</select>
-										<div class="text-xs text-gray-500 mt-1">
-											{$i18n.t('How much effort to put into reasoning steps')}
-										</div>
 									</div>
 								{/if}
 

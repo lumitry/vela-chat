@@ -1727,19 +1727,54 @@
 				stream: stream,
 				model: model.id,
 				messages: messages,
-				params: {
-					...$settings?.params,
-					...params,
-
-					format: $settings.requestFormat ?? undefined,
-					keep_alive: $settings.keepAlive ?? undefined,
-					stop:
+				params: (() => {
+					// Base merge of user/settings params
+					const baseParams = { ...($settings?.params ?? {}), ...(params ?? {}) };
+					// Normalize stop tokens
+					const normalizedStop =
 						(params?.stop ?? $settings?.params?.stop ?? undefined)
 							? (params?.stop.split(',').map((token) => token.trim()) ?? $settings.params.stop).map(
 									(str) => decodeURIComponent(JSON.parse('"' + str.replace(/\"/g, '\\"') + '"'))
 								)
-							: undefined
-				},
+							: undefined;
+
+					// Apply set_effort behavior override if configured on the model
+					const details = (model?.info?.meta as any)?.model_details;
+					if (details?.reasoning_behavior === 'set_effort') {
+						const selectedEffort = history?.reasoningEffort ?? null;
+						const existingReasoning = { ...(baseParams?.reasoning ?? {}) };
+
+						if (selectedEffort === null) {
+							// Remove effort key if present
+							delete existingReasoning.effort;
+						} else {
+							existingReasoning.effort = selectedEffort;
+						}
+
+						// Remove null max_tokens to avoid edge cases
+						if (existingReasoning.max_tokens === null) {
+							delete existingReasoning.max_tokens;
+						}
+
+						return {
+							...baseParams,
+							...(Object.keys(existingReasoning).length > 0
+								? { reasoning: existingReasoning }
+								: {}),
+							format: $settings.requestFormat ?? undefined,
+							keep_alive: $settings.keepAlive ?? undefined,
+							stop: normalizedStop
+						};
+					}
+
+					// Default case: let backend handle parameter merging
+					return {
+						...baseParams,
+						format: $settings.requestFormat ?? undefined,
+						keep_alive: $settings.keepAlive ?? undefined,
+						stop: normalizedStop
+					};
+				})(),
 
 				files: (files?.length ?? 0) > 0 ? files : undefined,
 				tool_ids: selectedToolIds.length > 0 ? selectedToolIds : undefined,

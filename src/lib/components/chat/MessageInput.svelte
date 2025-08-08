@@ -7,6 +7,8 @@
 
 	import { onMount, tick, getContext, createEventDispatcher, onDestroy } from 'svelte';
 	const dispatch = createEventDispatcher();
+	import { DropdownMenu } from 'bits-ui';
+	import { flyAndScale } from '$lib/utils/transitions';
 
 	import {
 		type Model,
@@ -131,7 +133,52 @@
 			// User switched to a completely different model, reset reasoning state
 			reasoningState = null;
 			persistReasoningState(history, null);
+			// Also clear any effort selection when switching models
+			if (history) {
+				delete history.reasoningEffort;
+			}
 		}
+	}
+
+	// Clear reasoning state when switching between different reasoning behavior types
+	// We need to track the previous model to detect actual model switches
+	let previousModelId: string | undefined = undefined;
+	$: if (currentModel) {
+		const currentModelId = currentModel.id;
+
+		// Only process if we have both a previous model and current model, and they're different
+		if (previousModelId && previousModelId !== currentModelId && reasoningState) {
+			const previousModel = $models.find((m) => m.id === previousModelId);
+
+			if (previousModel) {
+				const previousModelDetails = (previousModel?.info?.meta as any)?.model_details;
+				const currentModelDetails = (currentModel?.info?.meta as any)?.model_details;
+
+				// If we're switching from set_effort to non-set_effort or vice versa, clear the state
+				const prevWasSetEffort = previousModelDetails?.reasoning_behavior === 'set_effort';
+				const currentIsSetEffort = currentModelDetails?.reasoning_behavior === 'set_effort';
+
+				if (prevWasSetEffort !== currentIsSetEffort) {
+					reasoningState = null;
+					persistReasoningState(history, null);
+					if (history) {
+						delete history.reasoningEffort;
+					}
+				}
+			}
+		}
+
+		// Set default effort when switching models (only if model actually changed)
+		if (history && previousModelId !== currentModelId) {
+			const modelParams = currentModel?.info?.params as any;
+			const defaultEffort = modelParams?.reasoning?.effort;
+			if (defaultEffort && history.reasoningEffort === undefined) {
+				history.reasoningEffort = defaultEffort;
+			}
+		}
+
+		// Update the tracking variable for next time
+		previousModelId = currentModelId;
 	}
 
 	// Get the current selected model
@@ -141,7 +188,12 @@
 
 	// Determine if thinking button should be illuminated
 	$: isThinkingIlluminated = currentModel
-		? shouldIlluminateThinking(currentModel, $models, reasoningState || undefined)
+		? shouldIlluminateThinking(
+				currentModel,
+				$models,
+				reasoningState || undefined,
+				history?.reasoningEffort
+			)
 		: false;
 
 	// Determine if thinking button should be clickable
@@ -170,17 +222,38 @@
 		// });
 	}
 
-	// Toggle reasoning mode
+	// Helpers to detect behavior
+	const currentModelDetails = () => (currentModel?.info?.meta as any)?.model_details;
+	$: isSetEffortBehavior = currentModel
+		? currentModelDetails()?.reasoning_behavior === 'set_effort'
+		: false;
+
+	// Get current effort display text
+	$: currentEffortDisplay = ((currentModel) => {
+		// including currentModel so that this updates on model change
+		const effort = history?.reasoningEffort;
+		if (!effort) return 'Default';
+		return effort.charAt(0).toUpperCase() + effort.slice(1);
+	})(currentModel); // Toggle reasoning mode or open effort menu
+
 	const toggleReasoningMode = () => {
 		console.log('toggleReasoningMode called:', {
 			currentModel: currentModel?.id,
 			isThinkingEnabled,
-			reasoningState
+			reasoningState,
+			isSetEffort: isSetEffortBehavior
 		});
 
 		if (!currentModel || !isThinkingEnabled) {
 			console.log('Early return - no current model or thinking not enabled');
 			return;
+		}
+
+		// When behavior is set_effort, the dropdown will be handled by DropdownMenu component
+		// So we just handle the toggle logic for non-set_effort behaviors
+		if (isSetEffortBehavior) {
+			console.log('Early return - set_effort behavior should not call toggleReasoningMode!');
+			return; // DropdownMenu handles the UI
 		}
 
 		if (reasoningState?.isThinkingMode) {
@@ -233,6 +306,25 @@
 		}
 
 		console.log('toggleReasoningMode finished:', { reasoningState });
+	};
+
+	// Apply selected effort choice
+	const applyEffortChoice = (effort: 'minimal' | 'low' | 'medium' | 'high' | null) => {
+		if (!currentModel) return;
+
+		// Ensure we enter thinking mode state pinned to this model
+		reasoningState = {
+			isThinkingMode: effort !== null,
+			baseModel: currentModel.id,
+			reasoningModel: currentModel.id
+		};
+		persistReasoningState(history, reasoningState);
+
+		// Update model details at runtime override (stored on history for request creation layer to read)
+		// We persist the chosen effort on history so message creation can add it to the request body.
+		if (history) {
+			history.reasoningEffort = effort; // null clears, others set
+		}
 	};
 
 	let showTools = false;
@@ -1483,24 +1575,184 @@
 
 												<!-- Thinking button -->
 												{#if shouldShowThinkingButton}
-													<Tooltip content={$i18n.t('Toggle reasoning mode')} placement="top">
-														<button
-															on:click|preventDefault={toggleReasoningMode}
-															type="button"
-															disabled={!isThinkingEnabled}
-															class="px-1.5 @xl:px-2.5 py-1.5 flex gap-1.5 items-center text-sm rounded-full font-medium transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden border {isThinkingIlluminated
-																? 'bg-blue-100 dark:bg-blue-500/20 border-blue-400/20 text-blue-500 dark:text-blue-400'
-																: !isThinkingEnabled
-																	? 'bg-transparent border-transparent text-gray-400 dark:text-gray-600 cursor-not-allowed'
-																	: 'bg-transparent border-transparent text-gray-600 dark:text-gray-300 border-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'}"
-														>
-															<LightBlub className="size-5" strokeWidth="1.75" />
-															<span
-																class="hidden @xl:block whitespace-nowrap overflow-hidden text-ellipsis translate-y-[0.5px]"
-																>{$i18n.t('Thinking')}</span
+													{#if isSetEffortBehavior}
+														<!-- Set effort behavior - show dropdown -->
+														<DropdownMenu.Root>
+															<DropdownMenu.Trigger asChild let:builder>
+																<Tooltip
+																	content={$i18n.t('Select reasoning effort')}
+																	placement="top"
+																>
+																	<button
+																		use:builder.action
+																		{...builder}
+																		type="button"
+																		disabled={!isThinkingEnabled}
+																		class="px-1.5 @xl:px-2.5 py-1.5 flex gap-1.5 items-center text-sm rounded-full font-medium transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden border {isThinkingIlluminated
+																			? 'bg-blue-100 dark:bg-blue-500/20 border-blue-400/20 text-blue-500 dark:text-blue-400'
+																			: !isThinkingEnabled
+																				? 'bg-transparent border-transparent text-gray-400 dark:text-gray-600 cursor-not-allowed'
+																				: 'bg-transparent border-transparent text-gray-600 dark:text-gray-300 border-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'}"
+																	>
+																		<LightBlub className="size-5" strokeWidth="1.75" />
+																		<span
+																			class="hidden @xl:block whitespace-nowrap overflow-hidden text-ellipsis translate-y-[0.5px]"
+																			>{currentEffortDisplay}...</span
+																		>
+																	</button>
+																</Tooltip>
+															</DropdownMenu.Trigger>
+
+															<DropdownMenu.Content
+																class="w-44 rounded-xl px-1 py-1 border border-gray-300/30 dark:border-gray-700/50 z-50 bg-white dark:bg-gray-850 dark:text-white shadow-lg"
+																sideOffset={10}
+																alignOffset={0}
+																side="top"
+																align="end"
+																transition={flyAndScale}
 															>
-														</button>
-													</Tooltip>
+																<DropdownMenu.Item
+																	class="flex gap-2 items-center px-3 py-1.5 text-sm font-medium cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl {!history?.reasoningEffort
+																		? 'bg-gray-50 dark:bg-gray-700/50'
+																		: ''}"
+																	on:click={() => applyEffortChoice(null)}
+																>
+																	<div class="w-4 h-4 flex items-center justify-center">
+																		{#if !history?.reasoningEffort}
+																			<svg
+																				class="w-3 h-3 text-grey-900"
+																				fill="currentColor"
+																				viewBox="0 0 20 20"
+																			>
+																				<path
+																					fill-rule="evenodd"
+																					d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+																					clip-rule="evenodd"
+																				/>
+																			</svg>
+																		{/if}
+																	</div>
+																	Default
+																</DropdownMenu.Item>
+																<DropdownMenu.Item
+																	class="flex gap-2 items-center px-3 py-1.5 text-sm font-medium cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl {history?.reasoningEffort ===
+																	'minimal'
+																		? 'bg-gray-50 dark:bg-gray-700/50'
+																		: ''}"
+																	on:click={() => applyEffortChoice('minimal')}
+																>
+																	<div class="w-4 h-4 flex items-center justify-center">
+																		{#if history?.reasoningEffort === 'minimal'}
+																			<svg
+																				class="w-3 h-3 text-grey-900"
+																				fill="currentColor"
+																				viewBox="0 0 20 20"
+																			>
+																				<path
+																					fill-rule="evenodd"
+																					d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+																					clip-rule="evenodd"
+																				/>
+																			</svg>
+																		{/if}
+																	</div>
+																	Minimal
+																</DropdownMenu.Item>
+																<DropdownMenu.Item
+																	class="flex gap-2 items-center px-3 py-1.5 text-sm font-medium cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl {history?.reasoningEffort ===
+																	'low'
+																		? 'bg-gray-50 dark:bg-gray-700/50'
+																		: ''}"
+																	on:click={() => applyEffortChoice('low')}
+																>
+																	<div class="w-4 h-4 flex items-center justify-center">
+																		{#if history?.reasoningEffort === 'low'}
+																			<svg
+																				class="w-3 h-3 text-grey-900"
+																				fill="currentColor"
+																				viewBox="0 0 20 20"
+																			>
+																				<path
+																					fill-rule="evenodd"
+																					d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+																					clip-rule="evenodd"
+																				/>
+																			</svg>
+																		{/if}
+																	</div>
+																	Low
+																</DropdownMenu.Item>
+																<DropdownMenu.Item
+																	class="flex gap-2 items-center px-3 py-1.5 text-sm font-medium cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl {history?.reasoningEffort ===
+																	'medium'
+																		? 'bg-gray-50 dark:bg-gray-700/50'
+																		: ''}"
+																	on:click={() => applyEffortChoice('medium')}
+																>
+																	<div class="w-4 h-4 flex items-center justify-center">
+																		{#if history?.reasoningEffort === 'medium'}
+																			<svg
+																				class="w-3 h-3 text-grey-900"
+																				fill="currentColor"
+																				viewBox="0 0 20 20"
+																			>
+																				<path
+																					fill-rule="evenodd"
+																					d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+																					clip-rule="evenodd"
+																				/>
+																			</svg>
+																		{/if}
+																	</div>
+																	Medium
+																</DropdownMenu.Item>
+																<DropdownMenu.Item
+																	class="flex gap-2 items-center px-3 py-1.5 text-sm font-medium cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl {history?.reasoningEffort ===
+																	'high'
+																		? 'bg-gray-50 dark:bg-gray-700/50'
+																		: ''}"
+																	on:click={() => applyEffortChoice('high')}
+																>
+																	<div class="w-4 h-4 flex items-center justify-center">
+																		{#if history?.reasoningEffort === 'high'}
+																			<svg
+																				class="w-3 h-3 text-grey-900"
+																				fill="currentColor"
+																				viewBox="0 0 20 20"
+																			>
+																				<path
+																					fill-rule="evenodd"
+																					d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+																					clip-rule="evenodd"
+																				/>
+																			</svg>
+																		{/if}
+																	</div>
+																	High
+																</DropdownMenu.Item>
+															</DropdownMenu.Content>
+														</DropdownMenu.Root>
+													{:else}
+														<!-- Regular toggle behavior -->
+														<Tooltip content={$i18n.t('Toggle reasoning mode')} placement="top">
+															<button
+																on:click|preventDefault={toggleReasoningMode}
+																type="button"
+																disabled={!isThinkingEnabled}
+																class="px-1.5 @xl:px-2.5 py-1.5 flex gap-1.5 items-center text-sm rounded-full font-medium transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden border {isThinkingIlluminated
+																	? 'bg-blue-100 dark:bg-blue-500/20 border-blue-400/20 text-blue-500 dark:text-blue-400'
+																	: !isThinkingEnabled
+																		? 'bg-transparent border-transparent text-gray-400 dark:text-gray-600 cursor-not-allowed'
+																		: 'bg-transparent border-transparent text-gray-600 dark:text-gray-300 border-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'}"
+															>
+																<LightBlub className="size-5" strokeWidth="1.75" />
+																<span
+																	class="hidden @xl:block whitespace-nowrap overflow-hidden text-ellipsis translate-y-[0.5px]"
+																	>{$i18n.t('Thinking')}</span
+																>
+															</button>
+														</Tooltip>
+													{/if}
 												{/if}
 											{/if}
 										</div>
