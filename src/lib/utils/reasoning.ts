@@ -138,9 +138,9 @@ export function shouldIlluminateThinking(
 		if (modelDetails.reasoning_behavior === 'set_effort') {
 			// For set_effort models, illuminate if:
 			// 1. The model has Native CoT response structure, OR
-			// 2. There's a non-null effort value set (indicating reasoning is active)
+			// 2. There's an active effort value set (indicating reasoning is active)
 			const hasNativeCoT = modelDetails.response_structure === 'Native Chain-of-Thought Reasoning';
-			const hasActiveEffort = !!(currentEffort && currentEffort !== null);
+			const hasActiveEffort = !!currentEffort;
 			
 			return hasNativeCoT || hasActiveEffort;
 		}
