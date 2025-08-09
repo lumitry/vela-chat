@@ -37,7 +37,7 @@ Current enhancements include:
 - (UI) Hidden models are now shown greyed out in the admin model reorder modal
 - (enh/UX) Added copy table to clipboard button next to export to CSV button (in chat)
 - Added estimated tokens per second, TTFT, generation time, and cost to the `usage` viewer (hover over the `(I)` icon) and at the bottom of each message (will probably be toggle-able in the future)
-- Added a dropdown to chat for GPT-5's new "verbosity" parameter. Requires enabling the "Verbosity" capability on the model editor page.
+- ~~Added a dropdown to chat for GPT-5's new "verbosity" parameter. Requires enabling the "Verbosity" capability on the model editor page.~~ (Never mind, I'm getting API errors now. Verbosity [should be supported in the chat completions API](https://platform.openai.com/docs/api-reference/chat/create#chat_create-verbosity), but OpenRouter is giving me errors referncing the Responses API. Oh well. The button still shows up if you enable the capability, but it doesn't do anything for now.)
 
 Planned enhancements include:
 - (enh) typing in a single/double quote, parenthesis, or bracket while selecting text should automatically enclose that text instead of replacing it, similar to how it works in VSCode and other editors. ideally it would also close the marker automatically if you just type one without having anything selected, so typing in `(` would automatically add `)` after it, but IDK how to make it so that typing in the `)` yourself doesn't double it up. if that makes any sense
