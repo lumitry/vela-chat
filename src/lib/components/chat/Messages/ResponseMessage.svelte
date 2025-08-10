@@ -1464,11 +1464,15 @@
 							{@const generationTime = message.usage.eval_duration
 								? message.usage.eval_duration / 1000000000
 								: message.usage.estimates?.generation_time}
-							{@const totalCost = message.usage.estimates?.total_cost}
+							{@const totalCost = message.usage.cost
+								? message.usage.cost
+								: message.usage.estimates?.total_cost}
 
 							{#if tokensPerSecond || totalCost || promptTokens || completionTokens || generationTime}
+								<!-- TODO: add some sort of hover thing (maybe make the output tokens more compact and show the breakdown of output versus CoT in a popover/hover; show TTFT and total time on gen_time hover), and also fix the horizontal scrolling issues. i think the overflow-hidden fixed the latter to some extent but it still behaves kinda weird esp with pinch to zoom on macos trackpad -->
+								<!-- TODO: actually maybe not because that'd just be implementing the (I) button again lol -->
 								<div
-									class="text-xs text-gray-500 dark:text-gray-400 ml-2 flex items-center gap-2 whitespace-nowrap"
+									class="text-xs text-gray-500 dark:text-gray-400 ml-2 flex items-center gap-2 whitespace-nowrap overflow-hidden"
 								>
 									{#if tokensPerSecond}
 										<span>{tokensPerSecond.toFixed(2)} TPS</span>
@@ -1480,6 +1484,7 @@
 												? `${(totalCost * 100).toFixed(4)}¢`
 												: `$${totalCost.toFixed(6)}`}</span
 										>
+										<!-- TODO: maybe indicate whether this is an estimate or not in the display? -->
 									{/if}
 									{#if promptTokens}
 										{#if tokensPerSecond || totalCost}<span>•</span>{/if}

@@ -1265,31 +1265,44 @@
 					usage.estimates.generation_time = parseFloat(elapsedSeconds.toFixed(3));
 				}
 
-				// Calculate cost estimates if model pricing is available
-				const model = $models.find((m) => m.id === message.model);
-				// console.log('Model for cost estimates:', model);
-				const inputTokens = usage.prompt_tokens || 0;
-				const outputTokens =
-					(usage.completion_tokens || 0) + (usage.completion_tokens_details?.reasoning_tokens || 0);
+				// Skip cost estimation if usage.cost is already available
+				if (!usage.cost) {
+					// Calculate cost estimates if model pricing is available
+					const model = $models.find((m) => m.id === message.model);
+					// console.log('Model for cost estimates:', model);
+					const inputTokens = usage.prompt_tokens || 0;
+					const outputTokens =
+						(usage.completion_tokens || 0) +
+						(usage.completion_tokens_details?.reasoning_tokens || 0);
 
-				// Safely access pricing with proper null checking
-				const inputPrice = model?.info?.meta?.model_details?.price_per_1m_input_tokens;
-				const outputPrice = model?.info?.meta?.model_details?.price_per_1m_output_tokens;
+					// Safely access pricing with proper null checking
+					const inputPrice = model?.info?.meta?.model_details?.price_per_1m_input_tokens;
+					const outputPrice = model?.info?.meta?.model_details?.price_per_1m_output_tokens;
 
-				if (inputPrice && typeof inputPrice === 'number' && inputTokens > 0) {
-					usage.estimates.input_cost = (inputTokens / 1_000_000) * inputPrice;
-				}
+					if (inputPrice && typeof inputPrice === 'number' && inputTokens > 0) {
+						usage.estimates.input_cost = parseFloat(
+							((inputTokens / 1_000_000) * inputPrice).toFixed(8)
+						);
+					}
 
-				if (outputPrice && typeof outputPrice === 'number' && outputTokens > 0) {
-					usage.estimates.output_cost = (outputTokens / 1_000_000) * outputPrice;
-				}
+					if (outputPrice && typeof outputPrice === 'number' && outputTokens > 0) {
+						usage.estimates.output_cost = parseFloat(
+							((outputTokens / 1_000_000) * outputPrice).toFixed(8)
+						);
+					}
 
-				if (usage.estimates.input_cost !== undefined && usage.estimates.output_cost !== undefined) {
-					usage.estimates.total_cost = usage.estimates.input_cost + usage.estimates.output_cost;
-				} else if (usage.estimates.input_cost !== undefined) {
-					usage.estimates.total_cost = usage.estimates.input_cost;
-				} else if (usage.estimates.output_cost !== undefined) {
-					usage.estimates.total_cost = usage.estimates.output_cost;
+					if (
+						usage.estimates.input_cost !== undefined &&
+						usage.estimates.output_cost !== undefined
+					) {
+						usage.estimates.total_cost = parseFloat(
+							(usage.estimates.input_cost + usage.estimates.output_cost).toFixed(8)
+						);
+					} else if (usage.estimates.input_cost !== undefined) {
+						usage.estimates.total_cost = usage.estimates.input_cost;
+					} else if (usage.estimates.output_cost !== undefined) {
+						usage.estimates.total_cost = usage.estimates.output_cost;
+					}
 				}
 
 				// Add time to first token metric for streaming responses
