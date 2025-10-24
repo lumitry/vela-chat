@@ -406,10 +406,13 @@ class SPAStaticFiles(StaticFiles):
                 raise ex
 
 
-# TODO add ascii art here
 print(
     rf"""
-VELA-CHAT
+__     __   _        ____ _           _
+\ \   / /__| | __ _ / ___| |__   __ _| |_
+ \ \ / / _ \ |/ _` | |   | '_ \ / _` | __|
+  \ V /  __/ | (_| | |___| | | | (_| | |_
+   \_/ \___|_|\__,_|\____|_| |_|\__,_|\__|
 
 v{VERSION} - building the best open-source AI user interface.
 {f"Commit: {WEBUI_BUILD_HASH}" if WEBUI_BUILD_HASH != "dev-build" else ""}
@@ -918,10 +921,11 @@ async def inspect_websocket(request: Request, call_next):
             )
     return await call_next(request)
 
+origins = os.getenv("CORS_ALLOW_ORIGIN", "").split(",")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ALLOW_ORIGIN,
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
