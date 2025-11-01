@@ -1,6 +1,6 @@
 import { WEBUI_API_BASE_URL } from '$lib/constants';
 
-export const createNewFolder = async (token: string, name: string) => {
+export const createNewFolder = async (token: string, name: string, parentId?: string) => {
 	let error = null;
 
 	const res = await fetch(`${WEBUI_API_BASE_URL}/folders/`, {
@@ -11,7 +11,8 @@ export const createNewFolder = async (token: string, name: string) => {
 			authorization: `Bearer ${token}`
 		},
 		body: JSON.stringify({
-			name: name
+			name: name,
+			parent_id: parentId
 		})
 	})
 		.then(async (res) => {

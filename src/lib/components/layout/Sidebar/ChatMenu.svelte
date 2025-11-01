@@ -2,6 +2,7 @@
 	import { DropdownMenu } from 'bits-ui';
 	import { flyAndScale } from '$lib/utils/transitions';
 	import { getContext, createEventDispatcher } from 'svelte';
+	import { toast } from 'svelte-sonner';
 
 	import fileSaver from 'file-saver';
 	const { saveAs } = fileSaver;
@@ -24,12 +25,15 @@
 	import {
 		getChatById,
 		getChatPinnedStatusById,
-		toggleChatPinnedStatusById
+		toggleChatPinnedStatusById,
+		updateChatFolderIdById
 	} from '$lib/apis/chats';
 	import { chats, theme } from '$lib/stores';
 	import { createMessagesList } from '$lib/utils';
 	import { downloadChatAsPDF } from '$lib/apis/utils';
 	import Download from '$lib/components/icons/Download.svelte';
+	import ArrowRight from '$lib/components/icons/ArrowRight.svelte';
+	import MoveToFolderModal from '$lib/components/chat/MoveToFolderModal.svelte';
 
 	const i18n = getContext('i18n');
 
@@ -44,6 +48,7 @@
 
 	let show = false;
 	let pinned = false;
+	let showMoveToFolderModal = false;
 
 	const pinHandler = async () => {
 		await toggleChatPinnedStatusById(localStorage.token, chatId);
@@ -163,6 +168,19 @@
 		}
 	};
 
+	const handleMoveToFolder = async (event: CustomEvent<{ folderId: string | null }>) => {
+		const { folderId } = event.detail;
+
+		try {
+			await updateChatFolderIdById(localStorage.token, chatId, folderId);
+			toast.success($i18n.t('Chat moved successfully'));
+			dispatch('change');
+		} catch (error) {
+			console.error('Error moving chat to folder:', error);
+			toast.error($i18n.t('Failed to move chat'));
+		}
+	};
+
 	$: if (show) {
 		checkPinned();
 	}
@@ -221,6 +239,16 @@
 			>
 				<DocumentDuplicate strokeWidth="2" />
 				<div class="flex items-center">{$i18n.t('Clone')}</div>
+			</DropdownMenu.Item>
+
+			<DropdownMenu.Item
+				class="flex gap-2 items-center px-3 py-1.5 text-sm  cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-md"
+				on:click={() => {
+					showMoveToFolderModal = true;
+				}}
+			>
+				<ArrowRight strokeWidth="2" />
+				<div class="flex items-center">{$i18n.t('Move to...')}</div>
 			</DropdownMenu.Item>
 
 			<DropdownMenu.Item
@@ -323,3 +351,5 @@
 		</DropdownMenu.Content>
 	</div>
 </Dropdown>
+
+<MoveToFolderModal bind:show={showMoveToFolderModal} on:confirm={handleMoveToFolder} />

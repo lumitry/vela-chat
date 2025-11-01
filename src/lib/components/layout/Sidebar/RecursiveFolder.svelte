@@ -19,7 +19,8 @@
 		deleteFolderById,
 		updateFolderIsExpandedById,
 		updateFolderNameById,
-		updateFolderParentIdById
+		updateFolderParentIdById,
+		createNewFolder
 	} from '$lib/apis/folders';
 	import { toast } from 'svelte-sonner';
 	import {
@@ -343,6 +344,37 @@
 
 		saveAs(blob, `folder-${folders[folderId].name}-export-${Date.now()}.json`);
 	};
+
+	const newFolderHandler = async () => {
+		const name = 'Untitled';
+		const parentFolders = folders[folderId].childrenIds
+			? folders[folderId].childrenIds.map((id) => folders[id])
+			: [];
+
+		let folderName = name;
+		if (parentFolders.find((folder) => folder.name.toLowerCase() === name.toLowerCase())) {
+			// If a folder with the same name already exists, append a number to the name
+			let folderNumber = 1;
+			while (
+				parentFolders.find(
+					(folder) => folder.name.toLowerCase() === `${name} ${folderNumber}`.toLowerCase()
+				)
+			) {
+				folderNumber++;
+			}
+			folderName = `${name} ${folderNumber}`;
+		}
+
+		const res = await createNewFolder(localStorage.token, folderName, folderId).catch((error) => {
+			toast.error(`${error}`);
+			return null;
+		});
+
+		if (res) {
+			open = true;
+			dispatch('update');
+		}
+	};
 </script>
 
 <DeleteConfirmDialog
@@ -454,6 +486,12 @@
 					}}
 				>
 					<FolderMenu
+						on:newfolder={() => {
+							// Requires a timeout to prevent the click event from closing the dropdown
+							setTimeout(() => {
+								newFolderHandler();
+							}, 200);
+						}}
 						on:rename={() => {
 							// Requires a timeout to prevent the click event from closing the dropdown
 							setTimeout(() => {
