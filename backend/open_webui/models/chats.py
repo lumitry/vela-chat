@@ -712,16 +712,26 @@ class ChatTable:
             query = query.order_by(Chat.updated_at.desc())
 
             # Select only the necessary fields for performance
-            query = query.with_entities(Chat.id, Chat.title, Chat.folder_id)
+            # Include updated_at and created_at so the client can sort reliably
+            query = query.with_entities(
+                Chat.id, Chat.title, Chat.folder_id, Chat.updated_at, Chat.created_at
+            )
 
             all_chats = query.all()
 
             # Group the chats by folder_id
             result = {}
-            for chat_id, chat_title, folder_id in all_chats:
+            for chat_id, chat_title, folder_id, updated_at, created_at in all_chats:
                 if folder_id not in result:
                     result[folder_id] = []
-                result[folder_id].append({"id": chat_id, "title": chat_title})
+                result[folder_id].append(
+                    {
+                        "id": chat_id,
+                        "title": chat_title,
+                        "updated_at": int(updated_at) if updated_at is not None else None,
+                        "created_at": int(created_at) if created_at is not None else None,
+                    }
+                )
 
             return result
 

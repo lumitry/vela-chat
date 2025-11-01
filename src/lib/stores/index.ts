@@ -78,6 +78,11 @@ export const temporaryChatEnabled = writable(false);
 export const scrollPaginationEnabled = writable(false);
 export const currentChatPage = writable(1);
 
+// Chat list sorting - default to 'updated' (most recently modified)
+export const chatListSortBy = writable(
+	(localStorage.getItem('chatListSortBy') as 'updated' | 'created' | 'title') || 'updated'
+);
+
 export const isLastActiveTab = writable(true);
 export const playingNotificationSound = writable(false);
 

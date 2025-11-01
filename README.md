@@ -39,6 +39,7 @@ Current enhancements include:
 - Added estimated tokens per second, TTFT, generation time, and cost to the `usage` viewer (hover over the `(I)` icon) and at the bottom of each message (will probably be toggle-able in the future)
 - ~~Added a dropdown to chat for GPT-5's new "verbosity" parameter. Requires enabling the "Verbosity" capability on the model editor page.~~ (Never mind, I'm getting API errors now. Verbosity [should be supported in the chat completions API](https://platform.openai.com/docs/api-reference/chat/create#chat_create-verbosity), but OpenRouter is giving me errors referncing the Responses API. Oh well. The button still shows up if you enable the capability, but it doesn't do anything for now.)
 - Added "Move To..." option in chat ellipsis menu to move chats between folders and "New Folder" option in folder ellipsis menu to create new folders directly inside an existing one.
+- Added sort options for chats list: sort by "Last Updated" (default), "Date Created", or "Title". (Stored in localStorage so it persists across sessions.)
 
 Planned enhancements include:
 - (enh) typing in a single/double quote, parenthesis, or bracket while selecting text should automatically enclose that text instead of replacing it, similar to how it works in VSCode and other editors. ideally it would also close the marker automatically if you just type one without having anything selected, so typing in `(` would automatically add `)` after it, but IDK how to make it so that typing in the `)` yourself doesn't double it up. if that makes any sense

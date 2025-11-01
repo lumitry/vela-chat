@@ -20,7 +20,8 @@
 		channels,
 		socket,
 		config,
-		isApp
+		isApp,
+		chatListSortBy
 	} from '$lib/stores';
 	import { onMount, getContext, tick, onDestroy } from 'svelte';
 
@@ -47,6 +48,7 @@
 	} from '$lib/apis/folders';
 	import { WEBUI_BASE_URL } from '$lib/constants';
 	import { sidebarNavigationCommand, type SidebarNavigationCommand } from '$lib/stores/sidebar';
+	import { getTimeRange } from '$lib/utils';
 
 	import ArchivedChatsModal from './Sidebar/ArchivedChatsModal.svelte';
 	import UserMenu from './Sidebar/UserMenu.svelte';
@@ -85,6 +87,73 @@
 	let folders = {};
 	let newFolderId = null;
 
+	// Sorted chats list
+	let sortedChats: any[] = [];
+
+	// Sort chats based on selected sort option
+	$: {
+		if ($chats && Array.isArray($chats)) {
+			sortedChats = [...$chats]
+				.map((chat) => {
+					// Recalculate time_range based on sort field
+					if ($chatListSortBy === 'created') {
+						return {
+							...chat,
+							time_range: getTimeRange(chat.created_at)
+						};
+					}
+					return chat;
+				})
+				.sort((a: any, b: any) => {
+					switch ($chatListSortBy) {
+						case 'created':
+							// Sort by created_at (newest first)
+							return b.created_at - a.created_at;
+						case 'title':
+							// Sort alphabetically by title (A-Z)
+							return a.title.localeCompare(b.title, undefined, {
+								numeric: true,
+								sensitivity: 'base'
+							});
+						case 'updated':
+						default:
+							// Sort by updated_at (most recently modified first) - default
+							return b.updated_at - a.updated_at;
+					}
+				});
+		} else {
+			sortedChats = [];
+		}
+	}
+
+	// Save sort preference to localStorage when it changes
+	$: if ($chatListSortBy) {
+		localStorage.setItem('chatListSortBy', $chatListSortBy);
+		// Re-sort folder chats when sort preference changes
+		if (folders && Object.keys(folders).length > 0) {
+			for (const folderId in folders) {
+				if (folders[folderId]?.items?.chats && Array.isArray(folders[folderId].items.chats)) {
+					folders[folderId].items.chats.sort((a: any, b: any) => {
+						switch ($chatListSortBy) {
+							case 'created':
+								return (b.created_at ?? 0) - (a.created_at ?? 0);
+							case 'title':
+								return a.title.localeCompare(b.title, undefined, {
+									numeric: true,
+									sensitivity: 'base'
+								});
+							case 'updated':
+							default:
+								return (b.updated_at ?? 0) - (a.updated_at ?? 0);
+						}
+					});
+				}
+			}
+			// Trigger reactivity
+			folders = { ...folders };
+		}
+	}
+
 	const initFolders = async () => {
 		const folderList = await getFolders(localStorage.token).catch((error) => {
 			toast.error(`${error}`);
@@ -95,8 +164,26 @@
 
 		// First pass: Initialize all folder entries
 		for (const folder of folderList) {
-			// Ensure folder is added to folders with its data
+			// Ensure folder is added to folders with its data first
 			folders[folder.id] = { ...(folders[folder.id] || {}), ...folder };
+
+			// Sort chats within each folder based on current sort preference
+			if (folders[folder.id].items?.chats && Array.isArray(folders[folder.id].items.chats)) {
+				folders[folder.id].items.chats = folders[folder.id].items.chats.sort((a: any, b: any) => {
+					switch ($chatListSortBy) {
+						case 'created':
+							return (b.created_at ?? 0) - (a.created_at ?? 0);
+						case 'title':
+							return a.title.localeCompare(b.title, undefined, {
+								numeric: true,
+								sensitivity: 'base'
+							});
+						case 'updated':
+						default:
+							return (b.updated_at ?? 0) - (a.updated_at ?? 0);
+					}
+				});
+			}
 
 			if (newFolderId && folder.id === newFolderId) {
 				folders[folder.id].new = true;
@@ -779,6 +866,27 @@
 			/>
 		</div>
 
+		<!-- Chat Sort Selector -->
+		<div class="px-2 py-1 {$temporaryChatEnabled ? 'opacity-20' : ''}">
+			<div class="flex items-center gap-2 text-xs ml-2">
+				<span class="text-gray-500 dark:text-gray-400">{$i18n.t('Sort by')}:</span>
+				<!-- We have to override browser/default styling here because otherwise it tries to center the dropdown text which looks unbalanced due to the chevron. here's the non-override version for reference: -->
+				<!-- <select
+					bind:value={$chatListSortBy}
+					class="bg-transparent text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 rounded px-5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-600"
+				> -->
+				<select
+					bind:value={$chatListSortBy}
+					class="appearance-none bg-transparent text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 rounded pl-2 pr-6 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-600 bg-[length:12px] bg-[right_0.3rem_center] bg-no-repeat"
+					style="background-image: url('data:image/svg+xml;charset=UTF-8,%3csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 20 20%27 fill=%27none%27%3e%3cpath d=%27M7 8l3 3 3-3%27 stroke=%27%239ca3af%27 stroke-width=%271.5%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3e%3c/svg%3e');"
+				>
+					<option value="updated">{$i18n.t('Last Modified')}</option>
+					<option value="created">{$i18n.t('Date Created')}</option>
+					<option value="title">{$i18n.t('Title (A-Z)')}</option>
+				</select>
+			</div>
+		</div>
+
 		<div
 			class="relative flex flex-col flex-1 overflow-y-auto overflow-x-hidden {$temporaryChatEnabled
 				? 'opacity-20'
@@ -966,9 +1074,9 @@
 
 				<div class=" flex-1 flex flex-col overflow-y-auto scrollbar-hidden">
 					<div class="pt-1.5">
-						{#if $chats}
-							{#each $chats as chat, idx}
-								{#if idx === 0 || (idx > 0 && chat.time_range !== $chats[idx - 1].time_range)}
+						{#if sortedChats && sortedChats.length > 0}
+							{#each sortedChats as chat, idx}
+								{#if $chatListSortBy !== 'title' && (idx === 0 || (idx > 0 && chat.time_range !== sortedChats[idx - 1].time_range))}
 									<div
 										class="w-full pl-2.5 text-xs text-gray-500 dark:text-gray-500 font-medium {idx ===
 										0
