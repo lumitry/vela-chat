@@ -24,6 +24,9 @@ from starlette.responses import Response, StreamingResponse
 
 from open_webui.models.chats import Chats
 from open_webui.models.users import Users
+from open_webui.models.files import Files
+from open_webui.models.chat_messages import ChatMessages, MessageCreateForm
+from open_webui.storage.provider import Storage
 from open_webui.socket.main import (
     get_event_call,
     get_event_emitter,
@@ -64,6 +67,7 @@ from open_webui.utils.misc import (
     add_or_update_system_message,
     add_or_update_user_message,
     get_last_user_message,
+    get_last_user_message_item,
     get_last_assistant_message,
     prepend_to_first_user_message_content,
     convert_logit_bias_input_to_json,
@@ -717,6 +721,9 @@ def apply_params_to_form_data(form_data, model):
 
 
 async def process_chat_payload(request, form_data, user, metadata, model):
+    # Ensure messages exists from the start to prevent KeyError
+    if "messages" not in form_data or form_data.get("messages") is None:
+        form_data["messages"] = []
 
     form_data = apply_params_to_form_data(form_data, model)
     log.debug(f"form_data: {form_data}")
@@ -756,6 +763,227 @@ async def process_chat_payload(request, form_data, user, metadata, model):
 
     events = []
     sources = []
+
+    # Ensure messages exist; if missing or empty, rebuild from normalized storage
+    # Only rebuild if messages is actually missing (not just empty)
+    if "messages" not in form_data or form_data.get("messages") is None:
+        try:
+            chat_id = metadata.get("chat_id")
+            # Use parent chain of the user message; if message_id refers to assistant, hop to parent
+            leaf_id = metadata.get("message_id")
+            if leaf_id:
+                leaf = ChatMessages.get_message_by_id(leaf_id)
+                parent_id = leaf.parent_id if leaf else None
+            else:
+                parent_id = None
+            branch = []
+            if chat_id and parent_id:
+                branch = ChatMessages.get_branch_to_root(chat_id, parent_id)
+            # Convert to OpenAI-style messages with image_url content
+            rebuilt = []
+            for m in branch:
+                content = m.content_text or ""
+                items = []
+                if content:
+                    items.append({"type": "text", "text": content})
+                # attachments are added later during image resolution if present in frontend; we skip here
+                rebuilt.append({
+                    "role": m.role,
+                    "content": content if items == [] else items
+                })
+            if rebuilt:
+                form_data["messages"] = rebuilt
+        except Exception as e:
+            log.debug(f"Failed to rebuild messages from normalized storage: {e}")
+    
+    # Ensure messages is always a list, even if empty or missing
+    if "messages" not in form_data or form_data["messages"] is None:
+        form_data["messages"] = []
+    
+    # Insert user message into normalized database if we have chat_id and a user message
+    chat_id = metadata.get("chat_id")
+    if chat_id and form_data.get("messages"):
+        try:
+            # Find the last user message to insert
+            user_msg = get_last_user_message_item(form_data["messages"])
+            if user_msg:
+                # Extract content and attachments
+                content_text = None
+                content_json = None
+                attachments = []
+                
+                content = user_msg.get("content")
+                if isinstance(content, str):
+                    content_text = content
+                elif isinstance(content, list):
+                    for item in content:
+                        if item.get("type") == "text":
+                            if content_text:
+                                content_text += "\n" + item.get("text", "")
+                            else:
+                                content_text = item.get("text", "")
+                        elif item.get("type") == "image_url":
+                            url = (item.get("image_url") or {}).get("url", "")
+                            # Extract file_id from URL if it's an internal file URL
+                            if url and "/files/" in url:
+                                file_match = re.search(r"/files/([A-Za-z0-9\-]+)", url)
+                                if file_match:
+                                    file_id = file_match.group(1)
+                                    file_model = Files.get_file_by_id(file_id)
+                                    if file_model:
+                                        file_meta = file_model.meta or {}
+                                        file_data = file_model.data or {}
+                                        attachments.append({
+                                            "type": "image",
+                                            "file_id": file_id,
+                                            "url": url,
+                                            "mime_type": file_meta.get("content_type") or file_data.get("content_type"),
+                                            "size_bytes": file_meta.get("size"),
+                                            "meta": file_meta
+                                        })
+                    # If we have a list with no text, store as JSON
+                    if not content_text and content:
+                        content_json = {"items": content}
+                
+                # Get parent_id from the message structure if available
+                parent_id = user_msg.get("parent_id") or user_msg.get("parentId")
+                
+                # Frontend-provided user message ID (use it if provided)
+                frontend_user_id = user_msg.get("id")
+                
+                # For side-by-side chats: check if a user message with the same content already exists recently
+                # This prevents duplicate user messages when multiple models respond to the same prompt
+                should_insert_user = True
+                existing_user_message_id = None
+                
+                if frontend_user_id:
+                    existing = ChatMessages.get_message_by_id(frontend_user_id)
+                    if existing:
+                        should_insert_user = False
+                        user_message_id = existing.id
+                        # Use the existing message's parent_id to maintain sibling relationships
+                        parent_id = existing.parent_id
+                    else:
+                        user_message_id = None
+                else:
+                    user_message_id = None
+                
+                # If we don't have an existing message by ID, check for duplicate content (side-by-side scenario)
+                if should_insert_user and content_text:
+                    from open_webui.internal.db import get_db
+                    from open_webui.models.chat_messages import ChatMessage
+                    from sqlalchemy import and_
+                    
+                    with get_db() as db:
+                        # Look for a user message with the same content created within the last 30 seconds
+                        recent_cutoff = int(time.time()) - 30
+                        duplicate = db.query(ChatMessage).filter(
+                            and_(
+                                ChatMessage.chat_id == chat_id,
+                                ChatMessage.role == "user",
+                                ChatMessage.content_text == content_text,
+                                ChatMessage.created_at >= recent_cutoff
+                            )
+                        ).order_by(ChatMessage.created_at.desc()).first()
+                        
+                        if duplicate:
+                            # Reuse the existing user message for side-by-side chats
+                            should_insert_user = False
+                            existing_user_message_id = duplicate.id
+                            user_message_id = duplicate.id
+                            # Use the duplicate's parent_id to maintain correct hierarchy
+                            # Access the SQLAlchemy model attribute directly
+                            parent_id = duplicate.parent_id if duplicate.parent_id else None
+                
+                # If parent_id is still not set and we're inserting, try to get it from chat's active_message_id
+                # For side-by-side chats, the frontend sets parent_id to the selected assistant message
+                # so we should trust the parent_id from the user message payload
+                # Only fall back to chat metadata if parent_id wasn't provided
+                if should_insert_user and not parent_id:
+                    chat_model = Chats.get_chat_by_id(chat_id)
+                    if chat_model:
+                        # Use active_message_id if it exists and is an assistant message (for continuing side-by-side)
+                        # or if it's a user message (for standard continuation)
+                        if chat_model.active_message_id:
+                            active_msg = ChatMessages.get_message_by_id(chat_model.active_message_id)
+                            if active_msg:
+                                # Allow both user and assistant messages as parents
+                                # User message parent = standard continuation
+                                # Assistant message parent = side-by-side continuation from specific response
+                                parent_id = chat_model.active_message_id
+                        elif chat_model.root_message_id:
+                            # Fallback to root_message_id if active_message_id is not set
+                            root_msg = ChatMessages.get_message_by_id(chat_model.root_message_id)
+                            if root_msg and root_msg.role == "user":
+                                parent_id = chat_model.root_message_id
+                
+                # Extract models array from user message for side-by-side chats
+                # This is stored in the user message's "models" property in the frontend
+                # First try to get it from the user message in the payload
+                user_models = user_msg.get("models")
+                
+                # If not in the message, try to get it from chat.chat["models"] (stored at chat level)
+                if not user_models:
+                    chat_model = Chats.get_chat_by_id(chat_id)
+                    if chat_model and chat_model.chat:
+                        # Check if models are stored in chat.chat (the JSON blob)
+                        user_models = chat_model.chat.get("models")
+                    # Also check params as fallback
+                    if not user_models and chat_model and chat_model.params:
+                        user_models = chat_model.params.get("models")
+                
+                user_meta = None
+                if user_models:
+                    user_meta = {"models": user_models}
+                
+                # Insert user message if needed
+                if should_insert_user:
+                    inserted_user = ChatMessages.insert_message(chat_id, MessageCreateForm(
+                        parent_id=parent_id,
+                        role="user",
+                        content_text=content_text,
+                        content_json=content_json,
+                        model_id=None,
+                        attachments=attachments if attachments else None,
+                        meta=user_meta
+                    ), message_id=frontend_user_id if frontend_user_id else None)
+                    if inserted_user:
+                        user_message_id = inserted_user.id
+                        # If this is the first message (no parent), set it as root_message_id
+                        if not parent_id:
+                            Chats.update_chat_active_and_root_message_ids(chat_id, root_message_id=user_message_id)
+                
+                # Insert assistant placeholder if we have message_id and it doesn't exist
+                assistant_id = metadata.get("message_id")
+                if assistant_id:
+                    existing_assistant = ChatMessages.get_message_by_id(assistant_id)
+                    if not existing_assistant and user_message_id:
+                        # Extract modelIdx from metadata for side-by-side chats
+                        # modelIdx indicates which position in the user's models array this response corresponds to
+                        model_idx = metadata.get("modelIdx")
+                        assistant_meta = None
+                        position_for_assistant = None
+                        if model_idx is not None:
+                            assistant_meta = {"modelIdx": model_idx}
+                            # Use modelIdx as position for side-by-side chats to ensure correct ordering
+                            # This prevents race conditions when multiple messages are created simultaneously
+                            position_for_assistant = model_idx
+                        
+                        # For side-by-side chats, use modelIdx as position to ensure correct ordering
+                        ChatMessages.insert_message(chat_id, MessageCreateForm(
+                            parent_id=user_message_id,
+                            role="assistant",
+                            content_text="",
+                            content_json=None,
+                            model_id=form_data.get("model"),
+                            attachments=None,
+                            meta=assistant_meta,
+                            position=position_for_assistant
+                        ), message_id=assistant_id)
+                        # Update active_message_id to point to this assistant message
+                        Chats.update_chat_active_and_root_message_ids(chat_id, active_message_id=assistant_id)
+        except Exception as e:
+            log.debug(f"Failed to insert messages into normalized storage: {e}")
 
     user_message = get_last_user_message(form_data["messages"])
     model_knowledge = model.get("info", {}).get("meta", {}).get("knowledge", False)
@@ -982,7 +1210,67 @@ async def process_chat_payload(request, form_data, user, metadata, model):
             }
         )
 
+    # Convert internal file URLs in image_url blocks to Base64 for provider compatibility
+    try:
+        form_data["messages"] = await _resolve_message_image_urls_to_base64(
+            request, form_data.get("messages", [])
+        )
+    except Exception as e:
+        log.debug(f"_resolve_message_image_urls_to_base64 error: {e}")
+
     return form_data, metadata, events
+
+
+async def _resolve_message_image_urls_to_base64(request: Request, messages: list[dict]) -> list[dict]:
+    """
+    Transform any message content items of type image_url that reference internal
+    /api/v1/files/{id} (optionally with /content suffix) into Base64 data URIs so
+    providers that require inline images receive them without the frontend sending Base64.
+    """
+    if not isinstance(messages, list):
+        return messages
+
+    # Precompile regex to extract file id from URL
+    file_id_regex = re.compile(r"/files/([A-Za-z0-9\-]+)")
+
+    def to_data_uri(file_model) -> Optional[str]:
+        try:
+            file_path = Storage.get_file(file_model.path)
+            with open(file_path, "rb") as f:
+                raw = f.read()
+            mime = (
+                (file_model.meta or {}).get("content_type")
+                or (file_model.data or {}).get("content_type")
+                or "image/png"
+            )
+            return f"data:{mime};base64,{base64.b64encode(raw).decode('utf-8')}"
+        except Exception as e:
+            log.debug(f"Failed to load file bytes for image embedding: {e}")
+            return None
+
+    resolved: list[dict] = []
+    for message in messages:
+        msg = message
+        content = msg.get("content")
+        if isinstance(content, list):
+            new_items = []
+            for item in content:
+                if isinstance(item, dict) and item.get("type") == "image_url":
+                    url = (item.get("image_url") or {}).get("url", "")
+                    if url and not url.startswith("data:"):
+                        match = file_id_regex.search(url)
+                        if match:
+                            file_id = match.group(1)
+                            file_model = Files.get_file_by_id(file_id)
+                            if file_model:
+                                data_uri = to_data_uri(file_model)
+                                if data_uri:
+                                    item = {"type": "image_url", "image_url": {"url": data_uri}}
+                new_items.append(item)
+            msg = {**msg, "content": new_items}
+        resolved.append(msg)
+
+    return resolved
 
 
 async def process_chat_response(
@@ -1117,6 +1405,14 @@ async def process_chat_response(
                         "error": {"content": error},
                     },
                 )
+                # Update normalized table
+                try:
+                    ChatMessages.update_message(
+                        metadata["message_id"],
+                        meta={"error": {"content": error}}
+                    )
+                except Exception as e:
+                    log.debug(f"Failed to update normalized message error: {e}")
 
             if "selected_model_id" in response:
                 Chats.upsert_message_to_chat_by_id_and_message_id(
@@ -1126,6 +1422,14 @@ async def process_chat_response(
                         "selectedModelId": response["selected_model_id"],
                     },
                 )
+                # Update normalized table
+                try:
+                    ChatMessages.update_message(
+                        metadata["message_id"],
+                        meta={"selectedModelId": response["selected_model_id"]}
+                    )
+                except Exception as e:
+                    log.debug(f"Failed to update normalized message selectedModelId: {e}")
 
             choices = response.get("choices", [])
             if choices and choices[0].get("message", {}).get("content"):
@@ -1161,6 +1465,21 @@ async def process_chat_response(
                             "content": content,
                         },
                     )
+                    # Update normalized table with content and usage
+                    try:
+                        usage = response.get("usage")
+                        result = ChatMessages.update_message(
+                            metadata["message_id"],
+                            content_text=content,
+                            usage=usage
+                        )
+                        if not result:
+                            log.warning(f"Failed to update normalized message {metadata['message_id']}: message not found in normalized table")
+                        # Update active_message_id to point to this completed message
+                        if result:
+                            Chats.update_chat_active_and_root_message_ids(metadata["chat_id"], active_message_id=metadata["message_id"])
+                    except Exception as e:
+                        log.error(f"Failed to update normalized message content: {e}", exc_info=True)
 
                     # Send a webhook notification if the user is not active
                     if get_active_status_by_user_id(user.id) is None:
@@ -1221,6 +1540,14 @@ async def process_chat_response(
                 "model": model_id,
             },
         )
+        # Update normalized table
+        try:
+            ChatMessages.update_message(
+                metadata["message_id"],
+                model_id=model_id
+            )
+        except Exception as e:
+            log.debug(f"Failed to update normalized message model_id: {e}")
 
         def split_content_and_whitespace(content):
             content_stripped = content.rstrip()
@@ -1559,6 +1886,7 @@ async def process_chat_response(
                 else last_assistant_message if last_assistant_message else ""
             )
 
+            usage_data = None
             content_blocks = [
                 {
                     "type": "text",
@@ -1604,10 +1932,21 @@ async def process_chat_response(
                             **event,
                         },
                     )
+                    # Update normalized table (for event data)
+                    try:
+                        if "content" in event:
+                            ChatMessages.update_message(
+                                metadata["message_id"],
+                                content_text=event["content"]
+                            )
+                    except Exception as e:
+                        log.debug(f"Failed to update normalized message from event: {e}")
 
                 async def stream_body_handler(response):
                     nonlocal content
                     nonlocal content_blocks
+                    nonlocal usage_data
+                    usage_data = None
 
                     response_tool_calls = []
 
@@ -1650,6 +1989,14 @@ async def process_chat_response(
                                             "selectedModelId": model_id,
                                         },
                                     )
+                                    # Update normalized table
+                                    try:
+                                        ChatMessages.update_message(
+                                            metadata["message_id"],
+                                            meta={"selectedModelId": model_id}
+                                        )
+                                    except Exception as e:
+                                        log.debug(f"Failed to update normalized message selectedModelId: {e}")
                                 else:
                                     choices = data.get("choices", [])
                                     if not choices:
@@ -1665,6 +2012,7 @@ async def process_chat_response(
                                             )
                                         usage = data.get("usage", {})
                                         if usage:
+                                            usage_data = usage  # Store for later save
                                             await event_emitter(
                                                 {
                                                     "type": "chat:completion",
@@ -1831,15 +2179,22 @@ async def process_chat_response(
 
                                         if ENABLE_REALTIME_CHAT_SAVE:
                                             # Save message in the database
+                                            serialized_content = serialize_content_blocks(content_blocks)
                                             Chats.upsert_message_to_chat_by_id_and_message_id(
                                                 metadata["chat_id"],
                                                 metadata["message_id"],
                                                 {
-                                                    "content": serialize_content_blocks(
-                                                        content_blocks
-                                                    ),
+                                                    "content": serialized_content,
                                                 },
                                             )
+                                            # Update normalized table (usage will be saved when stream completes)
+                                            try:
+                                                ChatMessages.update_message(
+                                                    metadata["message_id"],
+                                                    content_text=serialized_content
+                                                )
+                                            except Exception as e:
+                                                log.debug(f"Failed to update normalized message content (realtime): {e}")
                                         else:
                                             data = {
                                                 "content": serialize_content_blocks(
@@ -2236,13 +2591,25 @@ async def process_chat_response(
 
                 if not ENABLE_REALTIME_CHAT_SAVE:
                     # Save message in the database
+                    serialized_content = serialize_content_blocks(content_blocks)
                     Chats.upsert_message_to_chat_by_id_and_message_id(
                         metadata["chat_id"],
                         metadata["message_id"],
                         {
-                            "content": serialize_content_blocks(content_blocks),
+                            "content": serialized_content,
                         },
                     )
+                    # Update normalized table with content and usage
+                    try:
+                        ChatMessages.update_message(
+                            metadata["message_id"],
+                            content_text=serialized_content,
+                            usage=usage_data
+                        )
+                        # Update active_message_id
+                        Chats.update_chat_active_and_root_message_ids(metadata["chat_id"], active_message_id=metadata["message_id"])
+                    except Exception as e:
+                        log.debug(f"Failed to update normalized message content (final): {e}")
 
                 # Send a webhook notification if the user is not active
                 if get_active_status_by_user_id(user.id) is None:
@@ -2274,13 +2641,22 @@ async def process_chat_response(
 
                 if not ENABLE_REALTIME_CHAT_SAVE:
                     # Save message in the database
+                    serialized_content = serialize_content_blocks(content_blocks)
                     Chats.upsert_message_to_chat_by_id_and_message_id(
                         metadata["chat_id"],
                         metadata["message_id"],
                         {
-                            "content": serialize_content_blocks(content_blocks),
+                            "content": serialized_content,
                         },
                     )
+                    # Update normalized table
+                    try:
+                        ChatMessages.update_message(
+                            metadata["message_id"],
+                            content_text=serialized_content
+                        )
+                    except Exception as e:
+                        log.debug(f"Failed to update normalized message content (cancelled): {e}")
 
             if response.background is not None:
                 await response.background()

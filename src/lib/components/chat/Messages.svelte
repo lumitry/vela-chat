@@ -45,6 +45,7 @@
 	export let showMessage: Function = () => {};
 	export let submitMessage: Function = () => {};
 	export let addMessages: Function = () => {};
+	export let refreshChatMeta: Function = () => {};
 
 	export let readOnly = false;
 
@@ -101,9 +102,14 @@
 			history = history;
 			await tick();
 			await updateChatById(localStorage.token, chatId, {
-				history: history,
-				messages: messages
+				chat: {
+					history: history,
+					messages: messages
+				}
 			});
+
+			// Refresh chat metadata to get updated active_message_id
+			await refreshChatMeta();
 
 			currentChatPage.set(1);
 			await chats.set(await getChatList(localStorage.token, $currentChatPage));
@@ -453,6 +459,7 @@
 							{continueResponse}
 							{mergeResponses}
 							{addMessages}
+							{refreshChatMeta}
 							{triggerScroll}
 							{readOnly}
 							searchMatch={searchMatches.includes(message.id)}

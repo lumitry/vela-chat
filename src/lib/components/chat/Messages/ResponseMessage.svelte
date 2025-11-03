@@ -129,6 +129,7 @@
 	export let regenerateResponse: Function;
 
 	export let addMessages: Function;
+	export let refreshChatMeta: Function = () => {};
 
 	export let isLastMessage = true;
 	export let readOnly = false;

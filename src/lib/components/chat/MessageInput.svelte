@@ -412,9 +412,22 @@
 			window.focus();
 
 			// Convert the canvas to a Base64 image URL
-			const imageUrl = canvas.toDataURL('image/png');
-			// Add the captured image to the files array to render it
-			files = [...files, { type: 'image', url: imageUrl }];
+			await new Promise<void>((resolve) =>
+				canvas.toBlob(async (blob) => {
+					if (blob) {
+						const file = new File([blob], `capture-${Date.now()}.png`, { type: 'image/png' });
+						const uploaded = await uploadFileHandler(file);
+						if (uploaded) {
+							files = files.map((item) =>
+								item?.id === uploaded.id
+									? { ...item, type: 'image', url: `${WEBUI_API_BASE_URL}/files/${uploaded.id}/content` }
+									: item
+							);
+						}
+					}
+					resolve();
+				}, 'image/png')
+			);
 			// Clean memory: Clear video srcObject
 			video.srcObject = null;
 		} catch (error) {
@@ -475,12 +488,15 @@
 				fileItem.url = `${WEBUI_API_BASE_URL}/files/${uploadedFile.id}`;
 
 				files = files;
+				return uploadedFile;
 			} else {
 				files = files.filter((item) => item?.itemId !== tempItemId);
+				return null;
 			}
 		} catch (e) {
 			toast.error(`${e}`);
 			files = files.filter((item) => item?.itemId !== tempItemId);
+			return null;
 		}
 	};
 
@@ -517,28 +533,34 @@
 					toast.error($i18n.t('Selected model(s) do not support image inputs'));
 					return;
 				}
-				let reader = new FileReader();
-				reader.onload = async (event) => {
-					let imageUrl = event.target.result;
-
+				let processAndUpload = async () => {
+					let toUpload: File = file;
 					if ($settings?.imageCompression ?? false) {
 						const width = $settings?.imageCompressionSize?.width ?? null;
 						const height = $settings?.imageCompressionSize?.height ?? null;
-
 						if (width || height) {
-							imageUrl = await compressImage(imageUrl, width, height);
+							// Compress to a data URL then convert to a File
+							const compressedUrl = await compressImage(await new Promise<string>((resolve) => {
+								const r = new FileReader();
+								r.onload = (e) => resolve(String(e.target?.result || ''));
+								r.readAsDataURL(file);
+							}), width, height);
+							const res = await fetch(compressedUrl);
+							const blob = await res.blob();
+							toUpload = new File([blob], file.name, { type: file.type });
 						}
 					}
-
-					files = [
-						...files,
-						{
-							type: 'image',
-							url: `${imageUrl}`
-						}
-					];
+					const uploaded = await uploadFileHandler(toUpload);
+					if (uploaded) {
+						// Convert the just-uploaded entry into an image item with direct content URL
+						files = files.map((item) =>
+							item?.id === uploaded.id
+								? { ...item, type: 'image', url: `${WEBUI_API_BASE_URL}/files/${uploaded.id}/content` }
+								: item
+						);
+					}
 				};
-				reader.readAsDataURL(file);
+				processAndUpload();
 			} else {
 				uploadFileHandler(file);
 			}

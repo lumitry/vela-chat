@@ -354,6 +354,56 @@ async def get_chat_by_id(id: str, user=Depends(get_verified_user)):
 
 
 ############################
+# GetChatMeta (lightweight)
+############################
+
+
+class ChatMetaResponse(BaseModel):
+    id: str
+    title: str
+    created_at: int
+    updated_at: int
+    share_id: Optional[str] = None
+    archived: bool
+    pinned: Optional[bool] = False
+    folder_id: Optional[str] = None
+    active_message_id: Optional[str] = None
+    # minimal chat-level fields commonly used by the UI
+    models: list[str] | None = None
+    params: dict | None = None
+    files: list[dict] | None = None
+
+
+@router.get("/{id}/meta", response_model=Optional[ChatMetaResponse])
+async def get_chat_meta_by_id(id: str, user=Depends(get_verified_user)):
+    chat = Chats.get_chat_by_id_and_user_id(id, user.id)
+    if not chat:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
+        )
+
+    # Extract minimal fields without returning the full chat JSON
+    chat_content = chat.chat or {}
+    return ChatMetaResponse(
+        **{
+            "id": chat.id,
+            "title": chat.title,
+            "created_at": chat.created_at,
+            "updated_at": chat.updated_at,
+            "share_id": chat.share_id,
+            "archived": chat.archived,
+            "pinned": chat.pinned,
+            "folder_id": chat.folder_id,
+            "active_message_id": getattr(chat, 'active_message_id', None),
+            "models": chat_content.get("models"),
+            "params": chat_content.get("params"),
+            "files": chat_content.get("files"),
+        }
+    )
+
+
+############################
 # UpdateChatById
 ############################
 
@@ -366,6 +416,102 @@ async def update_chat_by_id(
     if chat:
         updated_chat = {**chat.chat, **form_data.chat}
         chat = Chats.update_chat_by_id(id, updated_chat)
+        
+        # Update active_message_id if history.currentId is present (for side-by-side chat selection)
+        # This allows the frontend to persist which assistant message was selected
+        if "history" in form_data.chat and isinstance(form_data.chat["history"], dict):
+            history_current_id = form_data.chat["history"].get("currentId")
+            if history_current_id:
+                # Update active_message_id to track which branch the user is on
+                Chats.update_chat_active_and_root_message_ids(id, active_message_id=history_current_id)
+        
+        # Update normalized message table with usage data if present in messages/history
+        try:
+            from open_webui.models.chat_messages import ChatMessages
+            
+            # Get chat-level models array (used for side-by-side chats)
+            # This is sent in saveChatHandler as models: selectedModels
+            chat_models = form_data.chat.get("models")
+            if chat_models and isinstance(chat_models, list) and len(chat_models) > 1:
+                # If we have multiple models at chat level, sync to ALL user messages in this chat
+                # This ensures side-by-side status is preserved for all user messages
+                from open_webui.internal.db import get_db
+                with get_db() as db:
+                    from open_webui.models.chat_messages import ChatMessage
+                    all_user_messages = db.query(ChatMessage).filter_by(
+                        chat_id=id,
+                        role="user"
+                    ).all()
+                    
+                    for msg in all_user_messages:
+                        existing_meta = msg.meta if msg.meta else {}
+                        # Update models array if not already set or if it's different
+                        if "models" not in existing_meta or existing_meta.get("models") != chat_models:
+                            existing_meta["models"] = chat_models
+                            ChatMessages.update_message(
+                                msg.id,
+                                meta=existing_meta
+                            )
+            
+            # Check if messages are in the updated_chat
+            messages = None
+            if "messages" in updated_chat:
+                messages = updated_chat["messages"]
+            elif "history" in updated_chat and "messages" in updated_chat["history"]:
+                messages = updated_chat["history"]["messages"]
+            
+            if messages:
+                # messages can be a list or a dict
+                if isinstance(messages, dict):
+                    messages_list = list(messages.values())
+                elif isinstance(messages, list):
+                    messages_list = messages
+                else:
+                    messages_list = []
+                
+                for msg in messages_list:
+                    if isinstance(msg, dict) and msg.get("id"):
+                        try:
+                            # Update usage if present
+                            usage = msg.get("usage")
+                            
+                            # Update meta to sync models (for user messages) and modelIdx (for assistant messages)
+                            # This preserves side-by-side chat information
+                            meta_update = {}
+                            existing_msg = ChatMessages.get_message_by_id(msg["id"])
+                            existing_meta = existing_msg.meta if existing_msg and existing_msg.meta else {}
+                            
+                            # If it's a user message with a models array, store it
+                            if msg.get("role") == "user" and "models" in msg:
+                                meta_update["models"] = msg["models"]
+                            
+                            # If it's an assistant message with modelIdx, store it
+                            if msg.get("role") == "assistant" and "modelIdx" in msg:
+                                meta_update["modelIdx"] = msg["modelIdx"]
+                            
+                            # Merge with existing meta
+                            if meta_update:
+                                meta_update = {**existing_meta, **meta_update}
+                                # For assistant messages, also update position to match modelIdx
+                                position_update = None
+                                if msg.get("role") == "assistant" and "modelIdx" in msg:
+                                    position_update = msg["modelIdx"]
+                                ChatMessages.update_message(
+                                    msg["id"],
+                                    usage=usage,
+                                    meta=meta_update,
+                                    position=position_update
+                                )
+                            elif usage:
+                                ChatMessages.update_message(
+                                    msg["id"],
+                                    usage=usage
+                                )
+                        except Exception as e:
+                            log.debug(f"Failed to update normalized message in update_chat_by_id: {e}")
+        except Exception as e:
+            log.debug(f"Error updating normalized message usage in update_chat_by_id: {e}")
+        
         return ChatResponse(**chat.model_dump())
     else:
         raise HTTPException(

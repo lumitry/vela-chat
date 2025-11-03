@@ -39,6 +39,12 @@ class Chat(Base):
     meta = Column(JSON, server_default="{}")
     folder_id = Column(Text, nullable=True)
 
+    # New normalized/summary columns
+    active_message_id = Column(Text, nullable=True)
+    root_message_id = Column(Text, nullable=True)
+    params = Column(JSON, nullable=True)
+    summary = Column(Text, nullable=True)
+
 
 class ChatModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -57,6 +63,12 @@ class ChatModel(BaseModel):
 
     meta: dict = {}
     folder_id: Optional[str] = None
+
+    # New fields
+    active_message_id: Optional[str] = None
+    root_message_id: Optional[str] = None
+    params: Optional[dict] = None
+    summary: Optional[str] = None
 
     # @field_validator("chat", "meta", mode="before")
     # @classmethod
@@ -192,6 +204,23 @@ class ChatTable:
 
         return self.update_chat_by_id(id, chat)
 
+    def update_chat_active_and_root_message_ids(self, id: str, active_message_id: Optional[str] = None, root_message_id: Optional[str] = None) -> Optional[ChatModel]:
+        """Update active_message_id and/or root_message_id on the chat."""
+        with get_db() as db:
+            chat_item = db.get(Chat, id)
+            if chat_item is None:
+                return None
+            
+            if active_message_id is not None:
+                chat_item.active_message_id = active_message_id
+            if root_message_id is not None:
+                chat_item.root_message_id = root_message_id
+            
+            chat_item.updated_at = int(time.time())
+            db.commit()
+            db.refresh(chat_item)
+            return ChatModel.model_validate(chat_item)
+
     def update_chat_tags_by_id(
         self, id: str, tags: list[str], user
     ) -> Optional[ChatModel]:
@@ -224,6 +253,9 @@ class ChatTable:
         if chat is None:
             return None
 
+        if chat.chat is None:
+            return {}
+        
         return chat.chat.get("history", {}).get("messages", {}) or {}
 
     def get_message_by_id_and_message_id(
@@ -233,6 +265,9 @@ class ChatTable:
         if chat is None:
             return None
 
+        if chat.chat is None:
+            return {}
+        
         return chat.chat.get("history", {}).get("messages", {}).get(message_id, {})
 
     def upsert_message_to_chat_by_id_and_message_id(
@@ -243,9 +278,14 @@ class ChatTable:
             return None
 
         chat = chat.chat
+        if chat is None:
+            chat = {}
+        
         history = chat.get("history", {})
+        if "messages" not in history:
+            history["messages"] = {}
 
-        if message_id in history.get("messages", {}):
+        if message_id in history["messages"]:
             history["messages"][message_id] = {
                 **history["messages"][message_id],
                 **message,

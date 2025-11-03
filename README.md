@@ -40,14 +40,16 @@ Current enhancements include:
 - ~~Added a dropdown to chat for GPT-5's new "verbosity" parameter. Requires enabling the "Verbosity" capability on the model editor page.~~ (Never mind, I'm getting API errors now. Verbosity [should be supported in the chat completions API](https://platform.openai.com/docs/api-reference/chat/create#chat_create-verbosity), but OpenRouter is giving me errors referncing the Responses API. Oh well. The button still shows up if you enable the capability, but it doesn't do anything for now.)
 - Added "Move To..." option in chat ellipsis menu to move chats between folders and "New Folder" option in folder ellipsis menu to create new folders directly inside an existing one.
 - Added sort options for chats list: sort by "Last Updated" (default), "Date Created", or "Title". (Stored in localStorage so it persists across sessions.)
+- (perf) Serve images via URL, not base64, to reduce payload size, database size, and improve general performance. (See [#2](https://github.com/lumitry/vela-chat/issues/2) and its sub-issues.)
+  - Existing databases will automatically be migrated! In case it wasn't obvious, you should DEFINITELY back up your database before upgrading!
+- (WIP) (perf) Normalized the database schema to store chat messages in a normalized manner, rather than as a single JSON blob nested inside the chat object. This should improve performance and reduce database size. See [docs/chat_storage_design.md](docs/chat_storage_design.md) for more details.
 
 Planned enhancements include:
 - (enh) typing in a single/double quote, parenthesis, or bracket while selecting text should automatically enclose that text instead of replacing it, similar to how it works in VSCode and other editors. ideally it would also close the marker automatically if you just type one without having anything selected, so typing in `(` would automatically add `)` after it, but IDK how to make it so that typing in the `)` yourself doesn't double it up. if that makes any sense
-- (perf) Serve images via URL, not base64, to reduce payload size, database size, and improve general performance. (See [#2](https://github.com/lumitry/vela-chat/issues/2) and its sub-issues.)
 - (perf) Don't bother loading in-chat images until after the chat itself has loaded. ([#26](https://github.com/lumitry/vela-chat/issues/26))
 - (perf) Defer loading of model images. ([#23](https://github.com/lumitry/vela-chat/issues/23))
 - (perf) Defer loading of models list?
-- (feat) Add a "Think" button to the chat input that, when clicked, modifies the request such that it uses chain-of-thought when generating the response. See [issue #19](https://github.com/lumitry/vela-chat/issues/19) for more details.
+- (feat) Add a "Think" button to the chat input that, when clicked, modifies the request such that it uses chain-of-thought when generating the response. (WIP; see [issue #19](https://github.com/lumitry/vela-chat/issues/19) for more details.)
 - (enh) Renaming chats via modal instead of inline? Inline feels clunky to me.
 - (enh) Make chat moving be a button in the dropdown menu instead of drag-and-drop since drag-and-drop is laggy at the moment.
   - UPDATE: Most of my qualms with drag-and-drop were fixed by making the folders endpoint faster, so this might not be necessary anymore.

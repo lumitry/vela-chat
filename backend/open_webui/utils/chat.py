@@ -340,6 +340,31 @@ async def chat_completed(request: Request, form_data: dict, user: Any):
             form_data=data,
             extra_params=extra_params,
         )
+        
+        # Update normalized message table with usage data if present
+        if result and isinstance(result, dict) and "messages" in result:
+            from open_webui.models.chat_messages import ChatMessages
+            from open_webui.models.chats import Chats
+            
+            messages = result.get("messages", [])
+            for msg in messages:
+                if msg.get("id") and msg.get("usage"):
+                    try:
+                        ChatMessages.update_message(
+                            msg["id"],
+                            usage=msg["usage"]
+                        )
+                        # Update active_message_id if this is the response message
+                        if msg.get("id") == metadata["message_id"]:
+                            Chats.update_chat_active_and_root_message_ids(
+                                metadata["chat_id"],
+                                active_message_id=metadata["message_id"]
+                            )
+                    except Exception as e:
+                        import logging
+                        log = logging.getLogger(__name__)
+                        log.debug(f"Failed to update normalized message usage in chat_completed: {e}")
+        
         return result
     except Exception as e:
         return Exception(f"Error: {e}")
