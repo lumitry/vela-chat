@@ -77,7 +77,19 @@
 		let message = history.messages[history.currentId];
 		while (message && _messages.length <= messagesCount) {
 			_messages.unshift({ ...message });
-			message = message.parentId !== null ? history.messages[message.parentId] : null;
+			if (message.parentId !== null) {
+				const parentMessage = history.messages[message.parentId];
+				if (!parentMessage) {
+					console.warn(
+						`Parent message ${message.parentId} not found in history.messages for message ${message.id}`
+					);
+					// Stop walking if parent is missing to avoid infinite loop
+					break;
+				}
+				message = parentMessage;
+			} else {
+				message = null;
+			}
 		}
 
 		messages = _messages;
@@ -422,7 +434,7 @@
 		<div class="w-full pt-2">
 			{#key chatId}
 				<div class="w-full">
-					{#if messages.at(0)?.parentId !== null}
+					{#if messages.at(0)?.parentId !== null && history.messages[messages.at(0).parentId]}
 						<Loader
 							on:visible={(e) => {
 								console.log('visible');

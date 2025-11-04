@@ -172,7 +172,8 @@ class ChatMessagesTable:
     def update_message(self, message_id: str, content_text: Optional[str] = None, 
                       content_json: Optional[dict] = None, model_id: Optional[str] = None,
                       status: Optional[dict] = None, usage: Optional[dict] = None,
-                      meta: Optional[dict] = None, position: Optional[int] = None) -> Optional[ChatMessageModel]:
+                      meta: Optional[dict] = None, position: Optional[int] = None,
+                      parent_id: Optional[str] = None) -> Optional[ChatMessageModel]:
         """Update an existing message with new content or metadata."""
         import logging
         log = logging.getLogger(__name__)
@@ -186,6 +187,7 @@ class ChatMessagesTable:
             if content_text is not None:
                 message.content_text = content_text
                 log.debug(f"ChatMessages.update_message: Updated content_text for {message_id} (length: {len(content_text) if content_text else 0})")
+                db.flush()
             if content_json is not None:
                 message.content_json = content_json
             if model_id is not None:
@@ -196,6 +198,9 @@ class ChatMessagesTable:
                 message.usage = usage
             if position is not None:
                 message.position = position
+            if parent_id is not None:
+                message.parent_id = parent_id
+                log.debug(f"ChatMessages.update_message: Updated parent_id for {message_id} to {parent_id}")
             if meta is not None:
                 # Merge with existing meta if it exists
                 existing_meta = message.meta or {}

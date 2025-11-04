@@ -23,6 +23,7 @@ from pydantic import BaseModel
 
 from open_webui.utils.auth import get_admin_user, get_verified_user
 from open_webui.utils.access_control import has_permission
+from open_webui.internal.db import get_db
 
 log = logging.getLogger(__name__)
 log.setLevel(SRC_LOG_LEVELS["MODELS"])
@@ -98,7 +99,15 @@ async def get_user_chat_list_by_user_id(
 @router.post("/new", response_model=Optional[ChatResponse])
 async def create_new_chat(form_data: ChatForm, user=Depends(get_verified_user)):
     try:
+        # Create chat with legacy format in chat.chat blob initially
+        # Messages will be inserted via middleware during streaming
         chat = Chats.insert_new_chat(user.id, form_data)
+        
+        # If the chat form has initial messages/history, convert to normalized format
+        if chat and chat.id and "history" in form_data.chat and form_data.chat["history"].get("messages"):
+            from open_webui.models.chat_converter import legacy_to_normalized_format
+            legacy_to_normalized_format(chat.id, form_data.chat)
+        
         return ChatResponse(**chat.model_dump())
     except Exception as e:
         log.exception(e)
@@ -344,13 +353,30 @@ async def get_user_chat_list_by_tag_name(
 async def get_chat_by_id(id: str, user=Depends(get_verified_user)):
     chat = Chats.get_chat_by_id_and_user_id(id, user.id)
 
-    if chat:
-        return ChatResponse(**chat.model_dump())
-
-    else:
+    if not chat:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail=ERROR_MESSAGES.NOT_FOUND
         )
+    
+    # Check if this chat uses normalized storage (has messages in chat_message table)
+    from open_webui.models.chat_messages import ChatMessages
+    from open_webui.models.chat_converter import normalized_to_legacy_format
+    
+    # Check if chat has normalized messages
+    with get_db() as db:
+        from open_webui.models.chat_messages import ChatMessage
+        has_normalized = db.query(ChatMessage).filter_by(chat_id=id).first() is not None
+    
+    if has_normalized:
+        # Convert from normalized tables to legacy format
+        legacy_chat = normalized_to_legacy_format(id)
+        # Merge with chat metadata
+        chat.chat = legacy_chat
+    else:
+        # Legacy chat, use existing chat.chat blob
+        pass
+    
+    return ChatResponse(**chat.model_dump())
 
 
 ############################
@@ -385,6 +411,38 @@ async def get_chat_meta_by_id(id: str, user=Depends(get_verified_user)):
 
     # Extract minimal fields without returning the full chat JSON
     chat_content = chat.chat or {}
+    
+    # Check if this chat uses normalized storage (has messages in chat_message table)
+    from open_webui.models.chat_messages import ChatMessage
+    models = None
+    params = chat_content.get("params")
+    
+    with get_db() as db:
+        has_normalized = db.query(ChatMessage).filter_by(chat_id=id).first() is not None
+    
+    if has_normalized:
+        # For normalized chats, extract models from first user message's meta
+        # (models are stored in user message meta, not in chat.chat.models)
+        with get_db() as db:
+            first_user_msg = db.query(ChatMessage).filter_by(
+                chat_id=id,
+                role="user"
+            ).order_by(ChatMessage.created_at.asc()).first()
+            
+            if first_user_msg is not None:
+                msg_meta = getattr(first_user_msg, 'meta', None)
+                if msg_meta and isinstance(msg_meta, dict) and "models" in msg_meta:
+                    models = msg_meta["models"]
+        
+        # For normalized chats, params are stored in chat.params column, not chat.chat.params
+        if chat.params:
+            params = chat.params
+    else:
+        # Legacy chat, use existing chat.chat blob
+        models = chat_content.get("models")
+        if not params:
+            params = chat_content.get("params")
+    
     return ChatMetaResponse(
         **{
             "id": chat.id,
@@ -396,8 +454,8 @@ async def get_chat_meta_by_id(id: str, user=Depends(get_verified_user)):
             "pinned": chat.pinned,
             "folder_id": chat.folder_id,
             "active_message_id": getattr(chat, 'active_message_id', None),
-            "models": chat_content.get("models"),
-            "params": chat_content.get("params"),
+            "models": models,
+            "params": params,
             "files": chat_content.get("files"),
         }
     )
@@ -413,111 +471,71 @@ async def update_chat_by_id(
     id: str, form_data: ChatForm, user=Depends(get_verified_user)
 ):
     chat = Chats.get_chat_by_id_and_user_id(id, user.id)
-    if chat:
-        updated_chat = {**chat.chat, **form_data.chat}
-        chat = Chats.update_chat_by_id(id, updated_chat)
-        
-        # Update active_message_id if history.currentId is present (for side-by-side chat selection)
-        # This allows the frontend to persist which assistant message was selected
-        if "history" in form_data.chat and isinstance(form_data.chat["history"], dict):
-            history_current_id = form_data.chat["history"].get("currentId")
-            if history_current_id:
-                # Update active_message_id to track which branch the user is on
-                Chats.update_chat_active_and_root_message_ids(id, active_message_id=history_current_id)
-        
-        # Update normalized message table with usage data if present in messages/history
-        try:
-            from open_webui.models.chat_messages import ChatMessages
-            
-            # Get chat-level models array (used for side-by-side chats)
-            # This is sent in saveChatHandler as models: selectedModels
-            chat_models = form_data.chat.get("models")
-            if chat_models and isinstance(chat_models, list) and len(chat_models) > 1:
-                # If we have multiple models at chat level, sync to ALL user messages in this chat
-                # This ensures side-by-side status is preserved for all user messages
-                from open_webui.internal.db import get_db
-                with get_db() as db:
-                    from open_webui.models.chat_messages import ChatMessage
-                    all_user_messages = db.query(ChatMessage).filter_by(
-                        chat_id=id,
-                        role="user"
-                    ).all()
-                    
-                    for msg in all_user_messages:
-                        existing_meta = msg.meta if msg.meta else {}
-                        # Update models array if not already set or if it's different
-                        if "models" not in existing_meta or existing_meta.get("models") != chat_models:
-                            existing_meta["models"] = chat_models
-                            ChatMessages.update_message(
-                                msg.id,
-                                meta=existing_meta
-                            )
-            
-            # Check if messages are in the updated_chat
-            messages = None
-            if "messages" in updated_chat:
-                messages = updated_chat["messages"]
-            elif "history" in updated_chat and "messages" in updated_chat["history"]:
-                messages = updated_chat["history"]["messages"]
-            
-            if messages:
-                # messages can be a list or a dict
-                if isinstance(messages, dict):
-                    messages_list = list(messages.values())
-                elif isinstance(messages, list):
-                    messages_list = messages
-                else:
-                    messages_list = []
-                
-                for msg in messages_list:
-                    if isinstance(msg, dict) and msg.get("id"):
-                        try:
-                            # Update usage if present
-                            usage = msg.get("usage")
-                            
-                            # Update meta to sync models (for user messages) and modelIdx (for assistant messages)
-                            # This preserves side-by-side chat information
-                            meta_update = {}
-                            existing_msg = ChatMessages.get_message_by_id(msg["id"])
-                            existing_meta = existing_msg.meta if existing_msg and existing_msg.meta else {}
-                            
-                            # If it's a user message with a models array, store it
-                            if msg.get("role") == "user" and "models" in msg:
-                                meta_update["models"] = msg["models"]
-                            
-                            # If it's an assistant message with modelIdx, store it
-                            if msg.get("role") == "assistant" and "modelIdx" in msg:
-                                meta_update["modelIdx"] = msg["modelIdx"]
-                            
-                            # Merge with existing meta
-                            if meta_update:
-                                meta_update = {**existing_meta, **meta_update}
-                                # For assistant messages, also update position to match modelIdx
-                                position_update = None
-                                if msg.get("role") == "assistant" and "modelIdx" in msg:
-                                    position_update = msg["modelIdx"]
-                                ChatMessages.update_message(
-                                    msg["id"],
-                                    usage=usage,
-                                    meta=meta_update,
-                                    position=position_update
-                                )
-                            elif usage:
-                                ChatMessages.update_message(
-                                    msg["id"],
-                                    usage=usage
-                                )
-                        except Exception as e:
-                            log.debug(f"Failed to update normalized message in update_chat_by_id: {e}")
-        except Exception as e:
-            log.debug(f"Error updating normalized message usage in update_chat_by_id: {e}")
-        
-        return ChatResponse(**chat.model_dump())
-    else:
+    if not chat:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
         )
+    
+    # Check if this chat uses normalized storage
+    from open_webui.models.chat_messages import ChatMessage
+    from open_webui.models.chat_converter import legacy_to_normalized_format, normalized_to_legacy_format
+    from open_webui.models.chats import Chat
+    
+    with get_db() as db:
+        has_normalized = db.query(ChatMessage).filter_by(chat_id=id).first() is not None
+    
+    if has_normalized:
+        # Convert legacy format to normalized tables
+        legacy_to_normalized_format(id, form_data.chat)
+        
+        # Update chat metadata (title, params, etc.)
+        if "title" in form_data.chat:
+            Chats.update_chat_title_by_id(id, form_data.chat["title"])
+        if "params" in form_data.chat:
+            # Clean params - remove models if present (models should be in user message meta, not params)
+            params_clean = form_data.chat["params"].copy() if isinstance(form_data.chat["params"], dict) else {}
+            if "models" in params_clean:
+                del params_clean["models"]
+            with get_db() as db:
+                chat_item = db.query(Chat).filter_by(id=id).first()
+                if chat_item:
+                    # Type ignore: SQLAlchemy Column assignment works at runtime
+                    chat_item.params = params_clean  # type: ignore
+                    db.commit()
+        # Update models: store in first user message's meta (NOT in params)
+        if "models" in form_data.chat:
+            from open_webui.models.chat_messages import ChatMessages, ChatMessage
+            with get_db() as db:
+                # Find the first user message and update its meta
+                first_user_msg = db.query(ChatMessage).filter_by(
+                    chat_id=id,
+                    role="user"
+                ).order_by(ChatMessage.created_at.asc()).first()
+                
+                if first_user_msg:
+                    existing_meta = first_user_msg.meta if first_user_msg.meta else {}
+                    existing_meta["models"] = form_data.chat["models"]
+                    ChatMessages.update_message(first_user_msg.id, meta=existing_meta)
+        
+        # Update active_message_id if history.currentId is present
+        # This handles both full history updates and lightweight updates that only send currentId
+        if "history" in form_data.chat and isinstance(form_data.chat["history"], dict):
+            history_current_id = form_data.chat["history"].get("currentId")
+            if history_current_id:
+                Chats.update_chat_active_and_root_message_ids(id, active_message_id=history_current_id)
+        
+        # Reload chat and convert back to legacy format for response
+        chat = Chats.get_chat_by_id_and_user_id(id, user.id)
+        if chat:
+            legacy_chat = normalized_to_legacy_format(id)
+            chat.chat = legacy_chat
+    else:
+        # Legacy chat, update the JSON blob
+        updated_chat = {**chat.chat, **form_data.chat}
+        chat = Chats.update_chat_by_id(id, updated_chat)
+    
+    return ChatResponse(**chat.model_dump())
 
 
 ############################

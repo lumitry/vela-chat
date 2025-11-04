@@ -185,7 +185,19 @@ def upgrade() -> None:
             content_json = None
             status = {'statusHistory': msg.get('statusHistory')} if msg.get('statusHistory') else None
             usage = msg.get('usage')
-            message_meta = None
+            
+            # Preserve unmigrated fields in meta
+            message_meta = {}
+            if msg.get('modelIdx') is not None:
+                message_meta['modelIdx'] = msg.get('modelIdx')
+            if msg.get('models'):
+                message_meta['models'] = msg.get('models')
+            if msg.get('userContext') is not None:
+                message_meta['userContext'] = msg.get('userContext')
+            if msg.get('lastSentence'):
+                message_meta['lastSentence'] = msg.get('lastSentence')
+            message_meta = message_meta if message_meta else None
+            
             created_at = int(msg.get('timestamp') or ts_now)
 
             insert_message(

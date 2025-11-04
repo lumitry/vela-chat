@@ -43,6 +43,7 @@ Current enhancements include:
 - (perf) Serve images via URL, not base64, to reduce payload size, database size, and improve general performance. (See [#2](https://github.com/lumitry/vela-chat/issues/2) and its sub-issues.)
   - Existing databases will automatically be migrated! In case it wasn't obvious, you should DEFINITELY back up your database before upgrading!
 - (WIP) (perf) Normalized the database schema to store chat messages in a normalized manner, rather than as a single JSON blob nested inside the chat object. This should improve performance and reduce database size. See [docs/chat_storage_design.md](docs/chat_storage_design.md) for more details.
+  - [ ] TODO: I've decided that, for now, we won't be optimizing the API, so we still send the whole chat history twice in each chat JSON payload.
 
 Planned enhancements include:
 - (enh) typing in a single/double quote, parenthesis, or bracket while selecting text should automatically enclose that text instead of replacing it, similar to how it works in VSCode and other editors. ideally it would also close the marker automatically if you just type one without having anything selected, so typing in `(` would automatically add `)` after it, but IDK how to make it so that typing in the `)` yourself doesn't double it up. if that makes any sense

@@ -253,10 +253,24 @@ class ChatTable:
         if chat is None:
             return None
 
-        if chat.chat is None:
-            return {}
+        # Check if this chat uses normalized storage (has messages in chat_message table)
+        from open_webui.internal.db import get_db
+        from open_webui.models.chat_messages import ChatMessage
+        from open_webui.models.chat_converter import normalized_to_legacy_format
         
-        return chat.chat.get("history", {}).get("messages", {}) or {}
+        with get_db() as db:
+            has_normalized = db.query(ChatMessage).filter_by(chat_id=id).first() is not None
+        
+        if has_normalized:
+            # For normalized chats, convert to legacy format to get messages dict
+            legacy_chat = normalized_to_legacy_format(id)
+            return legacy_chat.get("history", {}).get("messages", {}) or {}
+        else:
+            # Legacy chat, use existing chat.chat blob
+            if chat.chat is None:
+                return {}
+            
+            return chat.chat.get("history", {}).get("messages", {}) or {}
 
     def get_message_by_id_and_message_id(
         self, id: str, message_id: str

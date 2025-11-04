@@ -63,8 +63,7 @@
 		getTagsById,
 		updateChatById,
 		getChatMetaById,
-		fetchChatBranch,
-		fetchAllChatMessages
+		getChatById
 	} from '$lib/apis/chats';
 	import { generateOpenAIChatCompletion } from '$lib/apis/openai';
 	import { processWeb, processWebSearch, processYoutubeVideo } from '$lib/apis/retrieval';
@@ -823,105 +822,50 @@
 						? chatContent.models
 						: [chatContent.models ?? ''];
 
-				// Load all messages upfront for full-loading (including all siblings)
+				// Use the old API - getChatById returns the full chat with history in legacy format
 				try {
-					const fullRes = await fetchAllChatMessages(localStorage.token, $chatId);
-					if (fullRes?.messages?.length > 0) {
-						// Build message map, deduplicating by id
-						const map = {} as any;
-						const seenIds = new Set<string>();
-						for (const m of fullRes.messages) {
-							// Skip duplicates
-							if (seenIds.has(m.id)) {
-								console.warn(`Duplicate message id detected: ${m.id}, skipping`);
-								continue;
-							}
-							seenIds.add(m.id);
+					const fullChat = await getChatById(localStorage.token, $chatId);
+					if (fullChat?.chat?.history?.messages) {
+						// Convert legacy format to frontend history structure
+						const messagesMap = fullChat.chat.history.messages;
+						let currentId = fullChat.chat.history.currentId || null;
 
-							// Skip if parent_id points to self (data corruption)
-							if (m.parent_id === m.id) {
-								console.warn(`Message ${m.id} has parent_id pointing to itself, fixing to null`);
-								m.parent_id = null;
-							}
-
-							map[m.id] = {
-								id: m.id,
-								parentId: m.parent_id,
-								role: m.role,
-								content: m.content_text ?? m.content_json?.text ?? '',
-								model: m.model_id ?? undefined,
-								childrenIds: [],
-								position: m.position ?? 0,
-								timestamp: Math.floor(m.created_at ?? 0),
-								usage: m.usage ?? undefined,
-								statusHistory: m?.status?.statusHistory ?? undefined,
-								// Restore models array from meta for user messages (side-by-side chats)
-								models: m.role === 'user' ? (m.meta?.models ?? undefined) : undefined,
-								// Restore modelIdx from meta for assistant messages (side-by-side chats)
-								modelIdx: m.role === 'assistant' ? (m.meta?.modelIdx ?? undefined) : undefined,
-								files: (m.attachments ?? [])
-									.map((a) => ({
-										type: a.type === 'image' ? 'image' : 'file',
-										url:
-											a.url ??
-											(a.file_id ? `${WEBUI_BASE_URL}/api/v1/files/${a.file_id}/content` : null)
-									}))
-									.filter((f) => f.url)
-							};
-						}
-
-						// Populate childrenIds by iterating through all messages
-						// Ensure we don't add a message to its own childrenIds
-						for (const m of Object.values(map) as any[]) {
-							if (m.parentId && m.parentId !== m.id && map[m.parentId]) {
-								if (!map[m.parentId].childrenIds.includes(m.id)) {
-									map[m.parentId].childrenIds.push(m.id);
+						// Validate that currentId exists in messagesMap, or find a valid currentId
+						if (currentId && !messagesMap[currentId]) {
+							console.warn(
+								`currentId ${currentId} not found in messages, finding valid leaf message`
+							);
+							// Find a leaf message (one with no children or no children that exist)
+							const leafMessages = Object.values(messagesMap).filter((msg: any) => {
+								if (!msg.childrenIds || msg.childrenIds.length === 0) return true;
+								// Check if any children exist
+								return !msg.childrenIds.some((childId: string) => messagesMap[childId]);
+							});
+							if (leafMessages.length > 0) {
+								// Use the most recent leaf message
+								leafMessages.sort((a: any, b: any) => (b.timestamp || 0) - (a.timestamp || 0));
+								currentId = leafMessages[0].id;
+							} else {
+								// Fallback: use the message with the highest timestamp
+								const allMessages = Object.values(messagesMap) as any[];
+								if (allMessages.length > 0) {
+									allMessages.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+									currentId = allMessages[0].id;
+								} else {
+									currentId = null;
 								}
 							}
 						}
 
-						// Sort childrenIds by position (for side-by-side chats), then by timestamp
-						for (const m of Object.values(map) as any[]) {
-							if (m.childrenIds.length > 0) {
-								m.childrenIds.sort((a: string, b: string) => {
-									const msgA = fullRes.messages.find((msg: any) => msg.id === a);
-									const msgB = fullRes.messages.find((msg: any) => msg.id === b);
-									const posA = msgA?.position ?? 0;
-									const posB = msgB?.position ?? 0;
-									if (posA !== posB) {
-										return posA - posB;
-									}
-									// Fallback to timestamp if positions are equal
-									const tsA = map[a]?.timestamp ?? 0;
-									const tsB = map[b]?.timestamp ?? 0;
-									return tsA - tsB;
-								});
-							}
-						}
-
-						// Set currentId to active_message_id if available, otherwise find deepest leaf
-						let currentId = chatMeta?.active_message_id ?? null;
-						if (!currentId || !map[currentId]) {
-							// Find the deepest leaf message
-							const leaves = (Object.values(map) as any[]).filter(
-								(m: any) => m.childrenIds.length === 0
-							);
-							if (leaves.length > 0) {
-								// Find the leaf with the highest timestamp
-								leaves.sort((a: any, b: any) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
-								currentId = leaves[0].id;
-							}
-						}
-
 						history = {
-							messages: map,
+							messages: messagesMap,
 							currentId: currentId
 						};
 					} else {
 						history = convertMessagesToHistory([]);
 					}
 				} catch (e) {
-					console.warn('Failed to load chat messages:', e);
+					console.warn('Failed to load chat:', e);
 					history = convertMessagesToHistory([]);
 				}
 
@@ -1833,6 +1777,8 @@
 		messages = messages
 			.map((message, idx, arr) => ({
 				role: message.role,
+				// Preserve the message ID so backend can use it when inserting into normalized storage
+				...(message.id ? { id: message.id } : {}),
 				...((message.files?.filter((file) => file.type === 'image').length > 0 ?? false) &&
 				message.role === 'user'
 					? {
@@ -2255,10 +2201,14 @@
 		if ($chatId == _chatId) {
 			if (!$temporaryChatEnabled) {
 				// Lightweight update: do not send full history/messages anymore
+				// But still send currentId to keep active_message_id in sync
 				chat = await updateChatById(localStorage.token, _chatId, {
 					models: selectedModels,
 					params: params,
-					files: chatFiles
+					files: chatFiles,
+					history: {
+						currentId: history.currentId
+					}
 				});
 				currentChatPage.set(1);
 				await chats.set(await getChatList(localStorage.token, $currentChatPage));

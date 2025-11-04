@@ -846,10 +846,14 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                         content_json = {"items": content}
                 
                 # Get parent_id from the message structure if available
-                parent_id = user_msg.get("parent_id") or user_msg.get("parentId")
+                # Convert to string to ensure consistent format
+                parent_id_raw = user_msg.get("parent_id") or user_msg.get("parentId")
+                parent_id = str(parent_id_raw) if parent_id_raw is not None else None
                 
                 # Frontend-provided user message ID (use it if provided)
-                frontend_user_id = user_msg.get("id")
+                # Convert to string to ensure consistent format
+                frontend_user_id_raw = user_msg.get("id")
+                frontend_user_id = str(frontend_user_id_raw) if frontend_user_id_raw is not None else None
                 
                 # For side-by-side chats: check if a user message with the same content already exists recently
                 # This prevents duplicate user messages when multiple models respond to the same prompt
@@ -869,7 +873,9 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                     user_message_id = None
                 
                 # If we don't have an existing message by ID, check for duplicate content (side-by-side scenario)
-                if should_insert_user and content_text:
+                # BUT: Only use duplicate detection if we don't have a frontend-provided ID
+                # If frontend provided an ID, we should use it even if content is duplicate (to preserve ID consistency)
+                if should_insert_user and content_text and not frontend_user_id:
                     from open_webui.internal.db import get_db
                     from open_webui.models.chat_messages import ChatMessage
                     from sqlalchemy import and_
@@ -895,6 +901,34 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                             # Access the SQLAlchemy model attribute directly
                             parent_id = duplicate.parent_id if duplicate.parent_id else None
                 
+                # Validate parent_id exists in database if provided
+                # If parent_id is provided but doesn't exist, it might be a frontend ID that wasn't saved correctly
+                # In that case, we should try to find the message by other means (e.g., by content/timestamp)
+                if should_insert_user and parent_id:
+                    parent_msg = ChatMessages.get_message_by_id(parent_id)
+                    if not parent_msg:
+                        log.warning(f"Parent message {parent_id} not found in database for chat {chat_id}. This may indicate an ID mismatch between frontend and backend.")
+                        # Try to use active_message_id as fallback
+                        chat_model = Chats.get_chat_by_id(chat_id)
+                        if chat_model and chat_model.active_message_id:
+                            active_msg = ChatMessages.get_message_by_id(chat_model.active_message_id)
+                            if active_msg:
+                                parent_id = str(chat_model.active_message_id)
+                                log.warning(f"Using active_message_id {parent_id} as parent instead of missing {parent_id}")
+                            else:
+                                # If active_message_id also doesn't exist, clear parent_id (root message)
+                                parent_id = None
+                                log.warning(f"active_message_id {chat_model.active_message_id} also not found, treating as root message")
+                        else:
+                            # No active_message_id, this is likely a root message
+                            parent_id = None
+                            log.warning(f"No active_message_id found, treating message as root")
+                    else:
+                        # Parent exists - verify the ID matches (should be string)
+                        if str(parent_msg.id) != str(parent_id):
+                            log.warning(f"Parent ID mismatch: requested {parent_id}, got {parent_msg.id}")
+                            parent_id = str(parent_msg.id)
+                
                 # If parent_id is still not set and we're inserting, try to get it from chat's active_message_id
                 # For side-by-side chats, the frontend sets parent_id to the selected assistant message
                 # so we should trust the parent_id from the user message payload
@@ -910,12 +944,12 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                                 # Allow both user and assistant messages as parents
                                 # User message parent = standard continuation
                                 # Assistant message parent = side-by-side continuation from specific response
-                                parent_id = chat_model.active_message_id
+                                parent_id = str(chat_model.active_message_id)
                         elif chat_model.root_message_id:
                             # Fallback to root_message_id if active_message_id is not set
                             root_msg = ChatMessages.get_message_by_id(chat_model.root_message_id)
                             if root_msg and root_msg.role == "user":
-                                parent_id = chat_model.root_message_id
+                                parent_id = str(chat_model.root_message_id)
                 
                 # Extract models array from user message for side-by-side chats
                 # This is stored in the user message's "models" property in the frontend
@@ -938,15 +972,19 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                 
                 # Insert user message if needed
                 if should_insert_user:
+                    # Ensure parent_id and frontend_user_id are strings
+                    parent_id_str = str(parent_id) if parent_id else None
+                    frontend_user_id_str = str(frontend_user_id) if frontend_user_id else None
+                    
                     inserted_user = ChatMessages.insert_message(chat_id, MessageCreateForm(
-                        parent_id=parent_id,
+                        parent_id=parent_id_str,
                         role="user",
                         content_text=content_text,
                         content_json=content_json,
                         model_id=None,
                         attachments=attachments if attachments else None,
                         meta=user_meta
-                    ), message_id=frontend_user_id if frontend_user_id else None)
+                    ), message_id=frontend_user_id_str)
                     if inserted_user:
                         user_message_id = inserted_user.id
                         # If this is the first message (no parent), set it as root_message_id
@@ -970,8 +1008,12 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                             position_for_assistant = model_idx
                         
                         # For side-by-side chats, use modelIdx as position to ensure correct ordering
+                        # Ensure user_message_id and assistant_id are strings
+                        user_message_id_str = str(user_message_id) if user_message_id else None
+                        assistant_id_str = str(assistant_id) if assistant_id else None
+                        
                         ChatMessages.insert_message(chat_id, MessageCreateForm(
-                            parent_id=user_message_id,
+                            parent_id=user_message_id_str,
                             role="assistant",
                             content_text="",
                             content_json=None,
@@ -979,9 +1021,9 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                             attachments=None,
                             meta=assistant_meta,
                             position=position_for_assistant
-                        ), message_id=assistant_id)
+                        ), message_id=assistant_id_str)
                         # Update active_message_id to point to this assistant message
-                        Chats.update_chat_active_and_root_message_ids(chat_id, active_message_id=assistant_id)
+                        Chats.update_chat_active_and_root_message_ids(chat_id, active_message_id=assistant_id_str)
         except Exception as e:
             log.debug(f"Failed to insert messages into normalized storage: {e}")
 
