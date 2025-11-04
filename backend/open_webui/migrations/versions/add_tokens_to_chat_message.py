@@ -8,6 +8,7 @@ Create Date: 2025-11-03 21:23:38.000000
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect
 import json
 
 
@@ -57,9 +58,17 @@ def extract_tokens_from_usage(usage_json):
 
 def upgrade() -> None:
     # Add token columns for analytics
-    op.add_column('chat_message', sa.Column('input_tokens', sa.Integer(), nullable=True))
-    op.add_column('chat_message', sa.Column('output_tokens', sa.Integer(), nullable=True))
-    op.add_column('chat_message', sa.Column('reasoning_tokens', sa.Integer(), nullable=True))
+    # Check if columns already exist (for cases where migration was run manually or partially)
+    conn = op.get_bind()
+    inspector = inspect(conn)
+    columns = [col['name'] for col in inspector.get_columns('chat_message')]
+    
+    if 'input_tokens' not in columns:
+        op.add_column('chat_message', sa.Column('input_tokens', sa.Integer(), nullable=True))
+    if 'output_tokens' not in columns:
+        op.add_column('chat_message', sa.Column('output_tokens', sa.Integer(), nullable=True))
+    if 'reasoning_tokens' not in columns:
+        op.add_column('chat_message', sa.Column('reasoning_tokens', sa.Integer(), nullable=True))
     
     # Backfill token values from existing usage JSON
     conn = op.get_bind()
