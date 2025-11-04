@@ -25,7 +25,8 @@
 		pinnedChats,
 		showSidebar,
 		currentChatPage,
-		tags
+		tags,
+		chatCache
 	} from '$lib/stores';
 
 	import ChatMenu from './ChatMenu.svelte';
@@ -51,16 +52,52 @@
 
 	let mouseOver = false;
 	let draggable = false;
-	$: if (mouseOver) {
+	let isLoading = false; // Prevent concurrent requests
+	let loadPromise = null; // Track the current load promise
+
+	$: if (mouseOver && !isLoading && !chat && !loadPromise) {
 		loadChat();
 	}
 
 	const loadChat = async () => {
-		if (!chat) {
-			draggable = false;
-			chat = await getChatById(localStorage.token, id);
-			draggable = true;
+		// Prevent concurrent requests
+		if (isLoading || chat || loadPromise) {
+			return loadPromise || Promise.resolve();
 		}
+
+		// Check cache first - do this synchronously
+		const cache = $chatCache;
+		if (cache.has(id)) {
+			chat = cache.get(id);
+			draggable = true;
+			return Promise.resolve();
+		}
+
+		// Not in cache, fetch and store it
+		isLoading = true;
+		draggable = false;
+
+		// Create and store the promise immediately to prevent concurrent calls
+		loadPromise = (async () => {
+			try {
+				const fetchedChat = await getChatById(localStorage.token, id);
+				if (fetchedChat) {
+					chat = fetchedChat;
+					// Store in cache (LRU will evict oldest if at max size)
+					chatCache.update((cache) => {
+						cache.set(id, fetchedChat);
+						return cache;
+					});
+				}
+				return fetchedChat;
+			} finally {
+				isLoading = false;
+				draggable = true;
+				loadPromise = null;
+			}
+		})();
+
+		return loadPromise;
 	};
 
 	let showShareChatModal = false;
@@ -74,6 +111,11 @@
 		} else {
 			await updateChatById(localStorage.token, id, {
 				title: title
+			});
+			// Invalidate cache since chat was updated
+			chatCache.update((cache) => {
+				cache.delete(id);
+				return cache;
 			});
 
 			if (id === $chatId) {
@@ -116,6 +158,11 @@
 		});
 
 		if (res) {
+			// Remove from cache when deleted
+			chatCache.update((cache) => {
+				cache.delete(id);
+				return cache;
+			});
 			tags.set(await getAllTags(localStorage.token));
 			if ($chatId === id) {
 				await goto('/');

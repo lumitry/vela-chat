@@ -36,7 +36,8 @@
 		chatTitle,
 		showArtifacts,
 		tools,
-		toolServers
+		toolServers,
+		chatCache
 	} from '$lib/stores';
 	import {
 		convertMessagesToHistory,
@@ -797,10 +798,34 @@
 
 	const loadChat = async () => {
 		chatId.set(chatIdProp);
-		let chatMeta = await getChatMetaById(localStorage.token, $chatId).catch(async (error) => {
-			await goto('/');
-			return null;
-		});
+
+		// Check cache first for prefetched data
+		const cache = $chatCache;
+		let cachedFullChat = cache.get($chatId);
+
+		let chatMeta;
+		let fullChat;
+
+		if (cachedFullChat) {
+			// Use cached data - extract metadata from cached full chat
+			fullChat = cachedFullChat;
+			// Extract metadata from the cached chat structure
+			// getChatById returns { id, title, chat: { title, models, params, files, history } }
+			const chatData = cachedFullChat.chat || {};
+			chatMeta = {
+				title: chatData.title || cachedFullChat.title,
+				models: chatData.models,
+				params: chatData.params,
+				files: chatData.files
+			};
+			// Skip API call for metadata since we have the full chat
+		} else {
+			// Not in cache, fetch from API
+			chatMeta = await getChatMetaById(localStorage.token, $chatId).catch(async (error) => {
+				await goto('/');
+				return null;
+			});
+		}
 
 		if (chatMeta) {
 			tags = await getTagsById(localStorage.token, $chatId).catch(async (error) => {
@@ -822,9 +847,19 @@
 						? chatContent.models
 						: [chatContent.models ?? ''];
 
-				// Use the old API - getChatById returns the full chat with history in legacy format
+				// Use cached data if available, otherwise fetch
 				try {
-					const fullChat = await getChatById(localStorage.token, $chatId);
+					if (!fullChat) {
+						fullChat = await getChatById(localStorage.token, $chatId);
+						// Cache the fetched data (LRU will evict oldest if at max size)
+						if (fullChat) {
+							chatCache.update((cache) => {
+								cache.set($chatId, fullChat);
+								return cache;
+							});
+						}
+					}
+
 					if (fullChat?.chat?.history?.messages) {
 						// Convert legacy format to frontend history structure
 						const messagesMap = fullChat.chat.history.messages;
@@ -967,6 +1002,11 @@
 					history: history,
 					params: params,
 					files: chatFiles
+				});
+				// Invalidate cache since chat was updated
+				chatCache.update((cache) => {
+					cache.delete(chatId);
+					return cache;
 				});
 
 				currentChatPage.set(1);
@@ -2209,6 +2249,11 @@
 					history: {
 						currentId: history.currentId
 					}
+				});
+				// Invalidate cache since chat was updated
+				chatCache.update((cache) => {
+					cache.delete(_chatId);
+					return cache;
 				});
 				currentChatPage.set(1);
 				await chats.set(await getChatList(localStorage.token, $currentChatPage));
