@@ -631,23 +631,27 @@ class ChatTable:
 
             query = query.order_by(Chat.updated_at.desc())
 
+            # Import ChatMessage for normalized search
+            from open_webui.models.chat_messages import ChatMessage
+
             # Check if the database dialect is either 'sqlite' or 'postgresql'
             dialect_name = db.bind.dialect.name
             if dialect_name == "sqlite":
-                # SQLite case: using JSON1 extension for JSON searching
+                # SQLite case: search in normalized chat_message table
+                # Search in title OR normalized messages
                 query = query.filter(
                     (
                         Chat.title.ilike(
                             f"%{search_text}%"
                         )  # Case-insensitive search in title
-                        | text(
-                            """
-                            EXISTS (
-                                SELECT 1 
-                                FROM json_each(Chat.chat, '$.messages') AS message 
-                                WHERE LOWER(message.value->>'content') LIKE '%' || :search_text || '%'
+                        | exists(
+                            select(1).where(
+                                and_(
+                                    ChatMessage.chat_id == Chat.id,
+                                    ChatMessage.content_text.isnot(None),
+                                    ChatMessage.content_text.ilike(f"%{search_text}%")
+                                )
                             )
-                            """
                         )
                     ).params(search_text=search_text)
                 )
@@ -683,20 +687,21 @@ class ChatTable:
                     )
 
             elif dialect_name == "postgresql":
-                # PostgreSQL relies on proper JSON query for search
+                # PostgreSQL case: search in normalized chat_message table
+                # Search in title OR normalized messages
                 query = query.filter(
                     (
                         Chat.title.ilike(
                             f"%{search_text}%"
                         )  # Case-insensitive search in title
-                        | text(
-                            """
-                            EXISTS (
-                                SELECT 1
-                                FROM json_array_elements(Chat.chat->'messages') AS message
-                                WHERE LOWER(message->>'content') LIKE '%' || :search_text || '%'
+                        | exists(
+                            select(1).where(
+                                and_(
+                                    ChatMessage.chat_id == Chat.id,
+                                    ChatMessage.content_text.isnot(None),
+                                    ChatMessage.content_text.ilike(f"%{search_text}%")
+                                )
                             )
-                            """
                         )
                     ).params(search_text=search_text)
                 )
