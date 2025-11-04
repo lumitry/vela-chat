@@ -1,9 +1,9 @@
 import time
 import uuid
-from typing import Optional, List
+from typing import Optional, List, Tuple
 
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import BigInteger, Column, String, Text, JSON, Index, ForeignKey, Integer, func
+from sqlalchemy import BigInteger, Column, String, Text, JSON, Index, ForeignKey, Integer, func, Numeric
 
 from open_webui.internal.db import Base, get_db
 
@@ -27,6 +27,10 @@ class ChatMessage(Base):
 
     status = Column(JSON, nullable=True)
     usage = Column(JSON, nullable=True)
+    cost = Column(Numeric(precision=10, scale=8), nullable=True)
+    input_tokens = Column(Integer, nullable=True)
+    output_tokens = Column(Integer, nullable=True)
+    reasoning_tokens = Column(Integer, nullable=True)
     meta = Column(JSON, nullable=True)
 
     created_at = Column(BigInteger)
@@ -68,6 +72,10 @@ class ChatMessageModel(BaseModel):
     content_json: Optional[dict] = None
     status: Optional[dict] = None
     usage: Optional[dict] = None
+    cost: Optional[float] = None
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+    reasoning_tokens: Optional[int] = None
     meta: Optional[dict] = None
     created_at: int
     updated_at: int
@@ -85,6 +93,96 @@ class ChatMessageAttachmentModel(BaseModel):
     size_bytes: Optional[int] = None
     meta: Optional[dict] = None
     created_at: int
+
+
+def extract_tokens_from_usage(usage: Optional[dict]) -> Tuple[Optional[int], Optional[int], Optional[int]]:
+    """
+    Extract token counts from usage JSON.
+    Returns (input_tokens, output_tokens, reasoning_tokens) tuple.
+    """
+    if not usage or not isinstance(usage, dict):
+        return (None, None, None)
+    
+    # Extract input tokens (prompt_tokens)
+    input_tokens = None
+    if 'prompt_tokens' in usage and usage['prompt_tokens'] is not None:
+        try:
+            input_tokens = int(usage['prompt_tokens'])
+        except (ValueError, TypeError):
+            pass
+    
+    # Extract total output tokens (completion_tokens)
+    output_tokens = None
+    if 'completion_tokens' in usage and usage['completion_tokens'] is not None:
+        try:
+            output_tokens = int(usage['completion_tokens'])
+        except (ValueError, TypeError):
+            pass
+    
+    # Extract reasoning tokens (completion_tokens_details.reasoning_tokens)
+    reasoning_tokens = None
+    if 'completion_tokens_details' in usage and isinstance(usage['completion_tokens_details'], dict):
+        details = usage['completion_tokens_details']
+        if 'reasoning_tokens' in details and details['reasoning_tokens'] is not None:
+            try:
+                reasoning_tokens = int(details['reasoning_tokens'])
+            except (ValueError, TypeError):
+                pass
+    
+    return (input_tokens, output_tokens, reasoning_tokens)
+
+
+def extract_cost_from_usage(usage: Optional[dict]) -> Optional[float]:
+    """
+    Extract cost from usage JSON.
+    Tries multiple possible fields:
+    1. usage.cost (direct cost field)
+    2. usage.estimates.total_cost (estimated total cost)
+    3. usage.estimates.input_cost + usage.estimates.output_cost (sum of components)
+    
+    Returns None if no cost information is found.
+    """
+    if not usage or not isinstance(usage, dict):
+        return None
+    
+    # Priority 1: Direct cost field
+    if 'cost' in usage and usage['cost'] is not None:
+        try:
+            return float(usage['cost'])
+        except (ValueError, TypeError):
+            pass
+    
+    # Priority 2: Total cost from estimates
+    if 'estimates' in usage and isinstance(usage['estimates'], dict):
+        estimates = usage['estimates']
+        if 'total_cost' in estimates and estimates['total_cost'] is not None:
+            try:
+                return float(estimates['total_cost'])
+            except (ValueError, TypeError):
+                pass
+    
+    # Priority 3: Sum of input and output costs
+    if 'estimates' in usage and isinstance(usage['estimates'], dict):
+        estimates = usage['estimates']
+        input_cost = 0.0
+        output_cost = 0.0
+        
+        if 'input_cost' in estimates and estimates['input_cost'] is not None:
+            try:
+                input_cost = float(estimates['input_cost'])
+            except (ValueError, TypeError):
+                pass
+        
+        if 'output_cost' in estimates and estimates['output_cost'] is not None:
+            try:
+                output_cost = float(estimates['output_cost'])
+            except (ValueError, TypeError):
+                pass
+        
+        if input_cost > 0 or output_cost > 0:
+            return input_cost + output_cost
+    
+    return None
 
 
 class MessageCreateForm(BaseModel):
@@ -196,6 +294,19 @@ class ChatMessagesTable:
                 message.status = status
             if usage is not None:
                 message.usage = usage
+                # Extract and store cost and tokens when usage is updated
+                cost = extract_cost_from_usage(usage)
+                input_tokens, output_tokens, reasoning_tokens = extract_tokens_from_usage(usage)
+                
+                if cost is not None:
+                    from decimal import Decimal
+                    message.cost = Decimal(str(cost))
+                else:
+                    message.cost = None
+                
+                message.input_tokens = input_tokens
+                message.output_tokens = output_tokens
+                message.reasoning_tokens = reasoning_tokens
             if position is not None:
                 message.position = position
             if parent_id is not None:
