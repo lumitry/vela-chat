@@ -21,7 +21,8 @@
 		socket,
 		config,
 		isApp,
-		chatListSortBy
+		chatListSortBy,
+		folders as foldersStore
 	} from '$lib/stores';
 	import { onMount, getContext, tick, onDestroy } from 'svelte';
 
@@ -211,6 +212,9 @@
 				});
 			}
 		}
+
+		// Update the folders store so other components can use it
+		foldersStore.set(folders);
 	};
 
 	const createFolder = async (name = 'Untitled') => {
