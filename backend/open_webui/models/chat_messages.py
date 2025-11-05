@@ -32,6 +32,11 @@ class ChatMessage(Base):
     output_tokens = Column(Integer, nullable=True)
     reasoning_tokens = Column(Integer, nullable=True)
     meta = Column(JSON, nullable=True)
+    
+    # Feedback/evaluation fields
+    annotation = Column(JSON, nullable=True)  # Contains rating, tags, reason, comment, details
+    feedback_id = Column(String, nullable=True)  # ID of the feedback record
+    selected_model_id = Column(Text, nullable=True)  # Selected model for arena/competition mode
 
     created_at = Column(BigInteger)
     updated_at = Column(BigInteger)
@@ -77,6 +82,9 @@ class ChatMessageModel(BaseModel):
     output_tokens: Optional[int] = None
     reasoning_tokens: Optional[int] = None
     meta: Optional[dict] = None
+    annotation: Optional[dict] = None
+    feedback_id: Optional[str] = None
+    selected_model_id: Optional[str] = None
     created_at: int
     updated_at: int
 
@@ -194,6 +202,9 @@ class MessageCreateForm(BaseModel):
     attachments: Optional[List[dict]] = None
     meta: Optional[dict] = None
     position: Optional[int] = None  # If provided, use it; otherwise calculate from siblings
+    annotation: Optional[dict] = None  # Feedback/evaluation annotation
+    feedback_id: Optional[str] = None  # Feedback ID
+    selected_model_id: Optional[str] = None  # Selected model for arena models
 
 
 class ChatMessagesTable:
@@ -232,6 +243,9 @@ class ChatMessagesTable:
                     "content_text": form.content_text,
                     "content_json": form.content_json,
                     "meta": form.meta,
+                    "annotation": form.annotation,
+                    "feedback_id": form.feedback_id,
+                    "selected_model_id": form.selected_model_id,
                     "created_at": ts,
                     "updated_at": ts,
                 }
@@ -271,7 +285,8 @@ class ChatMessagesTable:
                       content_json: Optional[dict] = None, model_id: Optional[str] = None,
                       status: Optional[dict] = None, usage: Optional[dict] = None,
                       meta: Optional[dict] = None, position: Optional[int] = None,
-                      parent_id: Optional[str] = None) -> Optional[ChatMessageModel]:
+                      parent_id: Optional[str] = None, annotation: Optional[dict] = None,
+                      feedback_id: Optional[str] = None, selected_model_id: Optional[str] = None) -> Optional[ChatMessageModel]:
         """Update an existing message with new content or metadata."""
         import logging
         log = logging.getLogger(__name__)
@@ -319,6 +334,12 @@ class ChatMessagesTable:
                 # If modelIdx is in meta and position doesn't match, update position
                 if "modelIdx" in message.meta and message.position != message.meta.get("modelIdx"):
                     message.position = message.meta.get("modelIdx")
+            if annotation is not None:
+                message.annotation = annotation
+            if feedback_id is not None:
+                message.feedback_id = feedback_id
+            if selected_model_id is not None:
+                message.selected_model_id = selected_model_id
             
             message.updated_at = int(time.time())
             db.commit()
@@ -346,6 +367,104 @@ class ChatMessagesTable:
                 ChatMessage.created_at.asc()
             )
             return [ChatMessageModel.model_validate(m) for m in q.all()]
+
+    def get_all_messages_by_chat_id(self, chat_id: str) -> List[ChatMessageModel]:
+        """Get all messages for a chat, ordered by creation time."""
+        with get_db() as db:
+            q = db.query(ChatMessage).filter_by(chat_id=chat_id).order_by(ChatMessage.created_at.asc())
+            return [ChatMessageModel.model_validate(m) for m in q.all()]
+
+    def clone_messages_to_chat(self, source_chat_id: str, target_chat_id: str) -> dict[str, str]:
+        """
+        Clone all messages from source_chat_id to target_chat_id.
+        Returns a mapping from old message IDs to new message IDs.
+        
+        This ensures:
+        - All messages get new unique IDs
+        - Parent IDs are updated to point to the new parent message IDs
+        - Chat IDs are updated to the target chat
+        - Cost is set to 0 for all duplicated messages
+        - Parent-child relationships are preserved correctly
+        """
+        with get_db() as db:
+            # Get all messages from source chat
+            source_messages = db.query(ChatMessage).filter_by(chat_id=source_chat_id).order_by(
+                ChatMessage.created_at.asc()
+            ).all()
+            
+            if not source_messages:
+                return {}
+            
+            # Create ID mapping: old_id -> new_id
+            id_mapping: dict[str, str] = {}
+            for msg in source_messages:
+                old_id = str(msg.id)
+                new_id = str(uuid.uuid4())
+                id_mapping[old_id] = new_id
+            
+            # Get all attachments from source messages
+            source_message_ids = [str(m.id) for m in source_messages]
+            source_attachments = []
+            if source_message_ids:
+                source_attachments = db.query(ChatMessageAttachment).filter(
+                    ChatMessageAttachment.message_id.in_(source_message_ids)
+                ).all()
+            
+            ts = int(time.time())
+            
+            # Clone messages in creation order to maintain parent-child relationships
+            for msg in source_messages:
+                old_id = str(msg.id)
+                new_id = id_mapping[old_id]
+                
+                # Map parent_id to new parent_id
+                new_parent_id = None
+                if msg.parent_id:
+                    old_parent_id = str(msg.parent_id)
+                    new_parent_id = id_mapping.get(old_parent_id)
+                
+                # Create new message with updated IDs and cost set to 0
+                new_message = ChatMessage(
+                    id=new_id,
+                    chat_id=target_chat_id,
+                    parent_id=new_parent_id,
+                    role=msg.role,
+                    model_id=msg.model_id,
+                    position=msg.position,
+                    content_text=msg.content_text,
+                    content_json=msg.content_json,
+                    status=msg.status,
+                    usage=msg.usage,
+                    cost=0,  # Set cost to 0 for cloned messages
+                    input_tokens=msg.input_tokens,
+                    output_tokens=msg.output_tokens,
+                    reasoning_tokens=msg.reasoning_tokens,
+                    meta=msg.meta,
+                    created_at=ts,  # Use current timestamp for cloned messages
+                    updated_at=ts,
+                )
+                db.add(new_message)
+            
+            # Clone attachments
+            for att in source_attachments:
+                old_msg_id = str(att.message_id)
+                new_msg_id = id_mapping.get(old_msg_id)
+                if new_msg_id:
+                    new_attachment = ChatMessageAttachment(
+                        id=str(uuid.uuid4()),
+                        message_id=new_msg_id,
+                        type=att.type,
+                        file_id=att.file_id,
+                        url=att.url,
+                        mime_type=att.mime_type,
+                        size_bytes=att.size_bytes,
+                        meta=att.meta,
+                        created_at=ts,
+                    )
+                    db.add(new_attachment)
+            
+            db.commit()
+            return id_mapping
 
 
 ChatMessages = ChatMessagesTable()

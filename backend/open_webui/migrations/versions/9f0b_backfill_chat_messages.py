@@ -101,12 +101,12 @@ def upgrade() -> None:
         return fid
 
     # Insert helpers for messages/attachments using SQL
-    def insert_message(mid, chat_id, parent_id, role, model_id, content_text, content_json, status, usage, meta, created_at):
+    def insert_message(mid, chat_id, parent_id, role, model_id, content_text, content_json, status, usage, meta, created_at, annotation=None, feedback_id=None, selected_model_id=None):
         conn.execute(
             sa.text(
                 """
-                INSERT INTO chat_message (id, chat_id, parent_id, role, model_id, content_text, content_json, status, usage, meta, created_at, updated_at)
-                VALUES (:id, :chat_id, :parent_id, :role, :model_id, :content_text, :content_json, :status, :usage, :meta, :created_at, :updated_at)
+                INSERT INTO chat_message (id, chat_id, parent_id, role, model_id, content_text, content_json, status, usage, meta, annotation, feedback_id, selected_model_id, created_at, updated_at)
+                VALUES (:id, :chat_id, :parent_id, :role, :model_id, :content_text, :content_json, :status, :usage, :meta, :annotation, :feedback_id, :selected_model_id, :created_at, :updated_at)
                 ON CONFLICT (id) DO NOTHING
                 """
             ),
@@ -121,6 +121,9 @@ def upgrade() -> None:
                 'status': json.dumps(status) if status is not None else None,
                 'usage': json.dumps(usage) if usage is not None else None,
                 'meta': json.dumps(meta) if meta is not None else None,
+                'annotation': json.dumps(annotation) if annotation is not None else None,
+                'feedback_id': feedback_id,
+                'selected_model_id': selected_model_id,
                 'created_at': created_at,
                 'updated_at': created_at,
             },
@@ -198,11 +201,17 @@ def upgrade() -> None:
                 message_meta['lastSentence'] = msg.get('lastSentence')
             message_meta = message_meta if message_meta else None
             
+            # Extract feedback/evaluation fields
+            annotation = msg.get('annotation')
+            feedback_id = msg.get('feedbackId')  # Note: frontend uses camelCase
+            selected_model_id = msg.get('selectedModelId')  # Note: frontend uses camelCase
+            
             created_at = int(msg.get('timestamp') or ts_now)
 
             insert_message(
                 message_id, chat_id, parent_id, role, model_id,
-                content_text, content_json, status, usage, message_meta, created_at
+                content_text, content_json, status, usage, message_meta, created_at,
+                annotation=annotation, feedback_id=feedback_id, selected_model_id=selected_model_id
             )
 
             # Attachments

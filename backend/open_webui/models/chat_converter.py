@@ -156,6 +156,14 @@ def normalized_to_legacy_format(chat_id: str) -> Dict:
             if msg.usage:
                 message_dict["usage"] = msg.usage
             
+            # Add feedback/evaluation fields
+            if msg.annotation:
+                message_dict["annotation"] = msg.annotation
+            if msg.feedback_id:
+                message_dict["feedbackId"] = msg.feedback_id
+            if msg.selected_model_id:
+                message_dict["selectedModelId"] = msg.selected_model_id
+            
             # Extract fields from meta (all unmigrated fields should be here)
             if msg.meta:
                 # Preserve modelIdx for side-by-side chats
@@ -311,6 +319,14 @@ def normalized_to_legacy_format(chat_id: str) -> Dict:
                 if msg_dict.get("sources"):
                     msg_entry["sources"] = msg_dict["sources"]
                 
+                # Add feedback/evaluation fields
+                if "annotation" in msg_dict:
+                    msg_entry["annotation"] = msg_dict["annotation"]
+                if "feedbackId" in msg_dict:
+                    msg_entry["feedbackId"] = msg_dict["feedbackId"]
+                if "selectedModelId" in msg_dict:
+                    msg_entry["selectedModelId"] = msg_dict["selectedModelId"]
+                
                 messages_list.append(msg_entry)
         
         chat_content["messages"] = messages_list
@@ -388,6 +404,11 @@ def legacy_to_normalized_format(chat_id: str, legacy_chat: Dict) -> None:
             # Only update models for user messages (first user message stores chat-level models)
             meta_update["models"] = msg_data["models"]
         
+        # Extract feedback/evaluation fields
+        annotation = msg_data.get("annotation")
+        feedback_id = msg_data.get("feedbackId")  # Note: frontend uses camelCase
+        selected_model_id = msg_data.get("selectedModelId")  # Note: frontend uses camelCase
+        
         if existing:
             # Update existing message - merge meta, don't overwrite
             existing_meta = existing.meta if existing.meta else {}
@@ -413,7 +434,10 @@ def legacy_to_normalized_format(chat_id: str, legacy_chat: Dict) -> None:
                     status=msg_data.get("status"),
                     usage=msg_data.get("usage"),
                     meta=merged_meta if merged_meta else None,
-                    parent_id=parent_id
+                    parent_id=parent_id,
+                    annotation=annotation,
+                    feedback_id=feedback_id,
+                    selected_model_id=selected_model_id
                 )
                 
                 if result is None:
@@ -448,10 +472,41 @@ def legacy_to_normalized_format(chat_id: str, legacy_chat: Dict) -> None:
                     content_json=msg_data.get("content_json"),
                     model_id=msg_data.get("model"),
                     attachments=attachments if attachments else None,
-                    meta=meta_update if meta_update else None
+                    meta=meta_update if meta_update else None,
+                    annotation=annotation,
+                    feedback_id=feedback_id,
+                    selected_model_id=selected_model_id
                 ),
                 message_id=msg_id_str
             )
+            
+            # For "Save as Copy" scenarios, ensure cost is set to 0 for the duplicated message
+            if msg_data.get("usage") or msg_data.get("status"):
+                # Update the message with usage/status but explicitly set cost to 0
+                # We need to update via direct DB access since update_message extracts cost from usage
+                with get_db() as db:
+                    from decimal import Decimal
+                    new_message = db.get(ChatMessage, msg_id_str)
+                    if new_message:
+                        # Set usage and status if provided
+                        if msg_data.get("usage"):
+                            new_message.usage = msg_data.get("usage")
+                        if msg_data.get("status"):
+                            new_message.status = msg_data.get("status")
+                        
+                        # Explicitly set cost to 0 for copied messages
+                        new_message.cost = Decimal('0')
+                        
+                        # Extract and store tokens from usage (but keep cost at 0)
+                        if msg_data.get("usage"):
+                            from open_webui.models.chat_messages import extract_tokens_from_usage
+                            input_tokens, output_tokens, reasoning_tokens = extract_tokens_from_usage(msg_data.get("usage"))
+                            new_message.input_tokens = input_tokens
+                            new_message.output_tokens = output_tokens
+                            new_message.reasoning_tokens = reasoning_tokens
+                        
+                        db.commit()
+                        log.debug(f"legacy_to_normalized_format: Set cost to 0 for copied message {msg_id_str}")
     
     # Update chat's active_message_id
     # Convert to string to ensure consistent format

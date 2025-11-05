@@ -721,15 +721,30 @@ async def clone_chat_by_id(
 ):
     chat = Chats.get_chat_by_id_and_user_id(id, user.id)
     if chat:
-        updated_chat = {
-            **chat.chat,
-            "originalChatId": chat.id,
-            "branchPointMessageId": chat.chat["history"]["currentId"],
-            "title": form_data.title if form_data.title else f"Clone of {chat.title}",
-        }
-
-        chat = Chats.insert_new_chat(user.id, ChatForm(**{"chat": updated_chat}))
-        return ChatResponse(**chat.model_dump())
+        # Use the new clone_chat method which handles normalized messages properly
+        new_title = form_data.title if form_data.title else None
+        cloned_chat = Chats.clone_chat(id, user.id, new_title)
+        
+        if cloned_chat:
+            # Convert to legacy format for response if needed
+            from open_webui.models.chat_converter import normalized_to_legacy_format
+            from open_webui.models.chat_messages import ChatMessage
+            from open_webui.internal.db import get_db
+            
+            with get_db() as db:
+                has_normalized = db.query(ChatMessage).filter_by(chat_id=cloned_chat.id).first() is not None
+            
+            if has_normalized:
+                # Convert from normalized tables to legacy format for response
+                legacy_chat = normalized_to_legacy_format(cloned_chat.id)
+                cloned_chat.chat = legacy_chat
+            
+            return ChatResponse(**cloned_chat.model_dump())
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+                detail="Failed to clone chat"
+            )
     else:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail=ERROR_MESSAGES.DEFAULT()
@@ -750,15 +765,29 @@ async def clone_shared_chat_by_id(id: str, user=Depends(get_verified_user)):
         chat = Chats.get_chat_by_share_id(id)
 
     if chat:
-        updated_chat = {
-            **chat.chat,
-            "originalChatId": chat.id,
-            "branchPointMessageId": chat.chat["history"]["currentId"],
-            "title": f"Clone of {chat.title}",
-        }
-
-        chat = Chats.insert_new_chat(user.id, ChatForm(**{"chat": updated_chat}))
-        return ChatResponse(**chat.model_dump())
+        # Use the new clone_chat method which handles normalized messages properly
+        cloned_chat = Chats.clone_chat(chat.id, user.id, None)
+        
+        if cloned_chat:
+            # Convert to legacy format for response if needed
+            from open_webui.models.chat_converter import normalized_to_legacy_format
+            from open_webui.models.chat_messages import ChatMessage
+            from open_webui.internal.db import get_db
+            
+            with get_db() as db:
+                has_normalized = db.query(ChatMessage).filter_by(chat_id=cloned_chat.id).first() is not None
+            
+            if has_normalized:
+                # Convert from normalized tables to legacy format for response
+                legacy_chat = normalized_to_legacy_format(cloned_chat.id)
+                cloned_chat.chat = legacy_chat
+            
+            return ChatResponse(**cloned_chat.model_dump())
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+                detail="Failed to clone chat"
+            )
     else:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail=ERROR_MESSAGES.DEFAULT()

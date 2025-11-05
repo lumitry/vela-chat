@@ -387,6 +387,14 @@ class ChatTable:
     def delete_shared_chat_by_chat_id(self, chat_id: str) -> bool:
         try:
             with get_db() as db:
+                # Get the shared chat ID before deleting
+                from open_webui.models.chat_messages import ChatMessage
+                shared_chat = db.query(Chat).filter_by(user_id=f"shared-{chat_id}").first()
+                if shared_chat:
+                    # Delete all messages for the shared chat (and their attachments via CASCADE)
+                    db.query(ChatMessage).filter_by(chat_id=shared_chat.id).delete()
+                
+                # Delete the shared chat
                 db.query(Chat).filter_by(user_id=f"shared-{chat_id}").delete()
                 db.commit()
 
@@ -959,6 +967,11 @@ class ChatTable:
     def delete_chat_by_id(self, id: str) -> bool:
         try:
             with get_db() as db:
+                # Delete all messages for this chat (and their attachments via CASCADE)
+                from open_webui.models.chat_messages import ChatMessage
+                db.query(ChatMessage).filter_by(chat_id=id).delete()
+                
+                # Delete the chat
                 db.query(Chat).filter_by(id=id).delete()
                 db.commit()
 
@@ -969,6 +982,11 @@ class ChatTable:
     def delete_chat_by_id_and_user_id(self, id: str, user_id: str) -> bool:
         try:
             with get_db() as db:
+                # Delete all messages for this chat (and their attachments via CASCADE)
+                from open_webui.models.chat_messages import ChatMessage
+                db.query(ChatMessage).filter_by(chat_id=id).delete()
+                
+                # Delete the chat
                 db.query(Chat).filter_by(id=id, user_id=user_id).delete()
                 db.commit()
 
@@ -981,6 +999,16 @@ class ChatTable:
             with get_db() as db:
                 self.delete_shared_chats_by_user_id(user_id)
 
+                # Get all chat IDs for this user before deleting
+                from open_webui.models.chat_messages import ChatMessage
+                chat_ids = [chat.id for chat in db.query(Chat).filter_by(user_id=user_id).all()]
+                
+                # Delete all messages for all chats belonging to this user
+                # (attachments will be deleted via CASCADE when messages are deleted)
+                if chat_ids:
+                    db.query(ChatMessage).filter(ChatMessage.chat_id.in_(chat_ids)).delete()
+
+                # Delete the chats
                 db.query(Chat).filter_by(user_id=user_id).delete()
                 db.commit()
 
@@ -993,6 +1021,16 @@ class ChatTable:
     ) -> bool:
         try:
             with get_db() as db:
+                # Get all chat IDs for this user and folder before deleting
+                from open_webui.models.chat_messages import ChatMessage
+                chat_ids = [chat.id for chat in db.query(Chat).filter_by(user_id=user_id, folder_id=folder_id).all()]
+                
+                # Delete all messages for all chats in this folder
+                # (attachments will be deleted via CASCADE when messages are deleted)
+                if chat_ids:
+                    db.query(ChatMessage).filter(ChatMessage.chat_id.in_(chat_ids)).delete()
+                
+                # Delete the chats
                 db.query(Chat).filter_by(user_id=user_id, folder_id=folder_id).delete()
                 db.commit()
 
@@ -1006,12 +1044,125 @@ class ChatTable:
                 chats_by_user = db.query(Chat).filter_by(user_id=user_id).all()
                 shared_chat_ids = [f"shared-{chat.id}" for chat in chats_by_user]
 
+                # Get the actual shared chat IDs (not just the user_id pattern)
+                from open_webui.models.chat_messages import ChatMessage
+                shared_chats = db.query(Chat).filter(Chat.user_id.in_(shared_chat_ids)).all()
+                shared_chat_actual_ids = [chat.id for chat in shared_chats]
+                
+                # Delete all messages for all shared chats (attachments will be deleted via CASCADE)
+                if shared_chat_actual_ids:
+                    db.query(ChatMessage).filter(ChatMessage.chat_id.in_(shared_chat_actual_ids)).delete()
+                
+                # Delete the shared chats
                 db.query(Chat).filter(Chat.user_id.in_(shared_chat_ids)).delete()
                 db.commit()
 
                 return True
         except Exception:
             return False
+
+    def clone_chat(self, source_chat_id: str, user_id: str, new_title: Optional[str] = None) -> Optional[ChatModel]:
+        """
+        Clone a chat and all its messages.
+        Creates a new chat entry with a new ID and duplicates all messages.
+        Returns the new cloned chat.
+        """
+        from open_webui.models.chat_messages import ChatMessages, ChatMessage
+        
+        # Get source chat
+        source_chat = self.get_chat_by_id(source_chat_id)
+        if not source_chat:
+            return None
+        
+        # Check if source chat has normalized messages
+        with get_db() as db:
+            has_normalized = db.query(ChatMessage).filter_by(chat_id=source_chat_id).first() is not None
+        
+        # Create new chat entry
+        new_chat_id = str(uuid.uuid4())
+        ts = int(time.time())
+        
+        # Determine title
+        title = new_title if new_title else f"Clone of {source_chat.title}"
+        
+        # Create new chat with updated metadata
+        new_chat = ChatModel(
+            **{
+                "id": new_chat_id,
+                "user_id": user_id,
+                "title": title,
+                "chat": {},  # Will be populated by normalized_to_legacy_format when needed
+                "created_at": ts,
+                "updated_at": ts,
+                "share_id": None,  # Cloned chats don't inherit share_id
+                "archived": False,
+                "pinned": False,
+                "meta": source_chat.meta.copy() if source_chat.meta else {},
+                "folder_id": source_chat.folder_id,
+                "active_message_id": None,  # Will be set after cloning messages
+                "root_message_id": None,  # Will be set after cloning messages
+                "params": source_chat.params.copy() if source_chat.params else None,
+                "summary": source_chat.summary,
+            }
+        )
+        
+        # Add meta to track original chat
+        if not new_chat.meta:
+            new_chat.meta = {}
+        new_chat.meta["originalChatId"] = source_chat_id
+        
+        with get_db() as db:
+            result = Chat(**new_chat.model_dump())
+            db.add(result)
+            db.flush()
+            
+            # Clone messages if the source chat has normalized messages
+            if has_normalized:
+                id_mapping = ChatMessages.clone_messages_to_chat(source_chat_id, new_chat_id)
+                
+                # Update active_message_id and root_message_id to new message IDs
+                new_active_message_id = None
+                new_root_message_id = None
+                
+                if source_chat.active_message_id:
+                    old_active_id = str(source_chat.active_message_id)
+                    new_active_message_id = id_mapping.get(old_active_id)
+                
+                if source_chat.root_message_id:
+                    old_root_id = str(source_chat.root_message_id)
+                    new_root_message_id = id_mapping.get(old_root_id)
+                
+                # Update the chat with new message IDs
+                result.active_message_id = new_active_message_id
+                result.root_message_id = new_root_message_id
+                
+                # Also add branchPointMessageId to meta for legacy compatibility
+                if new_active_message_id:
+                    result.meta = {
+                        **(result.meta or {}),
+                        "branchPointMessageId": new_active_message_id,
+                    }
+            else:
+                # Legacy chat - clone the chat JSON blob
+                # This is the old format where messages were stored in chat.chat JSON
+                if source_chat.chat:
+                    legacy_chat = source_chat.chat.copy()
+                    legacy_chat["originalChatId"] = source_chat_id
+                    # Get branchPointMessageId from legacy format
+                    history = legacy_chat.get("history", {})
+                    current_id = history.get("currentId")
+                    if current_id:
+                        legacy_chat["branchPointMessageId"] = current_id
+                        result.meta = {
+                            **(result.meta or {}),
+                            "branchPointMessageId": current_id,
+                        }
+                    result.chat = legacy_chat
+            
+            db.commit()
+            db.refresh(result)
+            
+            return ChatModel.model_validate(result)
 
 
 Chats = ChatTable()

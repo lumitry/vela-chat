@@ -30,6 +30,9 @@ def upgrade() -> None:
         sa.Column('status', sa.JSON(), nullable=True),
         sa.Column('usage', sa.JSON(), nullable=True),
         sa.Column('meta', sa.JSON(), nullable=True),
+        sa.Column('annotation', sa.JSON(), nullable=True),  # Feedback/evaluation annotation
+        sa.Column('feedback_id', sa.String(), nullable=True),  # Feedback ID
+        sa.Column('selected_model_id', sa.Text(), nullable=True),  # Selected model for arena mode
         sa.Column('created_at', sa.BigInteger(), nullable=False),
         sa.Column('updated_at', sa.BigInteger(), nullable=False),
     )
