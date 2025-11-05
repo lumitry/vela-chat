@@ -384,6 +384,19 @@ async def get_file_content_by_id(
                 encoded_filename = quote(filename)
                 headers = {}
 
+                # Add cache headers for images (UUID-based file IDs are immutable)
+                is_image = content_type and content_type.startswith("image/")
+                if is_image:
+                    # Files use UUID-based IDs, so the same ID always points to the same content
+                    # Once created, files are immutable (new uploads get new UUIDs)
+                    # Cache for 1 year with immutable flag
+                    headers["Cache-Control"] = "public, max-age=31536000, immutable"
+                    # Use hash as ETag if available (better for validation), otherwise use file ID
+                    if file.hash:
+                        headers["ETag"] = f'"{file.hash}"'
+                    else:
+                        headers["ETag"] = f'"{file.id}"'
+
                 if attachment:
                     headers["Content-Disposition"] = (
                         f"attachment; filename*=UTF-8''{encoded_filename}"
