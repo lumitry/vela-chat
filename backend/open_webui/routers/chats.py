@@ -30,6 +30,21 @@ log.setLevel(SRC_LOG_LEVELS["MODELS"])
 
 router = APIRouter()
 
+
+############################
+# Response Models
+############################
+
+
+class ChatMetadataResponse(BaseModel):
+    """Lean response model with only essential fields for chat listing/selection"""
+    id: str
+    title: str
+    updated_at: int
+    created_at: int
+    pinned: Optional[bool] = False
+    folder_id: Optional[str] = None
+
 ############################
 # GetChatList
 ############################
@@ -208,6 +223,32 @@ async def get_user_pinned_chats(user=Depends(get_verified_user)):
     return [
         ChatResponse(**chat.model_dump())
         for chat in Chats.get_pinned_chats_by_user_id(user.id)
+    ]
+
+
+############################
+# GetPinnedChatsMetadata
+############################
+
+
+@router.get("/pinned/metadata", response_model=list[ChatMetadataResponse])
+async def get_user_pinned_chats_metadata(user=Depends(get_verified_user)):
+    """
+    Returns a lean list of pinned chats with only essential fields.
+    Excludes full chat JSON and other heavy fields to reduce payload size.
+    """
+    pinned_chats = Chats.get_pinned_chats_by_user_id(user.id)
+    
+    return [
+        ChatMetadataResponse(
+            id=chat.id,
+            title=chat.title,
+            updated_at=chat.updated_at,
+            created_at=chat.created_at,
+            pinned=chat.pinned,
+            folder_id=chat.folder_id,
+        )
+        for chat in pinned_chats
     ]
 
 

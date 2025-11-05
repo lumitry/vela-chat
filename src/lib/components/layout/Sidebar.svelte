@@ -34,6 +34,7 @@
 		getChatListBySearchText,
 		createNewChat,
 		getPinnedChatList,
+		getPinnedChatListMetadata,
 		toggleChatPinnedStatusById,
 		getChatPinnedStatusById,
 		getChatById,
@@ -397,7 +398,12 @@
 	const initChatList = async () => {
 		// Reset pagination variables
 		tags.set(await getAllTags(localStorage.token));
-		pinnedChats.set(await getPinnedChatList(localStorage.token));
+
+		// Only fetch pinned chats if not already populated
+		if (!$pinnedChats || $pinnedChats.length === 0) {
+			pinnedChats.set(await getPinnedChatListMetadata(localStorage.token));
+		}
+
 		initFolders();
 
 		currentChatPage.set(1);
