@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from open_webui.utils.auth import get_admin_user, get_verified_user
 from open_webui.utils.access_control import has_access, has_permission
+from open_webui.utils.model_images import get_or_create_model_image_file, convert_file_url_to_absolute
 
 
 router = APIRouter()
@@ -24,11 +25,28 @@ router = APIRouter()
 
 
 @router.get("/", response_model=list[ModelUserResponse])
-async def get_models(id: Optional[str] = None, user=Depends(get_verified_user)):
+async def get_models(request: Request, id: Optional[str] = None, user=Depends(get_verified_user)):
     if user.role == "admin":
-        return Models.get_models()
+        models = Models.get_models()
     else:
-        return Models.get_models_by_user_id(user.id)
+        models = Models.get_models_by_user_id(user.id)
+    
+    # Convert relative file URLs to absolute URLs
+    from open_webui.models.models import ModelMeta
+    result = []
+    for model in models:
+        if model.meta and model.meta.profile_image_url:
+            # Create new ModelMeta with absolute URL
+            meta_dict = model.meta.model_dump()
+            meta_dict["profile_image_url"] = convert_file_url_to_absolute(request, model.meta.profile_image_url)
+            # Create new model instance with updated meta
+            model_dict = model.model_dump()
+            model_dict["meta"] = ModelMeta(**meta_dict)
+            result.append(ModelUserResponse(**model_dict))
+        else:
+            result.append(model)
+    
+    return result
 
 
 ###########################
@@ -37,8 +55,23 @@ async def get_models(id: Optional[str] = None, user=Depends(get_verified_user)):
 
 
 @router.get("/base", response_model=list[ModelResponse])
-async def get_base_models(user=Depends(get_admin_user)):
-    return Models.get_base_models()
+async def get_base_models(request: Request, user=Depends(get_admin_user)):
+    models = Models.get_base_models()
+    # Convert relative file URLs to absolute URLs
+    from open_webui.models.models import ModelMeta
+    result = []
+    for model in models:
+        if model.meta and model.meta.profile_image_url:
+            # Create new ModelMeta with absolute URL
+            meta_dict = model.meta.model_dump()
+            meta_dict["profile_image_url"] = convert_file_url_to_absolute(request, model.meta.profile_image_url)
+            # Create new model instance with updated meta
+            model_dict = model.model_dump()
+            model_dict["meta"] = ModelMeta(**meta_dict)
+            result.append(ModelResponse(**model_dict))
+        else:
+            result.append(model)
+    return result
 
 
 ############################
@@ -68,8 +101,23 @@ async def create_new_model(
         )
 
     else:
+        # Convert base64 image to filesystem storage if needed
+        if form_data.meta and form_data.meta.profile_image_url:
+            converted_url = get_or_create_model_image_file(
+                request, user.id, form_data.meta.profile_image_url
+            )
+            form_data.meta.profile_image_url = converted_url
+        
         model = Models.insert_new_model(form_data, user.id)
         if model:
+            # Convert relative file URL to absolute URL
+            if model.meta and model.meta.profile_image_url:
+                from open_webui.models.models import ModelMeta
+                meta_dict = model.meta.model_dump()
+                meta_dict["profile_image_url"] = convert_file_url_to_absolute(request, model.meta.profile_image_url)
+                model_dict = model.model_dump()
+                model_dict["meta"] = ModelMeta(**meta_dict)
+                return ModelModel(**model_dict)
             return model
         else:
             raise HTTPException(
@@ -85,7 +133,7 @@ async def create_new_model(
 
 # Note: We're not using the typical url path param here, but instead using a query parameter to allow '/' in the id
 @router.get("/model", response_model=Optional[ModelResponse])
-async def get_model_by_id(id: str, user=Depends(get_verified_user)):
+async def get_model_by_id(request: Request, id: str, user=Depends(get_verified_user)):
     model = Models.get_model_by_id(id)
     if model:
         if (
@@ -93,6 +141,14 @@ async def get_model_by_id(id: str, user=Depends(get_verified_user)):
             or model.user_id == user.id
             or has_access(user.id, "read", model.access_control)
         ):
+            # Convert relative file URL to absolute URL
+            if model.meta and model.meta.profile_image_url:
+                from open_webui.models.models import ModelMeta
+                meta_dict = model.meta.model_dump()
+                meta_dict["profile_image_url"] = convert_file_url_to_absolute(request, model.meta.profile_image_url)
+                model_dict = model.model_dump()
+                model_dict["meta"] = ModelMeta(**meta_dict)
+                return ModelResponse(**model_dict)
             return model
     else:
         raise HTTPException(
@@ -107,7 +163,7 @@ async def get_model_by_id(id: str, user=Depends(get_verified_user)):
 
 
 @router.post("/model/toggle", response_model=Optional[ModelResponse])
-async def toggle_model_by_id(id: str, user=Depends(get_verified_user)):
+async def toggle_model_by_id(request: Request, id: str, user=Depends(get_verified_user)):
     model = Models.get_model_by_id(id)
     if model:
         if (
@@ -118,6 +174,14 @@ async def toggle_model_by_id(id: str, user=Depends(get_verified_user)):
             model = Models.toggle_model_by_id(id)
 
             if model:
+                # Convert relative file URL to absolute URL
+                if model.meta and model.meta.profile_image_url:
+                    from open_webui.models.models import ModelMeta
+                    meta_dict = model.meta.model_dump()
+                    meta_dict["profile_image_url"] = convert_file_url_to_absolute(request, model.meta.profile_image_url)
+                    model_dict = model.model_dump()
+                    model_dict["meta"] = ModelMeta(**meta_dict)
+                    return ModelResponse(**model_dict)
                 return model
             else:
                 raise HTTPException(
@@ -143,6 +207,7 @@ async def toggle_model_by_id(id: str, user=Depends(get_verified_user)):
 
 @router.post("/model/update", response_model=Optional[ModelModel])
 async def update_model_by_id(
+    request: Request,
     id: str,
     form_data: ModelForm,
     user=Depends(get_verified_user),
@@ -165,7 +230,23 @@ async def update_model_by_id(
             detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
         )
 
+    # Convert base64 image to filesystem storage if needed
+    if form_data.meta and form_data.meta.profile_image_url:
+        converted_url = get_or_create_model_image_file(
+            request, user.id, form_data.meta.profile_image_url
+        )
+        form_data.meta.profile_image_url = converted_url
+
     model = Models.update_model_by_id(id, form_data)
+    if model:
+        # Convert relative file URL to absolute URL
+        if model.meta and model.meta.profile_image_url:
+            from open_webui.models.models import ModelMeta
+            meta_dict = model.meta.model_dump()
+            meta_dict["profile_image_url"] = convert_file_url_to_absolute(request, model.meta.profile_image_url)
+            model_dict = model.model_dump()
+            model_dict["meta"] = ModelMeta(**meta_dict)
+            return ModelModel(**model_dict)
     return model
 
 

@@ -123,7 +123,14 @@ async def get_all_models(request, user: UserModel = None):
                 ):
                     if custom_model.is_active:
                         model["name"] = custom_model.name
-                        model["info"] = custom_model.model_dump()
+                        model_info_dict = custom_model.model_dump()
+                        # Convert relative file URLs to absolute URLs
+                        if "meta" in model_info_dict and model_info_dict["meta"].get("profile_image_url"):
+                            from open_webui.utils.model_images import convert_file_url_to_absolute
+                            model_info_dict["meta"]["profile_image_url"] = convert_file_url_to_absolute(
+                                request, model_info_dict["meta"]["profile_image_url"]
+                            )
+                        model["info"] = model_info_dict
 
                         action_ids = []
                         if "info" in model and "meta" in model["info"]:
@@ -154,9 +161,23 @@ async def get_all_models(request, user: UserModel = None):
 
             if custom_model.meta:
                 meta = custom_model.meta.model_dump()
+                # Convert relative file URLs to absolute URLs
+                if meta.get("profile_image_url"):
+                    from open_webui.utils.model_images import convert_file_url_to_absolute
+                    meta["profile_image_url"] = convert_file_url_to_absolute(
+                        request, meta["profile_image_url"]
+                    )
                 if "actionIds" in meta:
                     action_ids.extend(meta["actionIds"])
 
+            # Build info dict with converted URLs
+            info_dict = custom_model.model_dump()
+            if "meta" in info_dict and info_dict["meta"].get("profile_image_url"):
+                from open_webui.utils.model_images import convert_file_url_to_absolute
+                info_dict["meta"]["profile_image_url"] = convert_file_url_to_absolute(
+                    request, info_dict["meta"]["profile_image_url"]
+                )
+            
             models.append(
                 {
                     "id": f"{custom_model.id}",
@@ -164,7 +185,7 @@ async def get_all_models(request, user: UserModel = None):
                     "object": "model",
                     "created": custom_model.created_at,
                     "owned_by": owned_by,
-                    "info": custom_model.model_dump(),
+                    "info": info_dict,
                     "preset": True,
                     **({"pipe": pipe} if pipe is not None else {}),
                     "action_ids": action_ids,
