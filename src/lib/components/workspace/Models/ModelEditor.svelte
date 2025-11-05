@@ -12,7 +12,7 @@
 	import Textarea from '$lib/components/common/Textarea.svelte';
 	import { getTools } from '$lib/apis/tools';
 	import { getFunctions } from '$lib/apis/functions';
-	import { getKnowledgeBases } from '$lib/apis/knowledge';
+	import { getKnowledgeBaseMetadata } from '$lib/apis/knowledge';
 	import AccessControl from '../common/AccessControl.svelte';
 	import { stringify } from 'postcss';
 	import { toast } from 'svelte-sonner';
@@ -268,7 +268,11 @@
 	onMount(async () => {
 		await tools.set(await getTools(localStorage.token));
 		await functions.set(await getFunctions(localStorage.token));
-		await knowledgeCollections.set(await getKnowledgeBases(localStorage.token));
+
+		// Only fetch knowledge collections if not already populated
+		if (!$knowledgeCollections || $knowledgeCollections.length === 0) {
+			await knowledgeCollections.set(await getKnowledgeBaseMetadata(localStorage.token));
+		}
 
 		// Scroll to top 'workspace-container' element
 		const workspaceContainer = document.getElementById('workspace-container');

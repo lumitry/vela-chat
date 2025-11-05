@@ -92,6 +92,14 @@ class KnowledgeUserResponse(KnowledgeUserModel):
     files: Optional[list[FileMetadataResponse | dict]] = None
 
 
+class KnowledgeMetadataResponse(BaseModel):
+    """Lean response model with only essential fields for selection/listing"""
+    id: str
+    name: str
+    description: str
+    meta: Optional[dict] = None
+
+
 class KnowledgeForm(BaseModel):
     name: str
     description: str
