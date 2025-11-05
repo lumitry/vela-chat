@@ -205,6 +205,62 @@
 		console.log('saveSessionSelectedModels', selectedModels, sessionStorage.selectedModels);
 	};
 
+	// When models load and we're on a new chat page, set the selected model
+	// Guard against race conditions with initNewChat
+	let modelSelectionInProgress = false;
+	$: if (
+		$models.length > 0 &&
+		!chatIdProp &&
+		!modelSelectionInProgress &&
+		(selectedModels.length === 0 || (selectedModels.length === 1 && selectedModels[0] === ''))
+	) {
+		// Models just loaded and we don't have a selected model yet
+		// Re-run the model selection logic from initNewChat
+		modelSelectionInProgress = true;
+		let newSelectedModels: string[] = [];
+
+		if ($page.url.searchParams.get('models')) {
+			newSelectedModels = $page.url.searchParams.get('models')?.split(',') || [];
+		} else if ($page.url.searchParams.get('model')) {
+			const urlModels = $page.url.searchParams.get('model')?.split(',') || [];
+			newSelectedModels = urlModels;
+		} else {
+			if (sessionStorage.selectedModels) {
+				try {
+					newSelectedModels = JSON.parse(sessionStorage.selectedModels);
+				} catch (e) {
+					newSelectedModels = [];
+				}
+			} else {
+				if ($settings?.models) {
+					newSelectedModels = $settings.models;
+				} else if ($config?.default_models) {
+					newSelectedModels = $config.default_models.split(',');
+				}
+			}
+		}
+
+		// Filter to only include models that exist
+		newSelectedModels = newSelectedModels.filter((modelId) =>
+			$models.map((m) => m.id).includes(modelId)
+		);
+
+		// If no valid models selected, use the first available model
+		if (
+			newSelectedModels.length === 0 ||
+			(newSelectedModels.length === 1 && newSelectedModels[0] === '')
+		) {
+			if ($models.length > 0) {
+				newSelectedModels = [$models[0].id];
+			}
+		}
+
+		if (newSelectedModels.length > 0 && newSelectedModels[0] !== '') {
+			selectedModels = newSelectedModels;
+		}
+		modelSelectionInProgress = false;
+	}
+
 	$: if (selectedModels) {
 		setToolIds();
 	}
@@ -784,14 +840,8 @@
 			$models.map((m) => m.id).includes(modelId) ? modelId : ''
 		);
 
-		const userSettings = await getUserSettings(localStorage.token);
-
-		if (userSettings) {
-			settings.set(userSettings.ui);
-		} else {
-			settings.set(JSON.parse(localStorage.getItem('settings') ?? '{}'));
-		}
-
+		// Settings are already loaded in app layout, no need to fetch again
+		// Just focus the chat input
 		const chatInput = document.getElementById('chat-input');
 		setTimeout(() => chatInput?.focus(), 0);
 	};

@@ -61,63 +61,97 @@
 		if ($user === undefined || $user === null) {
 			await goto('/auth');
 		} else if (['user', 'admin'].includes($user?.role)) {
+			// Load settings from localStorage immediately (non-blocking)
+			let localStorageSettings = {} as Parameters<(typeof settings)['set']>[0];
 			try {
-				// Check if IndexedDB exists
-				DB = await openDB('Chats', 1);
+				localStorageSettings = JSON.parse(localStorage.getItem('settings') ?? '{}');
+			} catch (e: unknown) {
+				console.error('Failed to parse settings from localStorage', e);
+			}
+			settings.set(localStorageSettings);
 
-				if (DB) {
-					const chats = await DB.getAllFromIndex('chats', 'timestamp');
-					localDBChats = chats.map((item, idx) => chats[chats.length - 1 - idx]);
+			// Apply custom theme if selected
+			if (localStorage.theme === 'custom' && localStorageSettings?.customThemeColor) {
+				applyCustomThemeColors(localStorageSettings.customThemeColor);
+			}
 
-					if (localDBChats.length === 0) {
-						await deleteDB('Chats');
+			// Load models in parallel (non-blocking for initial render)
+			// Models are needed for chat input, but we can render the input first
+			getModels(
+				localStorage.token,
+				$config?.features?.enable_direct_connections && ($settings?.directConnections ?? null)
+			)
+				.then((modelsData) => {
+					models.set(modelsData);
+				})
+				.catch((error) => {
+					console.error('Failed to load models:', error);
+				});
+
+			// Fetch user settings in background and update if different
+			// Only update if server settings differ significantly to avoid overwriting user changes
+			getUserSettings(localStorage.token)
+				.then((userSettings) => {
+					if (userSettings) {
+						// Compare current settings with server settings
+						const currentSettingsStr = JSON.stringify($settings);
+						const serverSettingsStr = JSON.stringify(userSettings.ui);
+
+						// Only update if they're different (avoid unnecessary updates)
+						if (currentSettingsStr !== serverSettingsStr) {
+							settings.set(userSettings.ui);
+
+							// Apply custom theme if selected
+							if (localStorage.theme === 'custom' && userSettings.ui?.customThemeColor) {
+								applyCustomThemeColors(userSettings.ui.customThemeColor);
+							}
+						}
 					}
-				}
+				})
+				.catch((error) => {
+					console.error('Failed to load user settings:', error);
+				});
 
-				console.log(DB);
-			} catch (error) {
-				// IndexedDB Not Found
-			}
+			// Defer non-critical data loading to after initial render
+			// Use requestIdleCallback if available, otherwise setTimeout
+			const loadDeferredData = () => {
+				// Load IndexedDB check
+				openDB('Chats', 1)
+					.then((db) => {
+						DB = db;
+						if (DB) {
+							return DB.getAllFromIndex('chats', 'timestamp');
+						}
+						return [];
+					})
+					.then((chats) => {
+						if (chats.length > 0) {
+							localDBChats = chats.map((item, idx) => chats[chats.length - 1 - idx]);
+						} else if (DB) {
+							deleteDB('Chats');
+						}
+					})
+					.catch(() => {
+						// IndexedDB Not Found or error - ignore
+					});
 
-			const userSettings = await getUserSettings(localStorage.token).catch((error) => {
-				console.error(error);
-				return null;
-			});
+				// Load banners, tools, and toolServers in parallel
+				Promise.all([
+					getBanners(localStorage.token).catch(() => []),
+					getTools(localStorage.token).catch(() => []),
+					getToolServersData($i18n, $settings?.toolServers ?? []).catch(() => [])
+				]).then(([bannersData, toolsData, toolServersData]) => {
+					banners.set(bannersData);
+					tools.set(toolsData);
+					toolServers.set(toolServersData);
+				});
+			};
 
-			if (userSettings) {
-				settings.set(userSettings.ui);
-
-				// Apply custom theme if selected
-				if (localStorage.theme === 'custom' && userSettings.ui?.customThemeColor) {
-					applyCustomThemeColors(userSettings.ui.customThemeColor);
-				}
+			if (typeof requestIdleCallback !== 'undefined') {
+				requestIdleCallback(loadDeferredData, { timeout: 2000 });
 			} else {
-				let localStorageSettings = {} as Parameters<(typeof settings)['set']>[0];
-
-				try {
-					localStorageSettings = JSON.parse(localStorage.getItem('settings') ?? '{}');
-				} catch (e: unknown) {
-					console.error('Failed to parse settings from localStorage', e);
-				}
-
-				settings.set(localStorageSettings);
-
-				// Apply custom theme if selected
-				if (localStorage.theme === 'custom' && localStorageSettings?.customThemeColor) {
-					applyCustomThemeColors(localStorageSettings.customThemeColor);
-				}
+				setTimeout(loadDeferredData, 0);
 			}
-
-			models.set(
-				await getModels(
-					localStorage.token,
-					$config?.features?.enable_direct_connections && ($settings?.directConnections ?? null)
-				)
-			);
-
-			banners.set(await getBanners(localStorage.token));
-			tools.set(await getTools(localStorage.token));
-			toolServers.set(await getToolServersData($i18n, $settings?.toolServers ?? []));
 
 			document.addEventListener('keydown', async function (event) {
 				const isCtrlPressed = event.ctrlKey || event.metaKey; // metaKey is for Cmd key on Mac
@@ -232,9 +266,22 @@
 				}
 			});
 
-			if ($user?.role === 'admin' && ($settings?.showChangelog ?? true)) {
-				showChangelog.set($settings?.version !== $config.version);
-			}
+			// Check changelog - use localStorage.version first (set when user dismisses modal)
+			// This avoids the issue where settings load asynchronously
+			const checkChangelog = () => {
+				if ($user?.role === 'admin' && ($settings?.showChangelog ?? true)) {
+					const dismissedVersion = localStorage.version;
+					if (dismissedVersion === $config.version) {
+						showChangelog.set(false);
+					} else {
+						// Check settings.version after it loads
+						showChangelog.set($settings?.version !== $config.version);
+					}
+				}
+			};
+
+			// Check immediately (may be false if settings not loaded yet, but that's ok)
+			checkChangelog();
 
 			if ($user?.permissions?.chat?.temporary ?? true) {
 				if ($page.url.searchParams.get('temporary-chat') === 'true') {
@@ -246,18 +293,26 @@
 				}
 			}
 
-			// Check for version updates
+			// Defer version updates check (admin only, non-critical)
 			if ($user?.role === 'admin') {
-				// Check if the user has dismissed the update toast in the last 24 hours
-				if (localStorage.dismissedUpdateToast) {
-					const dismissedUpdateToast = new Date(Number(localStorage.dismissedUpdateToast));
-					const now = new Date();
+				const checkVersionUpdates = () => {
+					// Check if the user has dismissed the update toast in the last 24 hours
+					if (localStorage.dismissedUpdateToast) {
+						const dismissedUpdateToast = new Date(Number(localStorage.dismissedUpdateToast));
+						const now = new Date();
 
-					if (now - dismissedUpdateToast > 24 * 60 * 60 * 1000) {
+						if (now - dismissedUpdateToast > 24 * 60 * 60 * 1000) {
+							checkForVersionUpdates();
+						}
+					} else {
 						checkForVersionUpdates();
 					}
+				};
+
+				if (typeof requestIdleCallback !== 'undefined') {
+					requestIdleCallback(checkVersionUpdates, { timeout: 5000 });
 				} else {
-					checkForVersionUpdates();
+					setTimeout(checkVersionUpdates, 100);
 				}
 			}
 			await tick();
@@ -277,6 +332,16 @@
 			};
 		});
 	};
+
+	// Reactive: Update changelog check when settings change (after they load from server)
+	$: if ($settings && $user?.role === 'admin') {
+		const dismissedVersion = localStorage.version;
+		if (dismissedVersion === $config.version) {
+			showChangelog.set(false);
+		} else {
+			showChangelog.set($settings?.version !== $config.version);
+		}
+	}
 </script>
 
 <SettingsModal bind:show={$showSettings} />
