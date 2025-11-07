@@ -13,10 +13,13 @@
 	} from '$lib/stores';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
+	import { prefetchMetrics } from '$lib/utils/metricsPrefetch';
 
 	import MenuLines from '$lib/components/icons/MenuLines.svelte';
 
 	const i18n = getContext('i18n');
+	
+	let metricsPrefetchTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	let loaded = false;
 
@@ -133,6 +136,18 @@
 								? ''
 								: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition"
 							href="/workspace/metrics"
+							on:mouseenter={() => {
+								// Small delay to avoid prefetching on accidental hovers
+								metricsPrefetchTimeout = setTimeout(() => {
+									prefetchMetrics();
+								}, 200);
+							}}
+							on:mouseleave={() => {
+								if (metricsPrefetchTimeout) {
+									clearTimeout(metricsPrefetchTimeout);
+									metricsPrefetchTimeout = null;
+								}
+							}}
 						>
 							{$i18n.t('Metrics')}
 						</a>
