@@ -95,17 +95,29 @@ def timestamp_to_date_str(timestamp: int) -> str:
 
 # Helper function to get date range from query params
 def get_date_range(start_date: Optional[str], end_date: Optional[str]) -> tuple[int, int]:
-    """Convert date strings to timestamps. Defaults to last 30 days if not provided."""
+    """Convert date strings to timestamps. Defaults to last 30 days if not provided.
+    Validates that start_date <= end_date. For single-day ranges, sets end_ts to end of day."""
     if end_date:
-        end_ts = int(datetime.fromisoformat(end_date).timestamp())
+        end_date_obj = datetime.fromisoformat(end_date).date()
+        # For single-day ranges, include the entire day (end of day)
+        end_ts = int(datetime.combine(end_date_obj, datetime.max.time()).timestamp())
     else:
         end_ts = int(datetime.now().timestamp())
     
     if start_date:
-        start_ts = int(datetime.fromisoformat(start_date).timestamp())
+        start_date_obj = datetime.fromisoformat(start_date).date()
+        # Start of day
+        start_ts = int(datetime.combine(start_date_obj, datetime.min.time()).timestamp())
     else:
         # Default to 30 days ago
         start_ts = int((datetime.now() - timedelta(days=30)).timestamp())
+    
+    # Validate that start <= end
+    if start_ts > end_ts:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="start_date must be less than or equal to end_date"
+        )
     
     return start_ts, end_ts
 

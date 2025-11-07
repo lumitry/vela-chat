@@ -57,6 +57,9 @@
 	{:else if data && data.length > 0}
 		<Bar data={chartData} options={chartOptions} />
 	{:else}
-		<div class="flex items-center justify-center h-full text-gray-500">No data available</div>
+		<div class="flex flex-col items-center justify-center h-full text-gray-500 text-sm">
+			<div>No spending data for this date range</div>
+			<div class="text-xs mt-1 opacity-70">Try selecting a different time period or model type</div>
+		</div>
 	{/if}
 </div>

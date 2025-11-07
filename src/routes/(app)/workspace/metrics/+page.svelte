@@ -27,8 +27,68 @@
 	import CostPerTokenChart from '$lib/components/workspace/Metrics/CostPerTokenChart.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import Info from '$lib/components/icons/Info.svelte';
+	import { formatSmartCurrency } from '$lib/utils/currency';
 
 	const i18n = getContext('i18n');
+
+	// Calculate summary statistics
+	$: totalSpend = dailySpend.reduce((sum, d) => sum + (d.cost || 0), 0);
+	$: totalInputTokens = dailyTokenUsage.reduce((sum, d) => sum + (d.input_tokens || 0), 0);
+	$: totalOutputTokens = dailyTokenUsage.reduce((sum, d) => sum + (d.output_tokens || 0), 0);
+	$: totalTokens = totalInputTokens + totalOutputTokens;
+	$: totalMessages = messageCountDaily.reduce((sum, d) => sum + (d.count || 0), 0);
+	$: avgCostPerMessage = totalMessages > 0 ? totalSpend / totalMessages : 0;
+	$: uniqueModels = new Set(modelMetrics.map((m) => m.model_id)).size;
+
+	// Export functions
+	const exportToCSV = (data: any[], filename: string, headers: string[]) => {
+		if (!data || data.length === 0) {
+			toast.error($i18n.t('No data to export'));
+			return;
+		}
+
+		const csvRows = [headers.join(',')];
+		for (const row of data) {
+			const values = headers.map((header) => {
+				const value = row[header] ?? '';
+				// Escape commas and quotes in CSV
+				if (typeof value === 'string' && (value.includes(',') || value.includes('"'))) {
+					return `"${value.replace(/"/g, '""')}"`;
+				}
+				return value;
+			});
+			csvRows.push(values.join(','));
+		}
+
+		const csvContent = csvRows.join('\n');
+		const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+		const url = URL.createObjectURL(blob);
+		const link = document.createElement('a');
+		link.href = url;
+		link.download = filename;
+		link.click();
+		URL.revokeObjectURL(url);
+	};
+
+	const exportModelUsage = () => {
+		exportToCSV(modelMetrics, `model-usage-${startDate}-to-${endDate}.csv`, [
+			'model_name',
+			'spend',
+			'input_tokens',
+			'output_tokens',
+			'total_tokens',
+			'message_count'
+		]);
+	};
+
+	const exportDailyData = (data: any[], filename: string) => {
+		if (!data || data.length === 0) {
+			toast.error($i18n.t('No data to export'));
+			return;
+		}
+		const headers = Object.keys(data[0]);
+		exportToCSV(data, filename, headers);
+	};
 
 	let startDate = '';
 	let endDate = '';
@@ -54,6 +114,9 @@
 	let loadingPopularity = false;
 	let loadingCostPerToken = false;
 
+	// Track request IDs to prevent race conditions
+	let currentRequestId = 0;
+
 	// Generate cache key from params
 	const getCacheKey = (endpoint: string, params: MetricsParams): string => {
 		const keyParts = [
@@ -66,13 +129,14 @@
 		return keyParts.join('|');
 	};
 
-	// Fetch a single metric endpoint
+	// Fetch a single metric endpoint with race condition protection
 	const fetchMetric = async <T,>(
 		endpoint: string,
 		fetcher: (token: string, params: MetricsParams) => Promise<T>,
 		params: MetricsParams,
 		loadingSetter: (value: boolean) => void,
-		dataSetter: (value: T) => void
+		dataSetter: (value: T) => void,
+		requestId: number
 	) => {
 		const token = localStorage.token;
 		const cacheKey = getCacheKey(endpoint, params);
@@ -80,27 +144,49 @@
 		const cached = cache.get(cacheKey);
 
 		if (cached) {
-			dataSetter(cached as T);
-			loadingSetter(false);
+			// Only set data if this is still the current request
+			if (requestId === currentRequestId) {
+				dataSetter(cached as T);
+				loadingSetter(false);
+			}
 			return;
 		}
 
 		loadingSetter(true);
 		try {
 			const data = await fetcher(token, params);
-			dataSetter(data);
-			const newCache = new Map(cache);
-			newCache.set(cacheKey, data);
-			metricsCache.set(newCache);
+			// Only set data if this is still the current request (prevents stale data)
+			if (requestId === currentRequestId) {
+				dataSetter(data);
+				const newCache = new Map(cache);
+				newCache.set(cacheKey, data);
+				metricsCache.set(newCache);
+			}
 		} catch (error) {
-			console.error(`Error fetching ${endpoint}:`, error);
-			toast.error($i18n.t('Failed to load metrics'));
+			// Only show error if this is still the current request
+			if (requestId === currentRequestId) {
+				console.error(`Error fetching ${endpoint}:`, error);
+				toast.error($i18n.t('Failed to load metrics'));
+			}
 		} finally {
-			loadingSetter(false);
+			// Only update loading state if this is still the current request
+			if (requestId === currentRequestId) {
+				loadingSetter(false);
+			}
 		}
 	};
 
 	const fetchAllMetrics = async () => {
+		// Validate dates before fetching
+		if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
+			toast.error($i18n.t('Start date must be before end date'));
+			return;
+		}
+
+		// Increment request ID to invalidate any in-flight requests
+		currentRequestId++;
+		const requestId = currentRequestId;
+
 		const params: MetricsParams = {
 			model_type: modelType,
 			start_date: startDate,
@@ -113,56 +199,64 @@
 			getModelMetrics,
 			{ ...params, limit: 15 },
 			(v) => (loadingModels = v),
-			(v) => (modelMetrics = v)
+			(v) => (modelMetrics = v),
+			requestId
 		);
 		fetchMetric(
 			'tokens/daily',
 			getDailyTokenUsage,
 			params,
 			(v) => (loadingTokens = v),
-			(v) => (dailyTokenUsage = v)
+			(v) => (dailyTokenUsage = v),
+			requestId
 		);
 		fetchMetric(
 			'spend/daily',
 			getDailySpend,
 			params,
 			(v) => (loadingSpend = v),
-			(v) => (dailySpend = v)
+			(v) => (dailySpend = v),
+			requestId
 		);
 		fetchMetric(
 			'tokens/model/daily',
 			getModelDailyTokens,
 			{ ...params, limit: 10 },
 			(v) => (loadingModelTokens = v),
-			(v) => (modelDailyTokens = v)
+			(v) => (modelDailyTokens = v),
+			requestId
 		);
 		fetchMetric(
 			'cost/message/daily',
 			getCostPerMessageDaily,
 			params,
 			(v) => (loadingCostPerMessage = v),
-			(v) => (costPerMessageDaily = v)
+			(v) => (costPerMessageDaily = v),
+			requestId
 		);
 		fetchMetric(
 			'messages/daily',
 			getMessageCountDaily,
 			params,
 			(v) => (loadingMessageCount = v),
-			(v) => (messageCountDaily = v)
+			(v) => (messageCountDaily = v),
+			requestId
 		);
 		fetchMetric(
 			'models/popularity',
 			getModelPopularity,
 			{ ...params, limit: 15 },
 			(v) => (loadingPopularity = v),
-			(v) => (modelPopularity = v)
+			(v) => (modelPopularity = v),
+			requestId
 		);
 		fetchMetric(
 			'cost/token/daily',
 			getCostPerTokenDaily,
 			params,
 			(v) => (loadingCostPerToken = v),
-			(v) => (costPerTokenDaily = v)
+			(v) => (costPerTokenDaily = v),
+			requestId
 		);
 	};
 
@@ -209,10 +303,60 @@
 			</div>
 		</div>
 
+		<!-- Summary Statistics Card -->
+		<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+			<div class="bg-white dark:bg-gray-800 rounded-xl p-4">
+				<div class="text-sm text-gray-600 dark:text-gray-400 mb-1">{$i18n.t('Total Spend')}</div>
+				<div class="text-xl font-semibold tabular-nums">{formatSmartCurrency(totalSpend)}</div>
+			</div>
+			<div class="bg-white dark:bg-gray-800 rounded-xl p-4">
+				<div class="text-sm text-gray-600 dark:text-gray-400 mb-1">{$i18n.t('Total Tokens')}</div>
+				<div class="text-xl font-semibold tabular-nums">
+					{new Intl.NumberFormat().format(totalTokens)}
+				</div>
+			</div>
+			<div class="bg-white dark:bg-gray-800 rounded-xl p-4">
+				<div class="text-sm text-gray-600 dark:text-gray-400 mb-1">{$i18n.t('Input Tokens')}</div>
+				<div class="text-xl font-semibold tabular-nums">
+					{new Intl.NumberFormat().format(totalInputTokens)}
+				</div>
+			</div>
+			<div class="bg-white dark:bg-gray-800 rounded-xl p-4">
+				<div class="text-sm text-gray-600 dark:text-gray-400 mb-1">{$i18n.t('Output Tokens')}</div>
+				<div class="text-xl font-semibold tabular-nums">
+					{new Intl.NumberFormat().format(totalOutputTokens)}
+				</div>
+			</div>
+			<div class="bg-white dark:bg-gray-800 rounded-xl p-4">
+				<div class="text-sm text-gray-600 dark:text-gray-400 mb-1">{$i18n.t('Total Messages')}</div>
+				<div class="text-xl font-semibold tabular-nums">
+					{new Intl.NumberFormat().format(totalMessages)}
+				</div>
+			</div>
+			<div class="bg-white dark:bg-gray-800 rounded-xl p-4">
+				<div class="text-sm text-gray-600 dark:text-gray-400 mb-1">
+					{$i18n.t('Avg Cost/Message')}
+				</div>
+				<div class="text-xl font-semibold tabular-nums">
+					{formatSmartCurrency(avgCostPerMessage)}
+				</div>
+			</div>
+		</div>
+
 		<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
 			<!-- Model Usage Table -->
 			<div class="lg:col-span-2">
-				<h3 class="text-lg font-semibold mb-2">{$i18n.t('Model Usage')}</h3>
+				<div class="flex justify-between items-center mb-2">
+					<h3 class="text-lg font-semibold">{$i18n.t('Model Usage')}</h3>
+					{#if !loadingModels && modelMetrics.length > 0}
+						<button
+							class="px-3 py-1.5 text-sm rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition"
+							on:click={exportModelUsage}
+						>
+							{$i18n.t('Export CSV')}
+						</button>
+					{/if}
+				</div>
 				<ModelUsageTable models={modelMetrics} loading={loadingModels} />
 			</div>
 

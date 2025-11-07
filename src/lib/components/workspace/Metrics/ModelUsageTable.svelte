@@ -178,5 +178,13 @@
 				{/each}
 			</tbody>
 		</table>
+		{#if models.length === 0}
+			<div class="flex flex-col items-center justify-center py-12 text-gray-500 text-sm">
+				<div>No models found for this date range</div>
+				<div class="text-xs mt-1 opacity-70">
+					Try selecting a different time period or model type
+				</div>
+			</div>
+		{/if}
 	{/if}
 </div>

@@ -130,6 +130,9 @@
 	{:else if datasets.length > 0}
 		<Line data={chartData} options={chartOptions} />
 	{:else}
-		<div class="flex items-center justify-center h-full text-gray-500">No data available</div>
+		<div class="flex flex-col items-center justify-center h-full text-gray-500 text-sm">
+			<div>No model token usage data for this date range</div>
+			<div class="text-xs mt-1 opacity-70">Try selecting a different time period or model type</div>
+		</div>
 	{/if}
 </div>

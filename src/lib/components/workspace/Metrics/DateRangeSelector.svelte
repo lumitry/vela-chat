@@ -45,9 +45,19 @@
 
 	const handleCustomChange = () => {
 		if (showCustom && startDate && endDate) {
+			// Validate dates
+			if (new Date(startDate) > new Date(endDate)) {
+				// Swap dates if start > end
+				const temp = startDate;
+				startDate = endDate;
+				endDate = temp;
+			}
 			dispatch('change', { startDate, endDate });
 		}
 	};
+
+	// Get today's date in YYYY-MM-DD format for max attribute
+	const today = new Date().toISOString().split('T')[0];
 </script>
 
 <div class="flex flex-col gap-2">
@@ -91,6 +101,7 @@
 				<input
 					type="date"
 					bind:value={startDate}
+					max={endDate || today}
 					class="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm"
 					on:change={handleCustomChange}
 				/>
@@ -100,6 +111,8 @@
 				<input
 					type="date"
 					bind:value={endDate}
+					min={startDate}
+					max={today}
 					class="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm"
 					on:change={handleCustomChange}
 				/>
