@@ -70,10 +70,15 @@ export const getPrompts = async (token: string = '') => {
 	return res;
 };
 
-export const getPromptList = async (token: string = '') => {
+export const getPromptList = async (token: string = '', exclude_owned: boolean = false) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/prompts/list`, {
+	const searchParams = new URLSearchParams();
+	if (exclude_owned) {
+		searchParams.append('exclude_owned', 'true');
+	}
+
+	const res = await fetch(`${WEBUI_API_BASE_URL}/prompts/list?${searchParams.toString()}`, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',

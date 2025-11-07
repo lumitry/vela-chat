@@ -1,6 +1,6 @@
 from typing import List, Optional
 from pydantic import BaseModel
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 import logging
 
 from open_webui.models.knowledge import (
@@ -88,13 +88,20 @@ async def get_knowledge(user=Depends(get_verified_user)):
 
 
 @router.get("/list", response_model=list[KnowledgeUserResponse])
-async def get_knowledge_list(user=Depends(get_verified_user)):
+async def get_knowledge_list(
+    user=Depends(get_verified_user),
+    exclude_owned: bool = Query(False, description="Exclude knowledge bases owned by the current user")
+):
     knowledge_bases = []
 
     if user.role == "admin":
         knowledge_bases = Knowledges.get_knowledge_bases()
     else:
         knowledge_bases = Knowledges.get_knowledge_bases_by_user_id(user.id, "write")
+
+    # Filter out owned knowledge bases if exclude_owned is True
+    if exclude_owned:
+        knowledge_bases = [kb for kb in knowledge_bases if kb.user_id != user.id]
 
     # Get files for each knowledge base
     knowledge_with_files = []
