@@ -5,6 +5,7 @@ from open_webui.models.models import (
     ModelModel,
     ModelResponse,
     ModelUserResponse,
+    ModelMetadataResponse,
     Models,
 )
 from open_webui.constants import ERROR_MESSAGES
@@ -43,6 +44,40 @@ async def get_models(request: Request, id: Optional[str] = None, user=Depends(ge
             model_dict = model.model_dump()
             model_dict["meta"] = ModelMeta(**meta_dict)
             result.append(ModelUserResponse(**model_dict))
+        else:
+            result.append(model)
+    
+    return result
+
+
+###########################
+# GetModelsMetadata
+###########################
+
+
+@router.get("/metadata", response_model=list[ModelMetadataResponse])
+async def get_models_metadata(request: Request, user=Depends(get_verified_user)):
+    """
+    Get workspace models with only metadata (no knowledge/RAG file data).
+    Optimized for listing pages that don't need full model data.
+    """
+    if user.role == "admin":
+        models = Models.get_models_metadata()
+    else:
+        models = Models.get_models_metadata_by_user_id(user.id)
+    
+    # Convert relative file URLs to absolute URLs
+    from open_webui.models.models import ModelMeta
+    result = []
+    for model in models:
+        if model.meta and model.meta.profile_image_url:
+            # Create new ModelMeta with absolute URL
+            meta_dict = model.meta.model_dump()
+            meta_dict["profile_image_url"] = convert_file_url_to_absolute(request, model.meta.profile_image_url)
+            # Create new model instance with updated meta
+            model_dict = model.model_dump()
+            model_dict["meta"] = ModelMeta(**meta_dict)
+            result.append(ModelMetadataResponse(**model_dict))
         else:
             result.append(model)
     

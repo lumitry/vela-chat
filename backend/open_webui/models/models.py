@@ -134,6 +134,22 @@ class ModelResponse(ModelModel):
     pass
 
 
+class ModelMetadataResponse(BaseModel):
+    """Lean response model with only essential fields for listing, excludes knowledge file data"""
+    id: str
+    user_id: str
+    base_model_id: Optional[str] = None
+    name: str
+    meta: ModelMeta
+    access_control: Optional[dict] = None
+    is_active: bool
+    updated_at: int
+    created_at: int
+    user: Optional[UserResponse] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class ModelForm(BaseModel):
     id: str
     base_model_id: Optional[str] = None
@@ -307,6 +323,182 @@ class ModelsTable:
             
             end_time = time.time()
             log.info(f"get_models_by_user_id took {(end_time - start_time):.3f} seconds for {len(all_models)} models")
+            return result
+
+    def get_models_metadata(self) -> list[ModelMetadataResponse]:
+        """
+        Get all models with only metadata (no knowledge file data).
+        Optimized for listing pages that don't need full model data.
+        """
+        with get_db() as db:
+            all_models = (
+                db.query(Model)
+                .filter(Model.base_model_id != None)
+                .all()
+            )
+            
+            if not all_models:
+                return []
+            
+            # Get all user IDs in one go
+            user_ids = {model.user_id for model in all_models if model.user_id}
+            user_dict = {}
+            if user_ids:
+                users = Users.get_users_by_ids(list(user_ids))
+                user_dict = {user.id: user for user in users}
+            
+            result = []
+            batch_size = 50
+            for i in range(0, len(all_models), batch_size):
+                batch = all_models[i:i+batch_size]
+                for model in batch:
+                    user = user_dict.get(model.user_id)
+                    
+                    # Clean meta to remove knowledge file data
+                    meta_dict = model.meta if model.meta else {}
+                    cleaned_meta = {
+                        "profile_image_url": meta_dict.get("profile_image_url", "/static/favicon.png"),
+                        "description": meta_dict.get("description"),
+                        "capabilities": meta_dict.get("capabilities"),
+                    }
+                    # Keep knowledge base references but not file data
+                    if "knowledge" in meta_dict:
+                        # If knowledge is a list, keep only IDs/names, not file data
+                        knowledge = meta_dict.get("knowledge", [])
+                        if isinstance(knowledge, list):
+                            cleaned_knowledge = []
+                            for kb in knowledge:
+                                if isinstance(kb, dict):
+                                    # Keep only essential knowledge base info
+                                    cleaned_kb = {
+                                        "id": kb.get("id"),
+                                        "name": kb.get("name"),
+                                        "collection_name": kb.get("collection_name"),
+                                    }
+                                    cleaned_knowledge.append(cleaned_kb)
+                                else:
+                                    cleaned_knowledge.append(kb)
+                            cleaned_meta["knowledge"] = cleaned_knowledge
+                    
+                    model_dict = {
+                        "id": model.id,
+                        "user_id": model.user_id,
+                        "base_model_id": model.base_model_id,
+                        "name": model.name,
+                        "meta": ModelMeta(**cleaned_meta),
+                        "params": model.params,
+                        "access_control": model.access_control,
+                        "is_active": model.is_active,
+                        "updated_at": model.updated_at,
+                        "created_at": model.created_at,
+                        "user": user.model_dump() if user else None,
+                    }
+                    result.append(ModelMetadataResponse.model_validate(model_dict))
+            
+            return result
+
+    def get_models_metadata_by_user_id(
+        self, user_id: str, permission: str = "write"
+    ) -> list[ModelMetadataResponse]:
+        """
+        Get models accessible to a user with only metadata (no knowledge file data).
+        Optimized for listing pages that don't need full model data.
+        """
+        with get_db() as db:
+            # Step 1: Fetch user's group memberships once
+            user_groups = Groups.get_groups_by_member_id(user_id)
+            user_group_ids = [group.id for group in user_groups]
+            
+            # Step 2: Fetch user's models
+            user_models = (
+                db.query(Model)
+                .filter(Model.base_model_id != None)
+                .filter(Model.user_id == user_id)
+                .all()
+            )
+            
+            # Step 3: Process other models with access control
+            other_models = (
+                db.query(Model)
+                .filter(Model.base_model_id != None)
+                .filter(Model.user_id != user_id)
+                .all()
+            )
+            
+            filtered_other_models = []
+            for model in other_models:
+                if model.access_control is None:
+                    if permission == "read":
+                        filtered_other_models.append(model)
+                    continue
+                
+                permission_access = model.access_control.get(permission, {})
+                permitted_group_ids = permission_access.get("group_ids", [])
+                permitted_user_ids = permission_access.get("user_ids", [])
+                
+                if (user_id in permitted_user_ids or 
+                    any(g_id in permitted_group_ids for g_id in user_group_ids)):
+                    filtered_other_models.append(model)
+            
+            all_models = user_models + filtered_other_models
+            
+            if not all_models:
+                return []
+            
+            # Step 4: Get user data
+            user_ids = {model.user_id for model in all_models if model.user_id}
+            user_dict = {}
+            if user_ids:
+                users = Users.get_users_by_ids(list(user_ids))
+                user_dict = {user.id: user for user in users}
+            
+            # Step 5: Build response with cleaned meta
+            result = []
+            batch_size = 50
+            for i in range(0, len(all_models), batch_size):
+                batch = all_models[i:i+batch_size]
+                for model in batch:
+                    user = user_dict.get(model.user_id)
+                    
+                    # Clean meta to remove knowledge file data
+                    meta_dict = model.meta if model.meta else {}
+                    cleaned_meta = {
+                        "profile_image_url": meta_dict.get("profile_image_url", "/static/favicon.png"),
+                        "description": meta_dict.get("description"),
+                        "capabilities": meta_dict.get("capabilities"),
+                    }
+                    # Keep knowledge base references but not file data
+                    if "knowledge" in meta_dict:
+                        knowledge = meta_dict.get("knowledge", [])
+                        if isinstance(knowledge, list):
+                            cleaned_knowledge = []
+                            for kb in knowledge:
+                                if isinstance(kb, dict):
+                                    cleaned_kb = {
+                                        "id": kb.get("id"),
+                                        "name": kb.get("name"),
+                                        "collection_name": kb.get("collection_name"),
+                                    }
+                                    cleaned_knowledge.append(cleaned_kb)
+                                else:
+                                    cleaned_knowledge.append(kb)
+                            cleaned_meta["knowledge"] = cleaned_knowledge
+                    
+                    model_dict = {
+                        "id": model.id,
+                        "user_id": model.user_id,
+                        "base_model_id": model.base_model_id,
+                        "name": model.name,
+                        "meta": ModelMeta(**cleaned_meta),
+                        "params": model.params,
+                        "access_control": model.access_control,
+                        "is_active": model.is_active,
+                        "updated_at": model.updated_at,
+                        "created_at": model.created_at,
+                        "user": user.model_dump() if user else None,
+                    }
+                    result.append(ModelMetadataResponse.model_validate(model_dict))
+            
             return result
 
     def get_model_by_id(self, id: str) -> Optional[ModelModel]:
