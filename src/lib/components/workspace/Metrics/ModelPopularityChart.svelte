@@ -9,6 +9,7 @@
 		CategoryScale,
 		LinearScale
 	} from 'chart.js';
+	import Spinner from '$lib/components/common/Spinner.svelte';
 
 	ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale);
 
@@ -18,6 +19,7 @@
 		chat_count: number;
 		message_count: number;
 	}> = [];
+	export let loading: boolean = false;
 
 	$: chartData = {
 		labels: data && Array.isArray(data) ? data.map((d) => d.model_name || d.model_id) : [],
@@ -56,7 +58,11 @@
 </script>
 
 <div class="w-full h-64">
-	{#if data && data.length > 0}
+	{#if loading}
+		<div class="flex items-center justify-center h-full">
+			<Spinner />
+		</div>
+	{:else if data && data.length > 0}
 		<Bar data={chartData} options={chartOptions} />
 	{:else}
 		<div class="flex items-center justify-center h-full text-gray-500">No data available</div>

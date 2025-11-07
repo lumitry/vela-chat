@@ -7,19 +7,24 @@
 		Legend,
 		BarElement,
 		CategoryScale,
-		LinearScale
+		LinearScale,
+		TimeScale
 	} from 'chart.js';
+	import 'chartjs-adapter-date-fns';
+	import { formatSmartCurrency } from '$lib/utils/currency';
+	import { getTimeScaleConfig, getCurrencyTooltipConfig, getCurrencyYTicks, transformToTimeSeriesData } from '$lib/utils/charts';
+	import Spinner from '$lib/components/common/Spinner.svelte';
 
-	ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale);
+	ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale, TimeScale);
 
 	export let data: Array<{ date: string; cost: number }> = [];
+	export let loading: boolean = false;
 
 	$: chartData = {
-		labels: data && Array.isArray(data) ? data.map((d) => d.date) : [],
 		datasets: [
 			{
 				label: 'Cost',
-				data: data && Array.isArray(data) ? data.map((d) => d.cost || 0) : [],
+				data: transformToTimeSeriesData(data, (d) => d.cost),
 				backgroundColor: 'rgb(59, 130, 246)'
 			}
 		]
@@ -32,40 +37,24 @@
 			legend: {
 				display: false
 			},
-			tooltip: {
-				callbacks: {
-					label: (context: any) => {
-						const value = context.parsed.y || 0;
-						return `Cost: ${new Intl.NumberFormat('en-US', {
-							style: 'currency',
-							currency: 'USD',
-							minimumFractionDigits: 8,
-							maximumFractionDigits: 8
-						}).format(value)}`;
-					}
-				}
-			}
+			tooltip: getCurrencyTooltipConfig('Cost')
 		},
 		scales: {
+			x: getTimeScaleConfig(),
 			y: {
 				beginAtZero: true,
-				ticks: {
-					callback: (value: any) => {
-						return new Intl.NumberFormat('en-US', {
-							style: 'currency',
-							currency: 'USD',
-							minimumFractionDigits: 8,
-							maximumFractionDigits: 8
-						}).format(value as number);
-					}
-				}
+				ticks: getCurrencyYTicks()
 			}
 		}
 	};
 </script>
 
 <div class="w-full h-64">
-	{#if data && data.length > 0}
+	{#if loading}
+		<div class="flex items-center justify-center h-full">
+			<Spinner />
+		</div>
+	{:else if data && data.length > 0}
 		<Bar data={chartData} options={chartOptions} />
 	{:else}
 		<div class="flex items-center justify-center h-full text-gray-500">No data available</div>

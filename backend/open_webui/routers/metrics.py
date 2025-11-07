@@ -177,9 +177,13 @@ async def get_model_metrics(
             # Filter by model type
             query = filter_by_model_type(query, model_ownership_map, model_type, ChatMessage.model_id)
             
-            # Order by total tokens (input + output)
+            # Use having clause to filter out zero-token models and order by total tokens
+            # We need to use having() to filter on aggregated values
             results = (
-                query.order_by(
+                query.having(
+                    (func.sum(ChatMessage.input_tokens) + func.sum(ChatMessage.output_tokens)) > 0
+                )
+                .order_by(
                     (func.sum(ChatMessage.input_tokens) + func.sum(ChatMessage.output_tokens)).desc()
                 )
                 .limit(limit)
@@ -392,11 +396,16 @@ async def get_model_daily_tokens(
                     ChatMessage.model_id.isnot(None),
                 )
                 .group_by(ChatMessage.model_id)
+            )
+            
+            # Filter by model type BEFORE order_by and limit
+            top_models_query = filter_by_model_type(top_models_query, model_ownership_map, model_type, ChatMessage.model_id)
+            
+            top_models_query = (
+                top_models_query
                 .order_by(func.sum(ChatMessage.input_tokens + ChatMessage.output_tokens).desc())
                 .limit(limit)
             )
-            
-            top_models_query = filter_by_model_type(top_models_query, model_ownership_map, model_type, ChatMessage.model_id)
             top_model_ids = [row.model_id for row in top_models_query.all()]
             
             if not top_model_ids:
@@ -683,7 +692,8 @@ async def get_cost_per_token_daily(
             
             total_cost = float(row.total_cost or 0)
             total_tokens = int(row.total_tokens or 0)
-            avg_cost_per_token = total_cost / total_tokens if total_tokens > 0 else 0.0
+            # Calculate cost per 1M tokens (multiply by 1,000,000)
+            avg_cost_per_token = (total_cost / total_tokens * 1000000) if total_tokens > 0 else 0.0
             
             response.append(
                 CostPerTokenDailyResponse(

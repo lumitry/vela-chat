@@ -51,7 +51,8 @@
 </script>
 
 <div class="flex flex-col gap-2">
-	<div class="flex items-center gap-2">
+	<label class="text-xs font-semibold text-gray-700 dark:text-gray-300">{$i18n.t('Date Range')}</label>
+	<div class="flex items-center gap-2 flex-wrap">
 		<button
 			class="px-3 py-1.5 rounded-xl text-sm font-medium transition {selectedPreset === '7d'
 				? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white'
@@ -84,29 +85,26 @@
 		>
 			{$i18n.t('Custom')}
 		</button>
-	</div>
-
-	{#if showCustom}
-		<div class="flex items-center gap-2">
-			<label class="text-sm text-gray-600 dark:text-gray-400">
-				{$i18n.t('Start Date')}:
+		{#if showCustom}
+			<label class="text-sm text-gray-600 dark:text-gray-400 flex items-center gap-1">
+				<span>{$i18n.t('Start')}:</span>
 				<input
 					type="date"
 					bind:value={startDate}
-					class="ml-2 px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm"
+					class="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm"
 					on:change={handleCustomChange}
 				/>
 			</label>
-			<label class="text-sm text-gray-600 dark:text-gray-400">
-				{$i18n.t('End Date')}:
+			<label class="text-sm text-gray-600 dark:text-gray-400 flex items-center gap-1">
+				<span>{$i18n.t('End')}:</span>
 				<input
 					type="date"
 					bind:value={endDate}
-					class="ml-2 px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm"
+					class="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm"
 					on:change={handleCustomChange}
 				/>
 			</label>
-		</div>
-	{/if}
+		{/if}
+	</div>
 </div>
 

@@ -55,6 +55,9 @@ export const folders: Writable<Record<string, any>> = writable({});
 export const models: Writable<Model[]> = writable([]);
 
 export const prompts: Writable<null | Prompt[]> = writable(null);
+
+// Metrics cache
+export const metricsCache: Writable<Map<string, any>> = writable(new Map());
 export const knowledge: Writable<null | Document[]> = writable(null);
 export const tools = writable(null);
 export const functions = writable(null);

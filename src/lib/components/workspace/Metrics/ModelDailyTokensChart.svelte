@@ -8,10 +8,14 @@
 		LineElement,
 		CategoryScale,
 		LinearScale,
-		PointElement
+		PointElement,
+		TimeScale
 	} from 'chart.js';
+	import 'chartjs-adapter-date-fns';
+	import { getTimeScaleConfig, getTooltipConfig } from '$lib/utils/charts';
+	import Spinner from '$lib/components/common/Spinner.svelte';
 
-	ChartJS.register(Title, Tooltip, Legend, LineElement, CategoryScale, LinearScale, PointElement);
+	ChartJS.register(Title, Tooltip, Legend, LineElement, CategoryScale, LinearScale, PointElement, TimeScale);
 
 	export let data: Array<{
 		date: string;
@@ -21,6 +25,7 @@
 		output_tokens: number;
 		total_tokens: number;
 	}> = [];
+	export let loading: boolean = false;
 
 	// Group data by model and create datasets
 	$: modelMap = (() => {
@@ -65,7 +70,11 @@
 				label: firstEntry?.model_name || modelId,
 				data: allDates.map((dateStr) => {
 					const dayEntry = modelData.find((d) => d.date === dateStr);
-					return dayEntry ? dayEntry.total_tokens : 0;
+					const tokens = dayEntry ? dayEntry.total_tokens : 0;
+					return {
+						x: dateStr,
+						y: tokens
+					};
 				}),
 				borderColor: color,
 				backgroundColor: color.replace('rgb', 'rgba').replace(')', ', 0.1)'),
@@ -76,7 +85,6 @@
 	})();
 
 	$: chartData = {
-		labels: allDates,
 		datasets
 	};
 
@@ -93,15 +101,20 @@
 				position: 'right' as const
 			},
 			tooltip: {
-				callbacks: {
-					label: (context: any) => {
+				filter: (tooltipItem: any) => {
+					// Only show tooltip items with nonzero values
+					return (tooltipItem.parsed?.y || 0) > 0;
+				},
+				...getTooltipConfig({
+					formatLabel: (context: any) => {
 						const value = context.parsed.y || 0;
 						return `${context.dataset.label}: ${new Intl.NumberFormat().format(value)} tokens`;
 					}
-				}
+				})
 			}
 		},
 		scales: {
+			x: getTimeScaleConfig(),
 			y: {
 				beginAtZero: true
 			}
@@ -110,7 +123,11 @@
 </script>
 
 <div class="w-full h-64">
-	{#if chartData.labels.length > 0 && datasets.length > 0}
+	{#if loading}
+		<div class="flex items-center justify-center h-full">
+			<Spinner />
+		</div>
+	{:else if datasets.length > 0}
 		<Line data={chartData} options={chartOptions} />
 	{:else}
 		<div class="flex items-center justify-center h-full text-gray-500">No data available</div>

@@ -7,19 +7,23 @@
 		Legend,
 		BarElement,
 		CategoryScale,
-		LinearScale
+		LinearScale,
+		TimeScale
 	} from 'chart.js';
+	import 'chartjs-adapter-date-fns';
+	import { getTimeScaleConfig, getNumberTooltipConfig, transformToTimeSeriesData } from '$lib/utils/charts';
+	import Spinner from '$lib/components/common/Spinner.svelte';
 
-	ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale);
+	ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale, TimeScale);
 
 	export let data: Array<{ date: string; count: number }> = [];
+	export let loading: boolean = false;
 
 	$: chartData = {
-		labels: data && Array.isArray(data) ? data.map((d) => d.date) : [],
 		datasets: [
 			{
 				label: 'Message Count',
-				data: data && Array.isArray(data) ? data.map((d) => d.count || 0) : [],
+				data: transformToTimeSeriesData(data, (d) => d.count),
 				backgroundColor: 'rgb(59, 130, 246)'
 			}
 		]
@@ -32,16 +36,10 @@
 			legend: {
 				display: false
 			},
-			tooltip: {
-				callbacks: {
-					label: (context: any) => {
-						const value = context.parsed.y || 0;
-						return `Messages: ${new Intl.NumberFormat().format(value)}`;
-					}
-				}
-			}
+			tooltip: getNumberTooltipConfig('Messages')
 		},
 		scales: {
+			x: getTimeScaleConfig(),
 			y: {
 				beginAtZero: true
 			}
@@ -50,7 +48,11 @@
 </script>
 
 <div class="w-full h-64">
-	{#if data && data.length > 0}
+	{#if loading}
+		<div class="flex items-center justify-center h-full">
+			<Spinner />
+		</div>
+	{:else if data && data.length > 0}
 		<Bar data={chartData} options={chartOptions} />
 	{:else}
 		<div class="flex items-center justify-center h-full text-gray-500">No data available</div>

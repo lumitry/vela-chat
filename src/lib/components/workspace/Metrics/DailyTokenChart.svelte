@@ -7,10 +7,14 @@
 		Legend,
 		BarElement,
 		CategoryScale,
-		LinearScale
+		LinearScale,
+		TimeScale
 	} from 'chart.js';
+	import 'chartjs-adapter-date-fns';
+	import { getTimeScaleConfig, getTooltipConfig, transformToTimeSeriesData } from '$lib/utils/charts';
+	import Spinner from '$lib/components/common/Spinner.svelte';
 
-	ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale);
+	ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale, TimeScale);
 
 	export let data: Array<{
 		date: string;
@@ -18,19 +22,19 @@
 		output_tokens: number;
 		total_tokens: number;
 	}> = [];
+	export let loading: boolean = false;
 
 	$: chartData = {
-		labels: data && Array.isArray(data) ? data.map((d) => d.date) : [],
 		datasets: [
 			{
 				label: 'Input Tokens',
-				data: data && Array.isArray(data) ? data.map((d) => d.input_tokens || 0) : [],
+				data: transformToTimeSeriesData(data, (d) => d.input_tokens),
 				backgroundColor: 'rgb(59, 130, 246)',
 				stack: 'tokens'
 			},
 			{
 				label: 'Output Tokens',
-				data: data && Array.isArray(data) ? data.map((d) => d.output_tokens || 0) : [],
+				data: transformToTimeSeriesData(data, (d) => d.output_tokens),
 				backgroundColor: 'rgb(16, 185, 129)',
 				stack: 'tokens'
 			}
@@ -45,16 +49,23 @@
 				display: true
 			},
 			tooltip: {
-				callbacks: {
-					label: (context: any) => {
+				mode: 'index',
+				intersect: false,
+				...getTooltipConfig({
+					formatLabel: (context: any) => {
 						const value = context.parsed.y || 0;
 						return `${context.dataset.label}: ${new Intl.NumberFormat().format(value)}`;
+					},
+					formatFooter: (tooltipItems: any[]) => {
+						const total = tooltipItems.reduce((sum, item) => sum + (item.parsed.y || 0), 0);
+						return `Total: ${new Intl.NumberFormat().format(total)}`;
 					}
-				}
+				})
 			}
 		},
 		scales: {
 			x: {
+				...getTimeScaleConfig(),
 				stacked: true
 			},
 			y: {
@@ -66,7 +77,11 @@
 </script>
 
 <div class="w-full h-64">
-	{#if data && data.length > 0}
+	{#if loading}
+		<div class="flex items-center justify-center h-full">
+			<Spinner />
+		</div>
+	{:else if data && data.length > 0}
 		<Bar data={chartData} options={chartOptions} />
 	{:else}
 		<div class="flex items-center justify-center h-full text-gray-500">No data available</div>

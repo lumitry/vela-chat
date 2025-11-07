@@ -8,10 +8,15 @@
 		LineElement,
 		CategoryScale,
 		LinearScale,
-		PointElement
+		PointElement,
+		TimeScale
 	} from 'chart.js';
+	import 'chartjs-adapter-date-fns';
+	import { formatSmartCurrency } from '$lib/utils/currency';
+	import { getTimeScaleConfig, getCurrencyTooltipConfig, getCurrencyYTicks, transformToTimeSeriesData } from '$lib/utils/charts';
+	import Spinner from '$lib/components/common/Spinner.svelte';
 
-	ChartJS.register(Title, Tooltip, Legend, LineElement, CategoryScale, LinearScale, PointElement);
+	ChartJS.register(Title, Tooltip, Legend, LineElement, CategoryScale, LinearScale, PointElement, TimeScale);
 
 	export let data: Array<{
 		date: string;
@@ -19,13 +24,13 @@
 		message_count: number;
 		total_cost: number;
 	}> = [];
+	export let loading: boolean = false;
 
 	$: chartData = {
-		labels: data && Array.isArray(data) ? data.map((d) => d.date) : [],
 		datasets: [
 			{
 				label: 'Average Cost per Message',
-				data: data && Array.isArray(data) ? data.map((d) => d.avg_cost || 0) : [],
+				data: transformToTimeSeriesData(data, (d) => d.avg_cost),
 				borderColor: 'rgb(59, 130, 246)',
 				backgroundColor: 'rgba(59, 130, 246, 0.1)',
 				fill: false,
@@ -41,40 +46,24 @@
 			legend: {
 				display: true
 			},
-			tooltip: {
-				callbacks: {
-					label: (context: any) => {
-						const value = context.parsed.y || 0;
-						return `Avg Cost: ${new Intl.NumberFormat('en-US', {
-							style: 'currency',
-							currency: 'USD',
-							minimumFractionDigits: 8,
-							maximumFractionDigits: 8
-						}).format(value)}`;
-					}
-				}
-			}
+			tooltip: getCurrencyTooltipConfig('Avg Cost')
 		},
 		scales: {
+			x: getTimeScaleConfig(),
 			y: {
 				beginAtZero: true,
-				ticks: {
-					callback: (value: any) => {
-						return new Intl.NumberFormat('en-US', {
-							style: 'currency',
-							currency: 'USD',
-							minimumFractionDigits: 8,
-							maximumFractionDigits: 8
-						}).format(value as number);
-					}
-				}
+				ticks: getCurrencyYTicks()
 			}
 		}
 	};
 </script>
 
 <div class="w-full h-64">
-	{#if data && data.length > 0}
+	{#if loading}
+		<div class="flex items-center justify-center h-full">
+			<Spinner />
+		</div>
+	{:else if data && data.length > 0}
 		<Line data={chartData} options={chartOptions} />
 	{:else}
 		<div class="flex items-center justify-center h-full text-gray-500">No data available</div>
