@@ -158,10 +158,27 @@ async def update_user_role(form_data: UserRoleUpdateForm, user=Depends(get_admin
 
 
 @router.get("/user/settings", response_model=Optional[UserSettings])
-async def get_user_settings_by_session_user(user=Depends(get_verified_user)):
+async def get_user_settings_by_session_user(request: Request, user=Depends(get_verified_user)):
     user = Users.get_user_by_id(user.id)
     if user:
-        return user.settings
+        settings = user.settings
+        if settings:
+            # Convert settings to dict for modification
+            settings_dict = settings.model_dump() if hasattr(settings, 'model_dump') else (settings if isinstance(settings, dict) else {})
+            
+            # Convert relative file URLs to absolute URLs for backgroundImageUrl
+            if settings_dict and isinstance(settings_dict, dict):
+                ui = settings_dict.get('ui')
+                if ui and isinstance(ui, dict):
+                    background_image_url = ui.get('backgroundImageUrl')
+                    if background_image_url:
+                        from open_webui.utils.model_images import convert_file_url_to_absolute
+                        ui['backgroundImageUrl'] = convert_file_url_to_absolute(request, background_image_url)
+                        settings_dict['ui'] = ui
+            
+            # Return as UserSettings model
+            return UserSettings(**settings_dict) if settings_dict else settings
+        return settings
     else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -176,11 +193,45 @@ async def get_user_settings_by_session_user(user=Depends(get_verified_user)):
 
 @router.post("/user/settings/update", response_model=UserSettings)
 async def update_user_settings_by_session_user(
-    form_data: UserSettings, user=Depends(get_verified_user)
+    request: Request,
+    form_data: UserSettings, 
+    user=Depends(get_verified_user)
 ):
-    user = Users.update_user_settings_by_id(user.id, form_data.model_dump())
+    # Convert settings to dict for modification
+    settings_dict = form_data.model_dump() if hasattr(form_data, 'model_dump') else (form_data if isinstance(form_data, dict) else {})
+    
+    # Convert base64 backgroundImageUrl to filesystem storage if needed
+    if settings_dict and isinstance(settings_dict, dict):
+        ui = settings_dict.get('ui')
+        if ui and isinstance(ui, dict):
+            background_image_url = ui.get('backgroundImageUrl')
+            if background_image_url:
+                from open_webui.utils.model_images import get_or_create_model_image_file
+                ui['backgroundImageUrl'] = get_or_create_model_image_file(
+                    request, user.id, background_image_url
+                )
+                settings_dict['ui'] = ui
+    
+    user = Users.update_user_settings_by_id(user.id, settings_dict)
     if user:
-        return user.settings
+        settings = user.settings
+        if settings:
+            # Convert settings to dict for modification
+            settings_dict = settings.model_dump() if hasattr(settings, 'model_dump') else (settings if isinstance(settings, dict) else {})
+            
+            # Convert relative file URLs to absolute URLs for backgroundImageUrl
+            if settings_dict and isinstance(settings_dict, dict):
+                ui = settings_dict.get('ui')
+                if ui and isinstance(ui, dict):
+                    background_image_url = ui.get('backgroundImageUrl')
+                    if background_image_url:
+                        from open_webui.utils.model_images import convert_file_url_to_absolute
+                        ui['backgroundImageUrl'] = convert_file_url_to_absolute(request, background_image_url)
+                        settings_dict['ui'] = ui
+            
+            # Return as UserSettings model
+            return UserSettings(**settings_dict) if settings_dict else settings
+        return settings
     else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -246,7 +297,7 @@ class UserResponse(BaseModel):
 
 
 @router.get("/{user_id}", response_model=UserResponse)
-async def get_user_by_id(user_id: str, user=Depends(get_verified_user)):
+async def get_user_by_id(request: Request, user_id: str, user=Depends(get_verified_user)):
     # Check if user_id is a shared chat
     # If it is, get the user_id from the chat
     if user_id.startswith("shared-"):
@@ -263,10 +314,14 @@ async def get_user_by_id(user_id: str, user=Depends(get_verified_user)):
     user = Users.get_user_by_id(user_id)
 
     if user:
+        # Convert relative file URLs to absolute URLs for user profile images
+        from open_webui.utils.model_images import convert_file_url_to_absolute
+        profile_image_url = convert_file_url_to_absolute(request, user.profile_image_url)
+        
         return UserResponse(
             **{
                 "name": user.name,
-                "profile_image_url": user.profile_image_url,
+                "profile_image_url": profile_image_url,
                 "active": get_active_status_by_user_id(user_id),
             }
         )

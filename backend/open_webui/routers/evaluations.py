@@ -49,7 +49,24 @@ async def update_config(
     if form_data.ENABLE_EVALUATION_ARENA_MODELS is not None:
         config.ENABLE_EVALUATION_ARENA_MODELS = form_data.ENABLE_EVALUATION_ARENA_MODELS
     if form_data.EVALUATION_ARENA_MODELS is not None:
-        config.EVALUATION_ARENA_MODELS = form_data.EVALUATION_ARENA_MODELS
+        # Convert base64 images in arena models to filesystem storage
+        from open_webui.utils.model_images import get_or_create_model_image_file
+        arena_models = form_data.EVALUATION_ARENA_MODELS
+        if arena_models:
+            # Use system user_id for config images (global/system-level)
+            system_user_id = "system"
+            for model in arena_models:
+                if isinstance(model, dict):
+                    meta = model.get('meta', {})
+                    if isinstance(meta, dict):
+                        profile_image_url = meta.get('profile_image_url')
+                        if profile_image_url:
+                            # Convert base64 to file if needed
+                            meta['profile_image_url'] = get_or_create_model_image_file(
+                                request, system_user_id, profile_image_url
+                            )
+                            model['meta'] = meta
+        config.EVALUATION_ARENA_MODELS = arena_models
     return {
         "ENABLE_EVALUATION_ARENA_MODELS": config.ENABLE_EVALUATION_ARENA_MODELS,
         "EVALUATION_ARENA_MODELS": config.EVALUATION_ARENA_MODELS,

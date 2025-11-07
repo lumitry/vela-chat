@@ -69,10 +69,13 @@ async def get_all_models(request, user: UserModel = None):
 
     # Add arena models
     if request.app.state.config.ENABLE_EVALUATION_ARENA_MODELS:
+        from open_webui.utils.model_images import convert_file_url_to_absolute
+        
         arena_models = []
         if len(request.app.state.config.EVALUATION_ARENA_MODELS) > 0:
-            arena_models = [
-                {
+            arena_models = []
+            for model in request.app.state.config.EVALUATION_ARENA_MODELS:
+                model_dict = {
                     "id": model["id"],
                     "name": model["name"],
                     "info": {
@@ -83,23 +86,31 @@ async def get_all_models(request, user: UserModel = None):
                     "owned_by": "arena",
                     "arena": True,
                 }
-                for model in request.app.state.config.EVALUATION_ARENA_MODELS
-            ]
+                # Convert relative file URLs to absolute URLs for arena model images
+                if model_dict["info"]["meta"].get("profile_image_url"):
+                    model_dict["info"]["meta"]["profile_image_url"] = convert_file_url_to_absolute(
+                        request, model_dict["info"]["meta"]["profile_image_url"]
+                    )
+                arena_models.append(model_dict)
         else:
             # Add default arena model
-            arena_models = [
-                {
-                    "id": DEFAULT_ARENA_MODEL["id"],
-                    "name": DEFAULT_ARENA_MODEL["name"],
-                    "info": {
-                        "meta": DEFAULT_ARENA_MODEL["meta"],
-                    },
-                    "object": "model",
-                    "created": int(time.time()),
-                    "owned_by": "arena",
-                    "arena": True,
-                }
-            ]
+            default_model = {
+                "id": DEFAULT_ARENA_MODEL["id"],
+                "name": DEFAULT_ARENA_MODEL["name"],
+                "info": {
+                    "meta": DEFAULT_ARENA_MODEL["meta"],
+                },
+                "object": "model",
+                "created": int(time.time()),
+                "owned_by": "arena",
+                "arena": True,
+            }
+            # Convert relative file URLs to absolute URLs for default arena model image
+            if default_model["info"]["meta"].get("profile_image_url"):
+                default_model["info"]["meta"]["profile_image_url"] = convert_file_url_to_absolute(
+                    request, default_model["info"]["meta"]["profile_image_url"]
+                )
+            arena_models = [default_model]
         models = models + arena_models
 
     global_action_ids = [
