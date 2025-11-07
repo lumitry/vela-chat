@@ -77,6 +77,7 @@ from open_webui.routers import (
     users,
     utils,
     chat_messages,
+    metrics,
 )
 
 from open_webui.routers.retrieval import (
@@ -971,6 +972,7 @@ app.include_router(
     evaluations.router, prefix="/api/v1/evaluations", tags=["evaluations"]
 )
 app.include_router(utils.router, prefix="/api/v1/utils", tags=["utils"])
+app.include_router(metrics.router, prefix="/api/v1/metrics", tags=["metrics"])
 
 
 try:
