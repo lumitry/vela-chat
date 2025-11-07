@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { onMount, getContext } from 'svelte';
 	import { toast } from 'svelte-sonner';
+	import { page } from '$app/stores';
+	import { goto } from '$app/navigation';
 	import { WEBUI_NAME, metricsCache, models } from '$lib/stores';
 
 	import {
@@ -116,6 +118,10 @@
 
 	// Track request IDs to prevent race conditions
 	let currentRequestId = 0;
+
+	// Track if we're updating URL to avoid reactive loop
+	let isUpdatingURL = false;
+	let isInitialized = false;
 
 	// Generate cache key from params
 	const getCacheKey = (endpoint: string, params: MetricsParams): string => {
@@ -260,25 +266,93 @@
 		);
 	};
 
+	// Update URL query parameters
+	const updateURL = () => {
+		isUpdatingURL = true;
+		const params = new URLSearchParams();
+		if (startDate) params.set('start_date', startDate);
+		if (endDate) params.set('end_date', endDate);
+		if (modelType && modelType !== 'both') params.set('model_type', modelType);
+
+		const queryString = params.toString();
+		const newUrl = queryString ? `${$page.url.pathname}?${queryString}` : $page.url.pathname;
+
+		// Use replaceState to avoid adding to browser history
+		goto(newUrl, { replaceState: true, noScroll: true }).then(() => {
+			// Reset flag after a brief delay to allow URL to update
+			setTimeout(() => {
+				isUpdatingURL = false;
+			}, 0);
+		});
+	};
+
 	const handleDateRangeChange = (event: CustomEvent<{ startDate: string; endDate: string }>) => {
 		startDate = event.detail.startDate;
 		endDate = event.detail.endDate;
+		updateURL();
 		fetchAllMetrics();
 	};
 
 	const handleModelTypeChange = (event: CustomEvent<'local' | 'external' | 'both'>) => {
 		modelType = event.detail;
+		updateURL();
 		fetchAllMetrics();
 	};
 
+	// Initialize from URL query parameters or defaults
+	const initializeFromURL = (skipFetch = false) => {
+		const params = $page.url.searchParams;
+		let needsURLUpdate = false;
+
+		// Read date range from URL or use default (last 30 days)
+		if (params.has('start_date') && params.has('end_date')) {
+			startDate = params.get('start_date') || '';
+			endDate = params.get('end_date') || '';
+		} else {
+			const end = new Date();
+			const start = new Date();
+			start.setDate(start.getDate() - 30);
+			startDate = start.toISOString().split('T')[0];
+			endDate = end.toISOString().split('T')[0];
+			needsURLUpdate = true;
+		}
+
+		// Read model type from URL or use default
+		const urlModelType = params.get('model_type');
+		if (urlModelType && ['local', 'external', 'both'].includes(urlModelType)) {
+			modelType = urlModelType as 'local' | 'external' | 'both';
+		} else {
+			modelType = 'both';
+			// Only update URL if model_type was explicitly set to something invalid
+			// (not if it's just missing, since 'both' is the default)
+		}
+
+		// Update URL with defaults if needed (only on initial load)
+		if (needsURLUpdate && !skipFetch) {
+			updateURL();
+		}
+
+		if (!skipFetch) {
+			fetchAllMetrics();
+		}
+	};
+
+	// Watch for URL changes (e.g., browser back/forward)
+	$: if ($page.url.searchParams && !isUpdatingURL && isInitialized) {
+		const params = $page.url.searchParams;
+		const urlStartDate = params.get('start_date') || '';
+		const urlEndDate = params.get('end_date') || '';
+		const urlModelType = params.get('model_type') || 'both';
+
+		// Check if URL params differ from current state
+		if (urlStartDate !== startDate || urlEndDate !== endDate || urlModelType !== modelType) {
+			initializeFromURL();
+		}
+	}
+
 	onMount(() => {
-		// Initialize with default date range (last 30 days)
-		const end = new Date();
-		const start = new Date();
-		start.setDate(start.getDate() - 30);
-		startDate = start.toISOString().split('T')[0];
-		endDate = end.toISOString().split('T')[0];
-		fetchAllMetrics();
+		initializeFromURL();
+		isInitialized = true;
 	});
 </script>
 
