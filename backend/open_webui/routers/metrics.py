@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, List
 from decimal import Decimal
 
@@ -89,28 +89,31 @@ async def get_model_ownership_map(request: Request, user: UserModel) -> Dict[str
 
 # Helper function to convert timestamp to date string (ISO format)
 def timestamp_to_date_str(timestamp: int) -> str:
-    """Convert Unix timestamp to ISO date string (YYYY-MM-DD)"""
-    return datetime.fromtimestamp(timestamp).date().isoformat()
+    """Convert Unix timestamp to ISO date string (YYYY-MM-DD) in UTC"""
+    return datetime.fromtimestamp(timestamp, tz=timezone.utc).date().isoformat()
 
 
 # Helper function to get date range from query params
 def get_date_range(start_date: Optional[str], end_date: Optional[str]) -> tuple[int, int]:
     """Convert date strings to timestamps. Defaults to last 30 days if not provided.
-    Validates that start_date <= end_date. For single-day ranges, sets end_ts to end of day."""
+    Validates that start_date <= end_date. For single-day ranges, sets end_ts to end of day.
+    All timestamps are in UTC to match database date extraction."""
     if end_date:
         end_date_obj = datetime.fromisoformat(end_date).date()
-        # For single-day ranges, include the entire day (end of day)
-        end_ts = int(datetime.combine(end_date_obj, datetime.max.time()).timestamp())
+        # For single-day ranges, include the entire day (end of day) in UTC
+        end_dt = datetime.combine(end_date_obj, datetime.max.time(), tzinfo=timezone.utc)
+        end_ts = int(end_dt.timestamp())
     else:
-        end_ts = int(datetime.now().timestamp())
+        end_ts = int(datetime.now(timezone.utc).timestamp())
     
     if start_date:
         start_date_obj = datetime.fromisoformat(start_date).date()
-        # Start of day
-        start_ts = int(datetime.combine(start_date_obj, datetime.min.time()).timestamp())
+        # Start of day in UTC
+        start_dt = datetime.combine(start_date_obj, datetime.min.time(), tzinfo=timezone.utc)
+        start_ts = int(start_dt.timestamp())
     else:
-        # Default to 30 days ago
-        start_ts = int((datetime.now() - timedelta(days=30)).timestamp())
+        # Default to 30 days ago in UTC
+        start_ts = int((datetime.now(timezone.utc) - timedelta(days=30)).timestamp())
     
     # Validate that start <= end
     if start_ts > end_ts:
