@@ -141,8 +141,7 @@ class LRUCache {
 	}
 }
 
-// Chat cache for prefetching - LRU with max 10 chats to prevent memory bloat
-// You can adjust the max size if needed, but 10 should cover most hover scenarios
+// Chat cache for navigating to previous chats - LRU with max 10 chats to prevent memory bloat
 export const chatCache: Writable<LRUCache> = writable(new LRUCache(10));
 
 export type Model = OpenAIModel | OllamaModel;
