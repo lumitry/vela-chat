@@ -90,6 +90,10 @@
 	import Placeholder from './Placeholder.svelte';
 	import NotificationToast from '../NotificationToast.svelte';
 	import Spinner from '../common/Spinner.svelte';
+	import ChevronLeft from '$lib/components/icons/ChevronLeft.svelte';
+	import ChevronRight from '$lib/components/icons/ChevronRight.svelte';
+	import XMark from '$lib/components/icons/XMark.svelte';
+	import Switch from '$lib/components/common/Switch.svelte';
 
 	export let chatIdProp = '';
 
@@ -2529,10 +2533,10 @@
 				{#if searchActive}
 					<div
 						class="absolute top-16 left-1/2 transform -translate-x-1/2 z-20
-						bg-white dark:bg-gray-800 p-2 rounded shadow
-						flex flex-col items-start space-y-2 min-w-[250px]"
+						bg-white dark:bg-gray-800 p-3 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700
+						flex flex-col items-start space-y-3 min-w-[320px] max-w-[500px]"
 					>
-						<div class="flex items-center space-x-2 w-full">
+						<div class="flex items-center gap-2 w-full">
 							<input
 								id="chat-search-input"
 								type="text"
@@ -2549,49 +2553,61 @@
 										}
 									}
 								}}
-								class="border rounded px-2 py-1 focus:outline-none flex-1"
+								class="flex-1 px-3 py-1.5 text-sm bg-white dark:bg-gray-900
+								text-gray-900 dark:text-gray-100
+								border border-gray-200 dark:border-gray-700 rounded-lg
+								focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-gray-600
+								placeholder-gray-400 dark:placeholder-gray-500"
 							/>
+							<div class="flex items-center gap-1">
+								<button
+									on:click={prevMatch}
+									disabled={matches.length === 0}
+									class="p-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700
+									disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent
+									transition-colors text-gray-700 dark:text-gray-300"
+									title="Previous match"
+								>
+									<ChevronLeft className="size-4" strokeWidth="2" />
+								</button>
+								<span
+									class="text-xs font-medium whitespace-nowrap flex-shrink-0 text-center min-w-[3ch]
+									text-gray-600 dark:text-gray-400"
+								>
+									{matches.length ? currentMatchIndex + 1 : 0}/{matches.length}
+								</span>
+								<button
+									on:click={nextMatch}
+									disabled={matches.length === 0}
+									class="p-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700
+									disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent
+									transition-colors text-gray-700 dark:text-gray-300"
+									title="Next match"
+								>
+									<ChevronRight className="size-4" strokeWidth="2" />
+								</button>
+							</div>
 							<button
-								on:click={prevMatch}
-								disabled={matches.length === 0}
-								class="px-2 disabled:opacity-50"
+								on:click={closeSearch}
+								class="p-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700
+								transition-colors text-gray-600 dark:text-gray-400"
+								title="Close search"
 							>
-								&lt;
-							</button>
-							<span
-								class="text-sm whitespace-nowrap flex-shrink-0 text-center"
-								style="min-width: {`${
-									Math.max(String(currentMatchIndex + 1).length, String(matches.length).length) *
-										2 +
-									1
-								}ch`}"
-							>
-								{matches.length ? currentMatchIndex + 1 : 0}/{matches.length}
-							</span>
-							<button
-								on:click={nextMatch}
-								disabled={matches.length === 0}
-								class="px-2 disabled:opacity-50"
-							>
-								&gt;
+								<XMark className="size-4" strokeWidth="2" />
 							</button>
 						</div>
 
-						<!-- second row: checkbox + close -->
+						<!-- second row: toggle switch -->
 						<div class="flex items-center justify-between w-full">
-							<label class="flex items-center text-sm whitespace-nowrap">
-								<input
-									type="checkbox"
-									bind:checked={includeHidden}
-									on:change={updateSearch}
-									class="mr-1"
-								/>
-								Include hidden
-							</label>
-							<button on:click={closeSearch} class="px-2 text-xl leading-none"> &times; </button>
+							<div class="text-xs font-medium text-gray-700 dark:text-gray-300">Include hidden</div>
+							<Switch
+								bind:state={includeHidden}
+								on:change={() => {
+									updateSearch();
+								}}
+							/>
 						</div>
 					</div>
-					<!-- </div> -->
 				{/if}
 
 				<div class="flex flex-col flex-auto z-10 w-full @container">
