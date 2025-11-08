@@ -176,10 +176,15 @@ export const getArchivedChatList = async (token: string = '') => {
 	return res;
 };
 
-export const getAllChats = async (token: string) => {
+export const getAllChats = async (token: string, forExport: boolean = false) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/chats/all`, {
+	const url = new URL(`${WEBUI_API_BASE_URL}/chats/all`);
+	if (forExport) {
+		url.searchParams.append('export', 'true');
+	}
+
+	const res = await fetch(url.toString(), {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',
@@ -286,10 +291,15 @@ export const getChatsByFolderId = async (token: string, folderId: string) => {
 	return res;
 };
 
-export const getAllArchivedChats = async (token: string) => {
+export const getAllArchivedChats = async (token: string, forExport: boolean = false) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/chats/all/archived`, {
+	const url = new URL(`${WEBUI_API_BASE_URL}/chats/all/archived`);
+	if (forExport) {
+		url.searchParams.append('export', 'true');
+	}
+
+	const res = await fetch(url.toString(), {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',
@@ -567,10 +577,15 @@ export const getChatListByTagName = async (token: string = '', tagName: string) 
 	}));
 };
 
-export const getChatById = async (token: string, id: string, signal?: AbortSignal) => {
+export const getChatById = async (token: string, id: string, signal?: AbortSignal, forExport: boolean = false) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/chats/${id}`, {
+	const url = new URL(`${WEBUI_API_BASE_URL}/chats/${id}`);
+	if (forExport) {
+		url.searchParams.append('export', 'true');
+	}
+
+	const res = await fetch(url.toString(), {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',

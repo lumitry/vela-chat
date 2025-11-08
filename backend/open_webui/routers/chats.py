@@ -17,7 +17,7 @@ from open_webui.models.folders import Folders
 from open_webui.config import ENABLE_ADMIN_CHAT_ACCESS, ENABLE_ADMIN_EXPORT
 from open_webui.constants import ERROR_MESSAGES
 from open_webui.env import SRC_LOG_LEVELS
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Query, status
 from pydantic import BaseModel
 
 
@@ -119,9 +119,26 @@ async def create_new_chat(form_data: ChatForm, user=Depends(get_verified_user)):
         chat = Chats.insert_new_chat(user.id, form_data)
         
         # If the chat form has initial messages/history, convert to normalized format
-        if chat and chat.id and "history" in form_data.chat and form_data.chat["history"].get("messages"):
+        # Legacy format includes BOTH history.messages (dict) AND messages (list)
+        # We should check for history.messages first as it contains all messages
+        has_messages = False
+        if form_data.chat and isinstance(form_data.chat, dict):
+            if "history" in form_data.chat:
+                history = form_data.chat["history"]
+                if isinstance(history, dict) and history.get("messages"):
+                    has_messages = True
+            # Also check for flat messages list as fallback
+            if not has_messages and "messages" in form_data.chat and isinstance(form_data.chat["messages"], list) and len(form_data.chat["messages"]) > 0:
+                has_messages = True
+        
+        if chat and chat.id and has_messages:
             from open_webui.models.chat_converter import legacy_to_normalized_format
-            legacy_to_normalized_format(chat.id, form_data.chat)
+            try:
+                # Regenerate message IDs during import to avoid collisions
+                legacy_to_normalized_format(chat.id, form_data.chat, regenerate_ids=True)
+            except Exception as e:
+                log.error(f"create_new_chat: Exception during legacy_to_normalized_format: {str(e)}", exc_info=True)
+                raise
         
         return ChatResponse(**chat.model_dump())
     except Exception as e:
@@ -150,6 +167,33 @@ async def import_chat(form_data: ChatImportForm, user=Depends(get_verified_user)
                     and Tags.get_tag_by_name_and_user_id(tag_name, user.id) is None
                 ):
                     Tags.insert_new_tag(tag_name, user.id)
+            
+            # Convert legacy format to normalized format if chat has messages
+            # Legacy format includes BOTH history.messages (dict) AND messages (list)
+            # We should check for history.messages first as it contains all messages
+            has_messages = False
+            if form_data.chat and isinstance(form_data.chat, dict):
+                if "history" in form_data.chat:
+                    history = form_data.chat["history"]
+                    if isinstance(history, dict) and history.get("messages"):
+                        has_messages = True
+                        log.debug(f"import_chat: Found messages in history.messages (dict format)")
+                # Also check for flat messages list as fallback
+                if not has_messages and "messages" in form_data.chat and isinstance(form_data.chat["messages"], list) and len(form_data.chat["messages"]) > 0:
+                    has_messages = True
+                    log.debug(f"import_chat: Found messages in messages list (flat format)")
+            
+            if chat.id and has_messages:
+                log.debug(f"import_chat: Converting legacy format to normalized format for chat {chat.id}")
+                from open_webui.models.chat_converter import legacy_to_normalized_format
+                try:
+                    # Regenerate message IDs during import to avoid collisions
+                    legacy_to_normalized_format(chat.id, form_data.chat, regenerate_ids=True)
+                except Exception as e:
+                    log.error(f"import_chat: Exception during legacy_to_normalized_format: {str(e)}", exc_info=True)
+                    raise
+            elif chat.id:
+                log.warning(f"import_chat: No messages found in imported chat {chat.id}. Chat keys: {list(form_data.chat.keys()) if isinstance(form_data.chat, dict) else 'not a dict'}")
 
         return ChatResponse(**chat.model_dump())
     except Exception as e:
@@ -258,11 +302,28 @@ async def get_user_pinned_chats_metadata(user=Depends(get_verified_user)):
 
 
 @router.get("/all", response_model=list[ChatResponse])
-async def get_user_chats(user=Depends(get_verified_user)):
-    return [
-        ChatResponse(**chat.model_dump())
-        for chat in Chats.get_chats_by_user_id(user.id)
-    ]
+async def get_user_chats(user=Depends(get_verified_user), export: bool = Query(False)):
+    from open_webui.models.chat_converter import normalized_to_legacy_format
+    from open_webui.models.chat_messages import ChatMessage
+    
+    chats = Chats.get_chats_by_user_id(user.id)
+    result = []
+    
+    for chat in chats:
+        # Check if this chat uses normalized storage (has messages in chat_message table)
+        with get_db() as db:
+            has_normalized = db.query(ChatMessage).filter_by(chat_id=chat.id).first() is not None
+        
+        if has_normalized:
+            # Convert from normalized tables to legacy format
+            # If export=True, embed files as base64 for portability
+            legacy_chat = normalized_to_legacy_format(chat.id, embed_files_as_base64=export)
+            # Merge with chat metadata
+            chat.chat = legacy_chat
+        
+        result.append(ChatResponse(**chat.model_dump()))
+    
+    return result
 
 
 ############################
@@ -271,11 +332,28 @@ async def get_user_chats(user=Depends(get_verified_user)):
 
 
 @router.get("/all/archived", response_model=list[ChatResponse])
-async def get_user_archived_chats(user=Depends(get_verified_user)):
-    return [
-        ChatResponse(**chat.model_dump())
-        for chat in Chats.get_archived_chats_by_user_id(user.id)
-    ]
+async def get_user_archived_chats(user=Depends(get_verified_user), export: bool = Query(False)):
+    from open_webui.models.chat_converter import normalized_to_legacy_format
+    from open_webui.models.chat_messages import ChatMessage
+    
+    chats = Chats.get_archived_chats_by_user_id(user.id)
+    result = []
+    
+    for chat in chats:
+        # Check if this chat uses normalized storage (has messages in chat_message table)
+        with get_db() as db:
+            has_normalized = db.query(ChatMessage).filter_by(chat_id=chat.id).first() is not None
+        
+        if has_normalized:
+            # Convert from normalized tables to legacy format
+            # If export=True, embed files as base64 for portability
+            legacy_chat = normalized_to_legacy_format(chat.id, embed_files_as_base64=export)
+            # Merge with chat metadata
+            chat.chat = legacy_chat
+        
+        result.append(ChatResponse(**chat.model_dump()))
+    
+    return result
 
 
 ############################
@@ -301,13 +379,33 @@ async def get_all_user_tags(user=Depends(get_verified_user)):
 
 
 @router.get("/all/db", response_model=list[ChatResponse])
-async def get_all_user_chats_in_db(user=Depends(get_admin_user)):
+async def get_all_user_chats_in_db(user=Depends(get_admin_user), export: bool = Query(False)):
     if not ENABLE_ADMIN_EXPORT:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
         )
-    return [ChatResponse(**chat.model_dump()) for chat in Chats.get_chats()]
+    
+    from open_webui.models.chat_converter import normalized_to_legacy_format
+    from open_webui.models.chat_messages import ChatMessage
+    
+    chats = Chats.get_chats()
+    result = []
+    
+    for chat in chats:
+        # Check if this chat uses normalized storage (has messages in chat_message table)
+        with get_db() as db:
+            has_normalized = db.query(ChatMessage).filter_by(chat_id=chat.id).first() is not None
+        
+        if has_normalized:
+            # Convert from normalized tables to legacy format
+            legacy_chat = normalized_to_legacy_format(chat.id)
+            # Merge with chat metadata
+            chat.chat = legacy_chat
+        
+        result.append(ChatResponse(**chat.model_dump()))
+    
+    return result
 
 
 ############################
@@ -391,7 +489,7 @@ async def get_user_chat_list_by_tag_name(
 
 
 @router.get("/{id}", response_model=Optional[ChatResponse])
-async def get_chat_by_id(id: str, user=Depends(get_verified_user)):
+async def get_chat_by_id(id: str, user=Depends(get_verified_user), export: bool = Query(False)):
     chat = Chats.get_chat_by_id_and_user_id(id, user.id)
 
     if not chat:
@@ -410,7 +508,8 @@ async def get_chat_by_id(id: str, user=Depends(get_verified_user)):
     
     if has_normalized:
         # Convert from normalized tables to legacy format
-        legacy_chat = normalized_to_legacy_format(id)
+        # If export=True, embed files as base64 for portability
+        legacy_chat = normalized_to_legacy_format(id, embed_files_as_base64=export)
         # Merge with chat metadata
         chat.chat = legacy_chat
     else:

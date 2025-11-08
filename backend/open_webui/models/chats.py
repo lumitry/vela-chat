@@ -130,15 +130,18 @@ class ChatTable:
     def insert_new_chat(self, user_id: str, form_data: ChatForm) -> Optional[ChatModel]:
         with get_db() as db:
             id = str(uuid.uuid4())
+            # Extract title from chat dict
+            title = (
+                form_data.chat["title"]
+                if "title" in form_data.chat
+                else "New Chat"
+            )
+            
             chat = ChatModel(
                 **{
                     "id": id,
                     "user_id": user_id,
-                    "title": (
-                        form_data.chat["title"]
-                        if "title" in form_data.chat
-                        else "New Chat"
-                    ),
+                    "title": title,
                     "chat": form_data.chat,
                     "created_at": int(time.time()),
                     "updated_at": int(time.time()),
@@ -156,15 +159,18 @@ class ChatTable:
     ) -> Optional[ChatModel]:
         with get_db() as db:
             id = str(uuid.uuid4())
+            # Extract title from chat dict
+            title = (
+                form_data.chat["title"]
+                if "title" in form_data.chat
+                else "New Chat"
+            )
+            
             chat = ChatModel(
                 **{
                     "id": id,
                     "user_id": user_id,
-                    "title": (
-                        form_data.chat["title"]
-                        if "title" in form_data.chat
-                        else "New Chat"
-                    ),
+                    "title": title,
                     "chat": form_data.chat,
                     "meta": form_data.meta,
                     "pinned": form_data.pinned,
@@ -184,14 +190,23 @@ class ChatTable:
         try:
             with get_db() as db:
                 chat_item = db.get(Chat, id)
+                if not chat_item:
+                    log.warning(f"update_chat_by_id: Chat {id} not found")
+                    return None
+                
                 chat_item.chat = chat
-                chat_item.title = chat["title"] if "title" in chat else "New Chat"
+                # Only update title if it's explicitly provided in the chat dict
+                # Otherwise preserve the existing title
+                if "title" in chat:
+                    chat_item.title = chat["title"]
+                
                 chat_item.updated_at = int(time.time())
                 db.commit()
                 db.refresh(chat_item)
 
                 return ChatModel.model_validate(chat_item)
-        except Exception:
+        except Exception as e:
+            log.error(f"update_chat_by_id: Exception updating chat {id}: {e}", exc_info=True)
             return None
 
     def update_chat_title_by_id(self, id: str, title: str) -> Optional[ChatModel]:

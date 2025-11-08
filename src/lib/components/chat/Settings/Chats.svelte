@@ -70,7 +70,7 @@
 	};
 
 	const exportChats = async () => {
-		let blob = new Blob([JSON.stringify(await getAllChats(localStorage.token))], {
+		let blob = new Blob([JSON.stringify(await getAllChats(localStorage.token, true))], {
 			type: 'application/json'
 		});
 		saveAs(blob, `chat-export-${Date.now()}.json`);
