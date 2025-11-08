@@ -567,7 +567,7 @@ export const getChatListByTagName = async (token: string = '', tagName: string) 
 	}));
 };
 
-export const getChatById = async (token: string, id: string) => {
+export const getChatById = async (token: string, id: string, signal?: AbortSignal) => {
 	let error = null;
 
 	const res = await fetch(`${WEBUI_API_BASE_URL}/chats/${id}`, {
@@ -576,7 +576,8 @@ export const getChatById = async (token: string, id: string) => {
 			Accept: 'application/json',
 			'Content-Type': 'application/json',
 			...(token && { authorization: `Bearer ${token}` })
-		}
+		},
+		signal // Pass AbortSignal to cancel request
 	})
 		.then(async (res) => {
 			if (!res.ok) throw await res.json();
@@ -586,6 +587,10 @@ export const getChatById = async (token: string, id: string) => {
 			return json;
 		})
 		.catch((err) => {
+			// Don't treat AbortError as a real error - it's expected when cancelling
+			if (err.name === 'AbortError') {
+				throw err; // Re-throw to let caller know it was cancelled
+			}
 			error = err.detail;
 
 			console.log(err);
