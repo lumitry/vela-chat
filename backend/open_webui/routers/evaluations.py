@@ -137,6 +137,14 @@ async def create_feedback(
     form_data: FeedbackForm,
     user=Depends(get_verified_user),
 ):
+    # Ensure tags exist in database if data.tags is present
+    if form_data.data:
+        # RatingData has extra="allow" so tags can be stored there
+        data_dict = form_data.data.model_dump() if hasattr(form_data.data, 'model_dump') else (form_data.data if isinstance(form_data.data, dict) else {})
+        if isinstance(data_dict, dict) and "tags" in data_dict and data_dict["tags"]:
+            from open_webui.models.tags import Tags
+            Tags.ensure_tags_exist(data_dict["tags"], user.id)
+    
     feedback = Feedbacks.insert_new_feedback(user_id=user.id, form_data=form_data)
     if not feedback:
         raise HTTPException(
@@ -163,6 +171,14 @@ async def get_feedback_by_id(id: str, user=Depends(get_verified_user)):
 async def update_feedback_by_id(
     id: str, form_data: FeedbackForm, user=Depends(get_verified_user)
 ):
+    # Ensure tags exist in database if data.tags is present
+    if form_data.data:
+        # RatingData has extra="allow" so tags can be stored there
+        data_dict = form_data.data.model_dump() if hasattr(form_data.data, 'model_dump') else (form_data.data if isinstance(form_data.data, dict) else {})
+        if isinstance(data_dict, dict) and "tags" in data_dict and data_dict["tags"]:
+            from open_webui.models.tags import Tags
+            Tags.ensure_tags_exist(data_dict["tags"], user.id)
+    
     feedback = Feedbacks.update_feedback_by_id_and_user_id(
         id=id, user_id=user.id, form_data=form_data
     )

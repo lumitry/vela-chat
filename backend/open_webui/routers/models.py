@@ -143,6 +143,13 @@ async def create_new_model(
             )
             form_data.meta.profile_image_url = converted_url
         
+        # Ensure tags exist in database if meta.tags is present
+        if form_data.meta:
+            meta_dict = form_data.meta.model_dump()
+            if "tags" in meta_dict and meta_dict["tags"]:
+                from open_webui.models.tags import Tags
+                Tags.ensure_tags_exist(meta_dict["tags"], user.id)
+        
         model = Models.insert_new_model(form_data, user.id)
         if model:
             # Convert relative file URL to absolute URL
@@ -271,6 +278,13 @@ async def update_model_by_id(
             request, user.id, form_data.meta.profile_image_url
         )
         form_data.meta.profile_image_url = converted_url
+
+    # Ensure tags exist in database if meta.tags is present
+    if form_data.meta:
+        meta_dict = form_data.meta.model_dump()
+        if "tags" in meta_dict and meta_dict["tags"]:
+            from open_webui.models.tags import Tags
+            Tags.ensure_tags_exist(meta_dict["tags"], user.id)
 
     model = Models.update_model_by_id(id, form_data)
     if model:
