@@ -207,7 +207,12 @@ export const getAllChats = async (token: string) => {
 	return res;
 };
 
-export const getChatListBySearchText = async (token: string, text: string, page: number = 1) => {
+export const getChatListBySearchText = async (
+	token: string,
+	text: string,
+	page: number = 1,
+	signal?: AbortSignal
+) => {
 	let error = null;
 
 	const searchParams = new URLSearchParams();
@@ -220,7 +225,8 @@ export const getChatListBySearchText = async (token: string, text: string, page:
 			Accept: 'application/json',
 			'Content-Type': 'application/json',
 			...(token && { authorization: `Bearer ${token}` })
-		}
+		},
+		signal // Pass AbortSignal to cancel request
 	})
 		.then(async (res) => {
 			if (!res.ok) throw await res.json();
@@ -230,6 +236,10 @@ export const getChatListBySearchText = async (token: string, text: string, page:
 			return json;
 		})
 		.catch((err) => {
+			// Don't treat AbortError as a real error - it's expected when cancelling
+			if (err.name === 'AbortError') {
+				throw err; // Re-throw to let caller know it was cancelled
+			}
 			error = err;
 			console.log(err);
 			return null;

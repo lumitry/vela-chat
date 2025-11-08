@@ -414,7 +414,9 @@
 		allChatsLoaded = false;
 
 		if (search) {
-			await chats.set(await getChatListBySearchText(localStorage.token, search, $currentChatPage));
+			await chats.set(
+				await getChatListBySearchText(localStorage.token, search, $currentChatPage, undefined)
+			);
 		} else {
 			await chats.set(await getChatList(localStorage.token, $currentChatPage));
 		}
@@ -431,7 +433,12 @@
 		let newChatList = [];
 
 		if (search) {
-			newChatList = await getChatListBySearchText(localStorage.token, search, $currentChatPage);
+			newChatList = await getChatListBySearchText(
+				localStorage.token,
+				search,
+				$currentChatPage,
+				undefined
+			);
 		} else {
 			newChatList = await getChatList(localStorage.token, $currentChatPage);
 		}
@@ -444,10 +451,17 @@
 	};
 
 	let searchDebounceTimeout;
+	let searchAbortController: AbortController | null = null;
 
 	const searchDebounceHandler = async () => {
 		console.log('search', search);
 		chats.set(null);
+
+		// Cancel any in-flight search request
+		if (searchAbortController) {
+			searchAbortController.abort();
+			searchAbortController = null;
+		}
 
 		if (searchDebounceTimeout) {
 			clearTimeout(searchDebounceTimeout);
@@ -457,15 +471,45 @@
 			await initChatList();
 			return;
 		} else {
+			// With request cancellation, we can use a shorter debounce (50ms)
+			// Old requests get cancelled, so we only process the latest one
+			// This gives near-instant feel while preventing wasted requests
 			searchDebounceTimeout = setTimeout(async () => {
+				// Create new AbortController for this request
+				searchAbortController = new AbortController();
+				const currentController = searchAbortController;
+
 				allChatsLoaded = false;
 				currentChatPage.set(1);
-				await chats.set(await getChatListBySearchText(localStorage.token, search));
 
-				if ($chats.length === 0) {
-					tags.set(await getAllTags(localStorage.token));
+				try {
+					const results = await getChatListBySearchText(
+						localStorage.token,
+						search,
+						1,
+						currentController.signal
+					);
+
+					// Only update if this request wasn't cancelled
+					if (!currentController.signal.aborted) {
+						await chats.set(results);
+
+						if ($chats.length === 0) {
+							tags.set(await getAllTags(localStorage.token));
+						}
+					}
+				} catch (err) {
+					// Ignore AbortError - it's expected when cancelling old requests
+					if (err.name !== 'AbortError') {
+						console.error('Search error:', err);
+					}
+				} finally {
+					// Clear controller if this was the active one
+					if (searchAbortController === currentController) {
+						searchAbortController = null;
+					}
 				}
-			}, 1000);
+			}, 50); // Reduced to 50ms with cancellation support
 		}
 	};
 

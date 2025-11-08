@@ -611,6 +611,9 @@ class ChatTable:
         """
         Filters chats based on a search query using Python, allowing pagination using skip and limit.
         """
+        import time
+        perf_start = time.time()
+        
         search_text = search_text.lower().strip()
 
         if not search_text:
@@ -630,6 +633,9 @@ class ChatTable:
         ]
 
         search_text = " ".join(search_text_words)
+        
+        perf_after_prep = time.time()
+        log.debug(f"Search prep took {(perf_after_prep - perf_start) * 1000:.2f}ms")
 
         with get_db() as db:
             query = db.query(Chat).filter(Chat.user_id == user_id)
@@ -644,6 +650,8 @@ class ChatTable:
 
             # Check if the database dialect is either 'sqlite' or 'postgresql'
             dialect_name = db.bind.dialect.name
+            has_fulltext_search = False  # Initialize for all dialects
+            
             if dialect_name == "sqlite":
                 # SQLite case: search in normalized chat_message table
                 # Search in title OR normalized messages
@@ -695,24 +703,87 @@ class ChatTable:
                     )
 
             elif dialect_name == "postgresql":
-                # PostgreSQL case: search in normalized chat_message table
-                # Search in title OR normalized messages
-                query = query.filter(
-                    (
-                        Chat.title.ilike(
-                            f"%{search_text}%"
-                        )  # Case-insensitive search in title
-                        | exists(
-                            select(1).where(
-                                and_(
-                                    ChatMessage.chat_id == Chat.id,
-                                    ChatMessage.content_text.isnot(None),
-                                    ChatMessage.content_text.ilike(f"%{search_text}%")
+                # Check if full-text search columns exist (migration may not have run yet)
+                # Query information_schema to check for the columns
+                has_fulltext_search = False
+                try:
+                    result = db.execute(
+                        text("""
+                            SELECT COUNT(*) 
+                            FROM information_schema.columns 
+                            WHERE table_schema = 'public' 
+                            AND table_name = 'chat' 
+                            AND column_name = 'title_search'
+                        """)
+                    ).scalar()
+                    has_fulltext_search = result > 0
+                except Exception:
+                    # If check fails, assume columns don't exist and fall back to ILIKE
+                    has_fulltext_search = False
+                
+                if has_fulltext_search:
+                    # PostgreSQL case: use full-text search with tsvector and GIN indexes
+                    # Avoid OR condition which prevents index usage - use UNION approach instead
+                    # This allows PostgreSQL to use both GIN indexes efficiently
+                    
+                    perf_before_union = time.time()
+                    
+                    # Get chat IDs matching in title (uses title_search GIN index)
+                    title_match_ids = db.query(Chat.id).filter(
+                        Chat.user_id == user_id,
+                        text("chat.title_search @@ plainto_tsquery('english', :search_text)")
+                    )
+                    if not include_archived:
+                        title_match_ids = title_match_ids.filter(Chat.archived == False)
+                    
+                    # Get chat IDs matching in messages (uses content_text_search GIN index)
+                    message_match_ids = db.query(ChatMessage.chat_id).join(
+                        Chat, ChatMessage.chat_id == Chat.id
+                    ).filter(
+                        Chat.user_id == user_id,
+                        ChatMessage.content_text.isnot(None),
+                        text("chat_message.content_text_search @@ plainto_tsquery('english', :search_text)")
+                    )
+                    if not include_archived:
+                        message_match_ids = message_match_ids.filter(Chat.archived == False)
+                    
+                    # Union both result sets and filter main query by matching IDs
+                    # This avoids OR and allows both indexes to be used
+                    all_match_ids = title_match_ids.union(message_match_ids)
+                    
+                    # Execute the union query to get matching IDs
+                    perf_before_exec = time.time()
+                    matching_ids_list = [row[0] for row in all_match_ids.params(search_text=search_text).all()]
+                    perf_after_exec = time.time()
+                    log.debug(f"Union query execution took {(perf_after_exec - perf_before_exec) * 1000:.2f}ms, found {len(matching_ids_list)} matching chats")
+                    
+                    if matching_ids_list:
+                        query = query.filter(Chat.id.in_(matching_ids_list))
+                    else:
+                        # No matches, return empty result early
+                        perf_total = time.time()
+                        log.info(f"Total search took {(perf_total - perf_start) * 1000:.2f}ms, found 0 chats (no matches)")
+                        return []
+                    
+                    perf_after_union = time.time()
+                    log.debug(f"Full-text search setup took {(perf_after_union - perf_before_union) * 1000:.2f}ms")
+                else:
+                    # Fallback to ILIKE if full-text search columns don't exist yet
+                    # This allows the code to work before the migration is run
+                    query = query.filter(
+                        or_(
+                            Chat.title.ilike(f"%{search_text}%"),
+                            exists(
+                                select(1).where(
+                                    and_(
+                                        ChatMessage.chat_id == Chat.id,
+                                        ChatMessage.content_text.isnot(None),
+                                        ChatMessage.content_text.ilike(f"%{search_text}%")
+                                    )
                                 )
                             )
                         )
-                    ).params(search_text=search_text)
-                )
+                    )
 
                 # Check if there are any tags to filter, it should have all the tags
                 if "none" in tag_ids:
@@ -749,12 +820,64 @@ class ChatTable:
                 )
 
             # Perform pagination at the SQL level
-            all_chats = query.offset(skip).limit(limit).all()
-
-            log.info(f"The number of chats: {len(all_chats)}")
+            # Optimize: Only select columns needed for search results to avoid loading large JSON blobs
+            # The search endpoint only needs id, title, updated_at, created_at (ChatTitleIdResponse)
+            # For PostgreSQL, always use this optimization since we're using normalized chat_message table
+            # For SQLite, we still load full objects for backward compatibility
+            perf_before_query = time.time()
+            if dialect_name == "postgresql":
+                # For PostgreSQL search results, we don't need the full chat JSON blob
+                # Select only the columns needed for ChatTitleIdResponse
+                all_chats = query.with_entities(
+                    Chat.id, Chat.title, Chat.updated_at, Chat.created_at
+                ).offset(skip).limit(limit).all()
+                
+                # Convert tuple results to ChatModel-like objects
+                perf_after_query = time.time()
+                log.debug(f"Main query execution took {(perf_after_query - perf_before_query) * 1000:.2f}ms")
+                
+                perf_before_validate = time.time()
+                # Create minimal ChatModel objects with only the fields we have
+                result = []
+                for chat_row in all_chats:
+                    # chat_row is a tuple: (id, title, updated_at, created_at)
+                    # Create a minimal ChatModel - we'll need to fetch full data if needed elsewhere
+                    # For now, create a dict and validate it
+                    chat_dict = {
+                        "id": chat_row[0],
+                        "user_id": user_id,  # We know this from the filter
+                        "title": chat_row[1],
+                        "chat": {},  # Empty - not needed for search results
+                        "created_at": int(chat_row[3]) if chat_row[3] else 0,
+                        "updated_at": int(chat_row[2]) if chat_row[2] else 0,
+                        "share_id": None,
+                        "archived": False,
+                        "pinned": False,
+                        "meta": {},
+                        "folder_id": None,
+                        "active_message_id": None,
+                        "root_message_id": None,
+                        "params": None,
+                        "summary": None,
+                    }
+                    result.append(ChatModel.model_validate(chat_dict))
+            else:
+                # For SQLite or non-fulltext, load full objects (legacy behavior)
+                all_chats = query.offset(skip).limit(limit).all()
+                perf_after_query = time.time()
+                log.debug(f"Main query execution took {(perf_after_query - perf_before_query) * 1000:.2f}ms")
+                
+                perf_before_validate = time.time()
+                result = [ChatModel.model_validate(chat) for chat in all_chats]
+            
+            perf_after_validate = time.time()
+            log.debug(f"Model validation took {(perf_after_validate - perf_before_validate) * 1000:.2f}ms")
+            
+            perf_total = time.time()
+            log.info(f"Total search took {(perf_total - perf_start) * 1000:.2f}ms, found {len(result)} chats")
 
             # Validate and return chats
-            return [ChatModel.model_validate(chat) for chat in all_chats]
+            return result
 
     def get_all_folder_chats_by_user_id(
         self, user_id: str, folder_ids: list[str] = None
