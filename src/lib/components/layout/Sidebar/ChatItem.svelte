@@ -14,6 +14,7 @@
 		getChatById,
 		getChatList,
 		getChatListByTagName,
+		getChatMetaById,
 		getPinnedChatList,
 		updateChatById
 	} from '$lib/apis/chats';
@@ -48,57 +49,8 @@
 	export let selected = false;
 	export let shiftKey = false;
 
-	let chat = null;
-
 	let mouseOver = false;
 	let draggable = false;
-	let isLoading = false; // Prevent concurrent requests
-	let loadPromise = null; // Track the current load promise
-
-	$: if (mouseOver && !isLoading && !chat && !loadPromise) {
-		loadChat();
-	}
-
-	const loadChat = async () => {
-		// Prevent concurrent requests
-		if (isLoading || chat || loadPromise) {
-			return loadPromise || Promise.resolve();
-		}
-
-		// Check cache first - do this synchronously
-		const cache = $chatCache;
-		if (cache.has(id)) {
-			chat = cache.get(id);
-			draggable = true;
-			return Promise.resolve();
-		}
-
-		// Not in cache, fetch and store it
-		isLoading = true;
-		draggable = false;
-
-		// Create and store the promise immediately to prevent concurrent calls
-		loadPromise = (async () => {
-			try {
-				const fetchedChat = await getChatById(localStorage.token, id);
-				if (fetchedChat) {
-					chat = fetchedChat;
-					// Store in cache (LRU will evict oldest if at max size)
-					chatCache.update((cache) => {
-						cache.set(id, fetchedChat);
-						return cache;
-					});
-				}
-				return fetchedChat;
-			} finally {
-				isLoading = false;
-				draggable = true;
-				loadPromise = null;
-			}
-		})();
-
-		return loadPromise;
-	};
 
 	let showShareChatModal = false;
 	let confirmEdit = false;
@@ -199,13 +151,12 @@
 
 		event.dataTransfer.setDragImage(dragImage, 0, 0);
 
-		// Set the data to be transferred
+		// Set the data to be transferred - just pass id, meta will be fetched on drop
 		event.dataTransfer.setData(
 			'text/plain',
 			JSON.stringify({
 				type: 'chat',
-				id: id,
-				item: chat
+				id: id
 			})
 		);
 
@@ -292,7 +243,7 @@
 <div
 	bind:this={itemElement}
 	class=" w-full {className} relative group"
-	draggable={draggable && !confirmEdit}
+	draggable={!confirmEdit}
 	data-chat-id={id}
 >
 	{#if confirmEdit}

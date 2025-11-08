@@ -39,6 +39,7 @@
 		toggleChatPinnedStatusById,
 		getChatPinnedStatusById,
 		getChatById,
+		getChatMetaById,
 		updateChatFolderIdById,
 		importChat
 	} from '$lib/apis/chats';
@@ -985,12 +986,20 @@
 					importChatHandler(e.detail);
 				}}
 				on:drop={async (e) => {
-					const { type, id, item } = e.detail;
+					const { type, id, meta, item } = e.detail;
 
 					if (type === 'chat') {
-						let chat = await getChatById(localStorage.token, id).catch((error) => {
-							return null;
-						});
+						// Fetch meta (fast, ~100ms) instead of full chat for drag-and-drop
+						let chat = meta;
+						if (!chat) {
+							chat = await getChatMetaById(localStorage.token, id).catch((error) => {
+								// Fallback to full chat if meta fails
+								return getChatById(localStorage.token, id).catch((error) => {
+									return null;
+								});
+							});
+						}
+						// Fallback for importing external chats
 						if (!chat && item) {
 							chat = await importChat(localStorage.token, item.chat, item?.meta ?? {});
 						}
