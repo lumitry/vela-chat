@@ -11,7 +11,7 @@
 		TimeScale
 	} from 'chart.js';
 	import 'chartjs-adapter-date-fns';
-	import { getTimeScaleConfig, getNumberTooltipConfig, transformToTimeSeriesData } from '$lib/utils/charts';
+	import { getTimeScaleConfig, getNumberTooltipConfig, transformToTimeSeriesData, getChartColors, getChartDefaults } from '$lib/utils/charts';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 
 	ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale, TimeScale);
@@ -19,12 +19,15 @@
 	export let data: Array<{ date: string; count: number }> = [];
 	export let loading: boolean = false;
 
+	$: colors = getChartColors();
+	$: defaults = getChartDefaults();
+
 	$: chartData = {
 		datasets: [
 			{
 				label: 'Message Count',
 				data: transformToTimeSeriesData(data, (d) => d.count),
-				backgroundColor: 'rgb(59, 130, 246)'
+				backgroundColor: colors.singleSeries.primary
 			}
 		]
 	};
@@ -41,6 +44,7 @@
 		scales: {
 			x: getTimeScaleConfig(),
 			y: {
+				...defaults.scales.y,
 				beginAtZero: true
 			}
 		}

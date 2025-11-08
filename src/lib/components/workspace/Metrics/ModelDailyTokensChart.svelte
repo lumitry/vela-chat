@@ -12,7 +12,7 @@
 		TimeScale
 	} from 'chart.js';
 	import 'chartjs-adapter-date-fns';
-	import { getTimeScaleConfig, getTooltipConfig } from '$lib/utils/charts';
+	import { getTimeScaleConfig, getTooltipConfig, getChartColors, getChartDefaults } from '$lib/utils/charts';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 
 	ChartJS.register(Title, Tooltip, Legend, LineElement, CategoryScale, LinearScale, PointElement, TimeScale);
@@ -26,6 +26,9 @@
 		total_tokens: number;
 	}> = [];
 	export let loading: boolean = false;
+
+	$: chartColors = getChartColors();
+	$: defaults = getChartDefaults();
 
 	// Group data by model and create datasets
 	$: modelMap = (() => {
@@ -45,27 +48,17 @@
 
 	$: allDates = data && Array.isArray(data) ? [...new Set(data.map((d) => d.date).filter(Boolean))].sort() : [];
 
-	// Color palette for multiple series
-	const colors = [
-		'rgb(59, 130, 246)',
-		'rgb(16, 185, 129)',
-		'rgb(239, 68, 68)',
-		'rgb(245, 158, 11)',
-		'rgb(139, 92, 246)',
-		'rgb(6, 182, 212)',
-		'rgb(251, 146, 60)',
-		'rgb(236, 72, 153)',
-		'rgb(34, 197, 94)',
-		'rgb(249, 115, 22)'
-	];
-
 	$: datasets = (() => {
 		if (!allDates.length || !modelMap.size) {
 			return [];
 		}
 		return Array.from(modelMap.entries()).map(([modelId, modelData], index) => {
 			const firstEntry = modelData[0];
-			const color = colors[index % colors.length];
+			const color = chartColors.multiSeries[index % chartColors.multiSeries.length];
+			// Use the color as-is for borderColor
+			const borderColor = color;
+			// Use a more transparent version for background (reduce opacity)
+			const backgroundColor = color.replace(/0\.\d+\)$/, '0.08)');
 			return {
 				label: firstEntry?.model_name || modelId,
 				data: allDates.map((dateStr) => {
@@ -76,10 +69,16 @@
 						y: tokens
 					};
 				}),
-				borderColor: color,
-				backgroundColor: color.replace('rgb', 'rgba').replace(')', ', 0.1)'),
+				borderColor: borderColor,
+				backgroundColor: backgroundColor,
 				fill: false,
-				tension: 0.1
+				tension: 0.2,
+				pointRadius: 2.5,
+				pointHoverRadius: 4,
+				pointBackgroundColor: borderColor,
+				pointBorderColor: borderColor,
+				pointBorderWidth: 1.5,
+				borderWidth: 2
 			};
 		});
 	})();
@@ -97,25 +96,27 @@
 		},
 		plugins: {
 			legend: {
+				...defaults.plugins.legend,
 				display: true,
 				position: 'right' as const
 			},
 			tooltip: {
-				filter: (tooltipItem: any) => {
-					// Only show tooltip items with nonzero values
-					return (tooltipItem.parsed?.y || 0) > 0;
-				},
 				...getTooltipConfig({
 					formatLabel: (context: any) => {
 						const value = context.parsed.y || 0;
 						return `${context.dataset.label}: ${new Intl.NumberFormat().format(value)} tokens`;
 					}
-				})
+				}),
+				filter: (tooltipItem: any) => {
+					// Only show tooltip items with nonzero values
+					return (tooltipItem.parsed?.y || 0) > 0;
+				}
 			}
 		},
 		scales: {
 			x: getTimeScaleConfig(),
 			y: {
+				...defaults.scales.y,
 				beginAtZero: true
 			}
 		}

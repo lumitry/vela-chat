@@ -13,7 +13,7 @@
 	} from 'chart.js';
 	import 'chartjs-adapter-date-fns';
 	import { formatSmartCurrency } from '$lib/utils/currency';
-	import { getTimeScaleConfig, getCurrencyTooltipConfig, getCurrencyYTicks, transformToTimeSeriesData } from '$lib/utils/charts';
+	import { getTimeScaleConfig, getCurrencyTooltipConfig, getCurrencyYTicks, transformToTimeSeriesData, getChartColors, getChartDefaults } from '$lib/utils/charts';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 
 	ChartJS.register(Title, Tooltip, Legend, LineElement, CategoryScale, LinearScale, PointElement, TimeScale);
@@ -26,15 +26,23 @@
 	}> = [];
 	export let loading: boolean = false;
 
+	$: colors = getChartColors();
+	$: defaults = getChartDefaults();
+
 	$: chartData = {
 		datasets: [
 			{
 				label: 'Cost per 1M Tokens',
 				data: transformToTimeSeriesData(data, (d) => d.avg_cost_per_token),
-				borderColor: 'rgb(59, 130, 246)',
-				backgroundColor: 'rgba(59, 130, 246, 0.1)',
+				borderColor: colors.singleSeries.primary,
+				backgroundColor: colors.singleSeries.primaryBg,
 				fill: false,
-				tension: 0.1
+				tension: 0.2,
+				pointRadius: 3,
+				pointHoverRadius: 5,
+				pointBackgroundColor: colors.singleSeries.primary,
+				pointBorderColor: colors.singleSeries.primary,
+				pointBorderWidth: 2
 			}
 		]
 	};
@@ -44,6 +52,7 @@
 		maintainAspectRatio: false,
 		plugins: {
 			legend: {
+				...defaults.plugins.legend,
 				display: true
 			},
 			tooltip: getCurrencyTooltipConfig('Cost per 1M Tokens')
@@ -51,6 +60,7 @@
 		scales: {
 			x: getTimeScaleConfig(),
 			y: {
+				...defaults.scales.y,
 				beginAtZero: true,
 				ticks: getCurrencyYTicks()
 			}

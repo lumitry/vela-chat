@@ -11,7 +11,7 @@
 		TimeScale
 	} from 'chart.js';
 	import 'chartjs-adapter-date-fns';
-	import { getTimeScaleConfig, getTooltipConfig, transformToTimeSeriesData } from '$lib/utils/charts';
+	import { getTimeScaleConfig, getTooltipConfig, transformToTimeSeriesData, getChartColors, getChartDefaults } from '$lib/utils/charts';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 
 	ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale, TimeScale);
@@ -24,18 +24,21 @@
 	}> = [];
 	export let loading: boolean = false;
 
+	$: colors = getChartColors();
+	$: defaults = getChartDefaults();
+
 	$: chartData = {
 		datasets: [
 			{
 				label: 'Input Tokens',
 				data: transformToTimeSeriesData(data, (d) => d.input_tokens),
-				backgroundColor: 'rgb(59, 130, 246)',
+				backgroundColor: colors.stacked.input,
 				stack: 'tokens'
 			},
 			{
 				label: 'Output Tokens',
 				data: transformToTimeSeriesData(data, (d) => d.output_tokens),
-				backgroundColor: 'rgb(16, 185, 129)',
+				backgroundColor: colors.stacked.output,
 				stack: 'tokens'
 			}
 		]
@@ -46,11 +49,10 @@
 		maintainAspectRatio: false,
 		plugins: {
 			legend: {
+				...defaults.plugins.legend,
 				display: true
 			},
 			tooltip: {
-				mode: 'index',
-				intersect: false,
 				...getTooltipConfig({
 					formatLabel: (context: any) => {
 						const value = context.parsed.y || 0;
@@ -60,7 +62,9 @@
 						const total = tooltipItems.reduce((sum, item) => sum + (item.parsed.y || 0), 0);
 						return `Total: ${new Intl.NumberFormat().format(total)}`;
 					}
-				})
+				}),
+				mode: 'index',
+				intersect: false
 			}
 		},
 		scales: {
@@ -69,6 +73,7 @@
 				stacked: true
 			},
 			y: {
+				...defaults.scales.y,
 				stacked: true,
 				beginAtZero: true
 			}

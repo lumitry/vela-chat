@@ -9,6 +9,7 @@
 		CategoryScale,
 		LinearScale
 	} from 'chart.js';
+	import { getChartColors, getChartDefaults } from '$lib/utils/charts';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 
 	ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale);
@@ -21,13 +22,16 @@
 	}> = [];
 	export let loading: boolean = false;
 
+	$: colors = getChartColors();
+	$: defaults = getChartDefaults();
+
 	$: chartData = {
 		labels: data && Array.isArray(data) ? data.map((d) => d.model_name || d.model_id) : [],
 		datasets: [
 			{
 				label: 'Chat Count',
 				data: data && Array.isArray(data) ? data.map((d) => d.chat_count || 0) : [],
-				backgroundColor: 'rgb(59, 130, 246)'
+				backgroundColor: colors.singleSeries.primary
 			}
 		]
 	};
@@ -41,6 +45,7 @@
 				display: false
 			},
 			tooltip: {
+				...defaults.plugins.tooltip,
 				callbacks: {
 					label: (context: any) => {
 						const value = context.parsed.x || 0;
@@ -51,7 +56,11 @@
 		},
 		scales: {
 			x: {
+				...defaults.scales.x,
 				beginAtZero: true
+			},
+			y: {
+				...defaults.scales.y
 			}
 		}
 	};
