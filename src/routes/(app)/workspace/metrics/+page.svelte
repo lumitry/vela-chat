@@ -29,6 +29,7 @@
 	import CostPerTokenChart from '$lib/components/workspace/Metrics/CostPerTokenChart.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import Info from '$lib/components/icons/Info.svelte';
+	import Download from '$lib/components/icons/Download.svelte';
 	import { formatSmartCurrency } from '$lib/utils/currency';
 
 	const i18n = getContext('i18n');
@@ -424,9 +425,10 @@
 					<h3 class="text-lg font-semibold">{$i18n.t('Model Usage')}</h3>
 					{#if !loadingModels && modelMetrics.length > 0}
 						<button
-							class="px-3 py-1.5 text-sm rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition"
+							class="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition"
 							on:click={exportModelUsage}
 						>
+							<Download className="w-4 h-4" strokeWidth="1.5" />
 							{$i18n.t('Export CSV')}
 						</button>
 					{/if}

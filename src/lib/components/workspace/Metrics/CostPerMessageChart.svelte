@@ -52,8 +52,7 @@
 		maintainAspectRatio: false,
 		plugins: {
 			legend: {
-				...defaults.plugins.legend,
-				display: true
+				display: false
 			},
 			tooltip: getCurrencyTooltipConfig('Avg Cost')
 		},
