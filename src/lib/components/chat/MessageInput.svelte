@@ -420,7 +420,11 @@
 						if (uploaded) {
 							files = files.map((item) =>
 								item?.id === uploaded.id
-									? { ...item, type: 'image', url: `${WEBUI_API_BASE_URL}/files/${uploaded.id}/content` }
+									? {
+											...item,
+											type: 'image',
+											url: `${WEBUI_API_BASE_URL}/files/${uploaded.id}/content`
+										}
 									: item
 							);
 						}
@@ -540,11 +544,15 @@
 						const height = $settings?.imageCompressionSize?.height ?? null;
 						if (width || height) {
 							// Compress to a data URL then convert to a File
-							const compressedUrl = await compressImage(await new Promise<string>((resolve) => {
-								const r = new FileReader();
-								r.onload = (e) => resolve(String(e.target?.result || ''));
-								r.readAsDataURL(file);
-							}), width, height);
+							const compressedUrl = await compressImage(
+								await new Promise<string>((resolve) => {
+									const r = new FileReader();
+									r.onload = (e) => resolve(String(e.target?.result || ''));
+									r.readAsDataURL(file);
+								}),
+								width,
+								height
+							);
 							const res = await fetch(compressedUrl);
 							const blob = await res.blob();
 							toUpload = new File([blob], file.name, { type: file.type });
@@ -555,7 +563,11 @@
 						// Convert the just-uploaded entry into an image item with direct content URL
 						files = files.map((item) =>
 							item?.id === uploaded.id
-								? { ...item, type: 'image', url: `${WEBUI_API_BASE_URL}/files/${uploaded.id}/content` }
+								? {
+										...item,
+										type: 'image',
+										url: `${WEBUI_API_BASE_URL}/files/${uploaded.id}/content`
+									}
 								: item
 						);
 					}
@@ -687,7 +699,6 @@
 								<div class="flex items-center justify-between w-full">
 									<div class="pl-[1px] flex items-center gap-2 text-sm dark:text-gray-500">
 										<img
-											crossorigin="anonymous"
 											alt="model profile"
 											class="size-3.5 max-w-[28px] object-cover rounded-full"
 											src={$models.find((model) => model.id === atSelectedModel.id)?.info?.meta
