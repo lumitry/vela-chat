@@ -133,6 +133,7 @@
 
 	export let isLastMessage = true;
 	export let readOnly = false;
+	export let searchQuery: string = '';
 
 	let buttonsContainerElement: HTMLDivElement;
 	let showDeleteConfirm = false;
@@ -801,6 +802,7 @@
 										floatingButtons={message?.done && !readOnly}
 										save={!readOnly}
 										{model}
+										{searchQuery}
 										onTaskClick={async (e) => {
 											console.log(e);
 										}}

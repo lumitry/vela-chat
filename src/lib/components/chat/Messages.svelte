@@ -54,6 +54,7 @@
 
 	export let searchMatches = [];
 	export let currentMatchId = '';
+	export let searchQuery = '';
 
 	let messagesCount = 20;
 	let messagesLoading = false;
@@ -476,6 +477,7 @@
 							{readOnly}
 							searchMatch={searchMatches.includes(message.id)}
 							isCurrentSearch={message.id === currentMatchId}
+							{searchQuery}
 						/>
 					{/each}
 				</div>

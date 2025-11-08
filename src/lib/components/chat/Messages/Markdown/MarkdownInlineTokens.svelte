@@ -18,8 +18,38 @@
 	export let id: string;
 	export let tokens: Token[];
 	export let onSourceClick: Function = () => {};
+	export let searchQuery: string = '';
 
 	const hexColorRegex = /(#[0-9a-fA-F]{6,8})\b/g;
+
+	// Function to highlight search text in a string
+	function highlightText(text: string, query: string): string | Array<{ text: string; highlighted: boolean }> {
+		if (!query || !text) return text;
+		
+		const lowerText = text.toLowerCase();
+		const lowerQuery = query.toLowerCase();
+		const parts: Array<{ text: string; highlighted: boolean }> = [];
+		let lastIndex = 0;
+		let index = lowerText.indexOf(lowerQuery, lastIndex);
+		
+		while (index !== -1) {
+			// Add text before match
+			if (index > lastIndex) {
+				parts.push({ text: text.substring(lastIndex, index), highlighted: false });
+			}
+			// Add highlighted match
+			parts.push({ text: text.substring(index, index + query.length), highlighted: true });
+			lastIndex = index + query.length;
+			index = lowerText.indexOf(lowerQuery, lastIndex);
+		}
+		
+		// Add remaining text
+		if (lastIndex < text.length) {
+			parts.push({ text: text.substring(lastIndex), highlighted: false });
+		}
+		
+		return parts.length > 0 ? parts : text;
+	}
 </script>
 
 {#each tokens as token}
@@ -39,17 +69,34 @@
 	{:else if token.type === 'link'}
 		{#if token.tokens}
 			<a href={token.href} target="_blank" rel="nofollow" title={token.title}>
-				<svelte:self id={`${id}-a`} tokens={token.tokens} {onSourceClick} />
+				<svelte:self id={`${id}-a`} tokens={token.tokens} {onSourceClick} {searchQuery} />
 			</a>
 		{:else}
-			<a href={token.href} target="_blank" rel="nofollow" title={token.title}>{token.text}</a>
+			<a href={token.href} target="_blank" rel="nofollow" title={token.title}>
+				{#if searchQuery}
+					{@const highlighted = highlightText(token.text, searchQuery)}
+					{#if Array.isArray(highlighted)}
+						{#each highlighted as part}
+							{#if part.highlighted}
+								<mark class="bg-yellow-200 dark:bg-yellow-800/50 rounded px-0.5">{part.text}</mark>
+							{:else}
+								{part.text}
+							{/if}
+						{/each}
+					{:else}
+						{highlighted}
+					{/if}
+				{:else}
+					{token.text}
+				{/if}
+			</a>
 		{/if}
 	{:else if token.type === 'image'}
 		<Image src={token.href} alt={token.text} />
 	{:else if token.type === 'strong'}
-		<strong><svelte:self id={`${id}-strong`} tokens={token.tokens} {onSourceClick} /></strong>
+		<strong><svelte:self id={`${id}-strong`} tokens={token.tokens} {onSourceClick} {searchQuery} /></strong>
 	{:else if token.type === 'em'}
-		<em><svelte:self id={`${id}-em`} tokens={token.tokens} {onSourceClick} /></em>
+		<em><svelte:self id={`${id}-em`} tokens={token.tokens} {onSourceClick} {searchQuery} /></em>
 	{:else if token.type === 'codespan'}
 		<!-- svelte-ignore a11y-click-events-have-key-events -->
 		<!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
@@ -63,7 +110,7 @@
 	{:else if token.type === 'br'}
 		<br />
 	{:else if token.type === 'del'}
-		<del><svelte:self id={`${id}-del`} tokens={token.tokens} {onSourceClick} /></del>
+		<del><svelte:self id={`${id}-del`} tokens={token.tokens} {onSourceClick} {searchQuery} /></del>
 	{:else if token.type === 'inlineKatex'}
 		{#if token.text}
 			<KatexRenderer content={token.text} displayMode={false} />
@@ -90,14 +137,60 @@
 								copyToClipboard(part);
 								toast.success($i18n.t('Copied to clipboard'));
 							}}
-						></span>{part}</span
-					>
+						></span>
+						{#if searchQuery}
+							{@const highlighted = highlightText(part, searchQuery)}
+							{#if Array.isArray(highlighted)}
+								{#each highlighted as highlightPart}
+									{#if highlightPart.highlighted}
+										<mark class="bg-yellow-200 dark:bg-yellow-800/50 rounded px-0.5">{highlightPart.text}</mark>
+									{:else}
+										{highlightPart.text}
+									{/if}
+								{/each}
+							{:else}
+								{highlighted}
+							{/if}
+						{:else}
+							{part}
+						{/if}
+					</span>
 				{:else}
-					{part}
+					{#if searchQuery}
+						{@const highlighted = highlightText(part, searchQuery)}
+						{#if Array.isArray(highlighted)}
+							{#each highlighted as highlightPart}
+								{#if highlightPart.highlighted}
+									<mark class="bg-yellow-200 dark:bg-yellow-800/50 rounded px-0.5">{highlightPart.text}</mark>
+								{:else}
+									{highlightPart.text}
+								{/if}
+							{/each}
+						{:else}
+							{highlighted}
+						{/if}
+					{:else}
+						{part}
+					{/if}
 				{/if}
 			{/each}
 		{:else}
-			{token.raw}
+			{#if searchQuery}
+				{@const highlighted = highlightText(token.raw, searchQuery)}
+				{#if Array.isArray(highlighted)}
+					{#each highlighted as part}
+						{#if part.highlighted}
+							<mark class="bg-yellow-200 dark:bg-yellow-800/50 rounded px-0.5">{part.text}</mark>
+						{:else}
+							{part.text}
+						{/if}
+					{/each}
+				{:else}
+					{highlighted}
+				{/if}
+			{:else}
+				{token.raw}
+			{/if}
 		{/if}
 	{/if}
 {/each}

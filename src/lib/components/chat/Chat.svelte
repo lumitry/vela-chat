@@ -286,7 +286,11 @@
 		}
 	};
 
-	const showMessage = async (message) => {
+	const showMessage = async (
+		message,
+		options: { skipSave?: boolean; scrollToHighlight?: boolean; occurrenceIndex?: number } = {}
+	) => {
+		const { skipSave = false, scrollToHighlight = false, occurrenceIndex = 0 } = options;
 		const _chatId = JSON.parse(JSON.stringify($chatId));
 		let _messageId = JSON.parse(JSON.stringify(message.id));
 
@@ -312,11 +316,37 @@
 
 		const messageElement = document.getElementById(`message-${message.id}`);
 		if (messageElement) {
-			messageElement.scrollIntoView({ behavior: 'smooth' });
+			if (scrollToHighlight) {
+				// Wait a bit more for highlighting to be applied
+				await tick();
+				await new Promise((resolve) => setTimeout(resolve, 50));
+
+				// Find all highlighted text (mark elements) within this message
+				const highlightedElements = messageElement.querySelectorAll('mark');
+				if (highlightedElements.length > 0) {
+					// Navigate to the specific occurrence (or first if index is out of bounds)
+					const targetIndex = Math.min(occurrenceIndex, highlightedElements.length - 1);
+					const highlightedElement = highlightedElements[targetIndex];
+					if (highlightedElement) {
+						// Scroll to center the highlighted text
+						highlightedElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+					} else {
+						// Fallback to scrolling the message if no highlight found
+						messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+					}
+				} else {
+					// Fallback to scrolling the message if no highlight found
+					messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+				}
+			} else {
+				messageElement.scrollIntoView({ behavior: 'smooth' });
+			}
 		}
 
 		await tick();
-		saveChatHandler(_chatId, history);
+		if (!skipSave) {
+			saveChatHandler(_chatId, history);
+		}
 	};
 
 	const chatEventHandler = async (event, cb) => {
@@ -2314,7 +2344,8 @@
 	let searchActive = false;
 	let searchQuery = '';
 	let includeHidden = false;
-	let matches: string[] = [];
+	// Each match is { messageId: string, occurrenceIndex: number }
+	let matches: Array<{ messageId: string; occurrenceIndex: number }> = [];
 	let currentMatchIndex = -1;
 
 	function openSearch() {
@@ -2339,12 +2370,20 @@
 		}
 		const ids = Object.keys(history.messages);
 		const q = searchQuery.toLowerCase();
-		const found = [];
+		const found: Array<{ messageId: string; occurrenceIndex: number }> = [];
 		for (const id of ids) {
 			const msg = history.messages[id];
 			if (msg.content?.toLowerCase().includes(q)) {
 				if (includeHidden || document.getElementById(`message-${id}`)) {
-					found.push(id);
+					// Count all occurrences in this message
+					const content = msg.content.toLowerCase();
+					let searchIndex = content.indexOf(q);
+					let occurrenceIndex = 0;
+					while (searchIndex !== -1) {
+						found.push({ messageId: id, occurrenceIndex });
+						occurrenceIndex++;
+						searchIndex = content.indexOf(q, searchIndex + 1);
+					}
 				}
 			}
 		}
@@ -2353,20 +2392,52 @@
 		if (currentMatchIndex >= 0) navigateTo(found[0]);
 	}
 
-	function navigateTo(id: string) {
-		showMessage({ id });
-		currentMatchIndex = matches.indexOf(id);
+	function navigateTo(match: { messageId: string; occurrenceIndex: number } | string) {
+		// Handle both old string format (for backwards compatibility) and new match format
+		let messageId: string;
+		let occurrenceIndex = 0;
+
+		if (typeof match === 'string') {
+			messageId = match;
+			// Find first occurrence in this message
+			const firstMatch = matches.find((m) => m.messageId === messageId);
+			if (firstMatch) {
+				occurrenceIndex = firstMatch.occurrenceIndex;
+			}
+		} else {
+			messageId = match.messageId;
+			occurrenceIndex = match.occurrenceIndex;
+		}
+
+		showMessage({ id: messageId }, { skipSave: true, scrollToHighlight: true, occurrenceIndex });
+		currentMatchIndex = matches.findIndex(
+			(m) => m.messageId === messageId && m.occurrenceIndex === occurrenceIndex
+		);
+		if (currentMatchIndex === -1) {
+			// Fallback: find any match in this message
+			currentMatchIndex = matches.findIndex((m) => m.messageId === messageId);
+		}
 	}
 
 	function prevMatch() {
-		if (matches.length && currentMatchIndex > 0) {
-			navigateTo(matches[currentMatchIndex - 1]);
+		if (matches.length) {
+			if (currentMatchIndex > 0) {
+				navigateTo(matches[currentMatchIndex - 1]);
+			} else {
+				// Wrap around to last result
+				navigateTo(matches[matches.length - 1]);
+			}
 		}
 	}
 
 	function nextMatch() {
-		if (matches.length && currentMatchIndex < matches.length - 1) {
-			navigateTo(matches[currentMatchIndex + 1]);
+		if (matches.length) {
+			if (currentMatchIndex < matches.length - 1) {
+				navigateTo(matches[currentMatchIndex + 1]);
+			} else {
+				// Wrap around to first result
+				navigateTo(matches[0]);
+			}
 		}
 	}
 
@@ -2482,7 +2553,7 @@
 							/>
 							<button
 								on:click={prevMatch}
-								disabled={currentMatchIndex <= 0}
+								disabled={matches.length === 0}
 								class="px-2 disabled:opacity-50"
 							>
 								&lt;
@@ -2499,7 +2570,7 @@
 							</span>
 							<button
 								on:click={nextMatch}
-								disabled={currentMatchIndex < 0 || currentMatchIndex >= matches.length - 1}
+								disabled={matches.length === 0}
 								class="px-2 disabled:opacity-50"
 							>
 								&gt;
@@ -2552,8 +2623,9 @@
 									{chatActionHandler}
 									{addMessages}
 									bottomPadding={files.length > 0}
-									searchMatches={matches}
-									currentMatchId={matches[currentMatchIndex]}
+									searchMatches={matches.map((m) => m.messageId)}
+									currentMatchId={matches[currentMatchIndex]?.messageId || ''}
+									{searchQuery}
 								/>
 							</div>
 						</div>

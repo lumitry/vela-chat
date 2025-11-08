@@ -20,6 +20,7 @@
 
 	export let onSourceClick = () => {};
 	export let onTaskClick = () => {};
+	export let searchQuery = '';
 
 	let tokens = [];
 
@@ -46,6 +47,7 @@
 		{save}
 		{onTaskClick}
 		{onSourceClick}
+		{searchQuery}
 		on:update={(e) => {
 			dispatch('update', e.detail);
 		}}

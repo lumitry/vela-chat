@@ -15,6 +15,7 @@
 
 	export let onSourceClick = () => {};
 	export let onTaskClick = () => {};
+	export let searchQuery = '';
 </script>
 
 <div>
@@ -23,6 +24,7 @@
 		{content}
 		{model}
 		{save}
+		{searchQuery}
 		sourceIds={(sources ?? []).reduce((acc, s) => {
 			let ids = [];
 			s.document.forEach((document, index) => {
