@@ -3,7 +3,7 @@ import uuid
 from typing import Optional, List, Tuple
 
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import BigInteger, Column, String, Text, JSON, Index, ForeignKey, Integer, func, Numeric
+from sqlalchemy import BigInteger, Column, String, Text, JSON, Index, ForeignKey, Integer, func, Numeric, Date
 
 from open_webui.internal.db import Base, get_db
 
@@ -62,6 +62,28 @@ class ChatMessageAttachment(Base):
     meta = Column(JSON, nullable=True)
 
     created_at = Column(BigInteger)
+
+
+class MetricsDailyRollup(Base):
+    __tablename__ = "metrics_daily_rollup"
+
+    id = Column(String, primary_key=True)
+    user_id = Column(String, nullable=False, index=True)
+    date = Column(Date, nullable=False, index=True)
+    model_id = Column(Text, nullable=True, index=True)
+    message_count = Column(Integer, nullable=False, server_default='0')
+    total_cost = Column(Numeric(precision=10, scale=8), nullable=False, server_default='0')
+    total_input_tokens = Column(Integer, nullable=False, server_default='0')
+    total_output_tokens = Column(Integer, nullable=False, server_default='0')
+    total_reasoning_tokens = Column(Integer, nullable=False, server_default='0')
+    distinct_chat_count = Column(Integer, nullable=False, server_default='0')
+    created_at = Column(BigInteger, nullable=False)
+    updated_at = Column(BigInteger, nullable=False)
+
+    __table_args__ = (
+        Index("ix_metrics_daily_rollup_user_date", "user_id", "date"),
+        Index("ix_metrics_daily_rollup_user_model_date", "user_id", "model_id", "date"),
+    )
 
 
 class ChatMessageModel(BaseModel):

@@ -510,6 +510,10 @@
 				copy", cost is <em>not</em> included (the cost column is left null) but token usage
 				<em>is</em> included in the metrics.
 			</p>
+			<p>
+				Additionally, note that arena models are flattened to the actual model used for each
+				generation.
+			</p>
 		</div>
 	</div>
 </div>

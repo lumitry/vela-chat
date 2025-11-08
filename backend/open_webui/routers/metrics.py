@@ -1,4 +1,5 @@
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, List
 from decimal import Decimal
@@ -9,7 +10,7 @@ from sqlalchemy import func, and_, or_, case, text
 from sqlalchemy.orm import aliased
 
 from open_webui.internal.db import get_db
-from open_webui.models.chat_messages import ChatMessage
+from open_webui.models.chat_messages import ChatMessage, MetricsDailyRollup
 from open_webui.models.chats import Chat
 from open_webui.utils.auth import get_verified_user
 from open_webui.utils.models import get_all_models
@@ -20,6 +21,14 @@ log = logging.getLogger(__name__)
 log.setLevel(SRC_LOG_LEVELS["MODELS"])
 
 router = APIRouter()
+
+# In-memory cache for model ownership map
+# Key: user_id, Value: Dict[str, str] mapping model_id -> owned_by
+_model_ownership_cache: Dict[str, Dict[str, str]] = {}
+
+# In-memory cache for model name mapping
+# Key: user_id, Value: Dict[str, str] mapping model_id -> model_name
+_model_names_cache: Dict[str, Dict[str, str]] = {}
 
 
 # Response Models
@@ -82,9 +91,62 @@ class CostPerTokenDailyResponse(BaseModel):
 
 # Helper function to get model ownership map
 async def get_model_ownership_map(request: Request, user: UserModel) -> Dict[str, str]:
-    """Get mapping of model_id to owned_by (ollama/openai/arena)"""
+    """Get mapping of model_id to owned_by (ollama/openai/arena)
+    
+    Uses in-memory cache since model ownership doesn't change for a given model_id.
+    Cache is cleared on server restart (which is fine for the rare case of ownership changes or collision).
+    """
+    global _model_ownership_cache
+    
+    # Check cache first
+    if user.id in _model_ownership_cache:
+        log.debug(f"Model ownership cache HIT for user {user.id}")
+        return _model_ownership_cache[user.id]
+    
+    # Cache miss - fetch from API
+    log.debug(f"Model ownership cache MISS for user {user.id}, fetching models...")
+    start_time = time.time()
     models = await get_all_models(request, user=user)
-    return {model["id"]: model.get("owned_by", "unknown") for model in models}
+    fetch_time = (time.time() - start_time) * 1000
+    log.debug(f"Fetched {len(models)} models in {fetch_time:.2f}ms")
+    
+    ownership_map = {model["id"]: model.get("owned_by", "unknown") for model in models}
+    
+    # Cache it
+    _model_ownership_cache[user.id] = ownership_map
+    log.debug(f"Cached model ownership map for user {user.id} ({len(ownership_map)} models)")
+    
+    return ownership_map
+
+
+# Helper function to get model name mapping (cached)
+async def get_model_names_map(request: Request, user: UserModel) -> Dict[str, str]:
+    """Get mapping of model_id to model_name
+    
+    Uses in-memory cache since model names don't change frequently.
+    Cache is cleared on server restart.
+    """
+    global _model_names_cache
+    
+    # Check cache first
+    if user.id in _model_names_cache:
+        log.debug(f"Model names cache HIT for user {user.id}")
+        return _model_names_cache[user.id]
+    
+    # Cache miss - fetch from API
+    log.debug(f"Model names cache MISS for user {user.id}, fetching models...")
+    start_time = time.time()
+    all_models = await get_all_models(request, user=user)
+    fetch_time = (time.time() - start_time) * 1000
+    log.debug(f"Fetched {len(all_models)} models for names in {fetch_time:.2f}ms")
+    
+    names_map = {model["id"]: model.get("name", model["id"]) for model in all_models}
+    
+    # Cache it
+    _model_names_cache[user.id] = names_map
+    log.debug(f"Cached model names map for user {user.id} ({len(names_map)} models)")
+    
+    return names_map
 
 
 # Helper function to convert timestamp to date string (ISO format)
@@ -93,7 +155,7 @@ def timestamp_to_date_str(timestamp: int) -> str:
     return datetime.fromtimestamp(timestamp, tz=timezone.utc).date().isoformat()
 
 
-# Helper function to get date range from query params
+# Helper function to get date range from query params (returns both timestamps and date objects)
 def get_date_range(start_date: Optional[str], end_date: Optional[str]) -> tuple[int, int]:
     """Convert date strings to timestamps. Defaults to last 30 days if not provided.
     Validates that start_date <= end_date. For single-day ranges, sets end_ts to end of day.
@@ -125,11 +187,36 @@ def get_date_range(start_date: Optional[str], end_date: Optional[str]) -> tuple[
     return start_ts, end_ts
 
 
+# Helper function to get date objects from date strings (for rollup table queries)
+def get_date_range_objects(start_date: Optional[str], end_date: Optional[str]) -> tuple[datetime.date, datetime.date]:
+    """Convert date strings to date objects. Defaults to last 30 days if not provided."""
+    if end_date:
+        end_date_obj = datetime.fromisoformat(end_date).date()
+    else:
+        end_date_obj = datetime.now(timezone.utc).date()
+    
+    if start_date:
+        start_date_obj = datetime.fromisoformat(start_date).date()
+    else:
+        # Default to 30 days ago
+        start_date_obj = (datetime.now(timezone.utc) - timedelta(days=30)).date()
+    
+    # Validate that start <= end
+    if start_date_obj > end_date_obj:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="start_date must be less than or equal to end_date"
+        )
+    
+    return start_date_obj, end_date_obj
+
+
 # Helper function to filter by model type
 def filter_by_model_type(
     query, model_ownership_map: Dict[str, str], model_type: str, model_id_column
 ):
-    """Filter query by model type (local/external/both)"""
+    """Filter query by model type (local/external/both)
+    """
     if model_type == "local":
         # Only ollama models
         local_model_ids = [
@@ -164,49 +251,57 @@ async def get_model_metrics(
     user: UserModel = Depends(get_verified_user),
 ):
     """Get top N models with aggregated metrics"""
+    endpoint_start = time.time()
     try:
-        start_ts, end_ts = get_date_range(start_date, end_date)
-        model_ownership_map = await get_model_ownership_map(request, user)
+        start_date_obj, end_date_obj = get_date_range_objects(start_date, end_date)
         
+        model_ownership_start = time.time()
+        model_ownership_map = await get_model_ownership_map(request, user)
+        model_ownership_time = (time.time() - model_ownership_start) * 1000
+        log.debug(f"[PERF] /models: get_model_ownership_map took {model_ownership_time:.2f}ms")
+        
+        db_query_start = time.time()
         with get_db() as db:
-            # Join chat_message with chat to filter by user_id
-            # Exclude content_text for performance
+            # Query rollup table directly - aggregate across date range
             query = (
                 db.query(
-                    ChatMessage.model_id,
-                    func.sum(ChatMessage.cost).label("total_cost"),
-                    func.sum(ChatMessage.input_tokens).label("total_input_tokens"),
-                    func.sum(ChatMessage.output_tokens).label("total_output_tokens"),
-                    func.count(ChatMessage.id).label("message_count"),
+                    MetricsDailyRollup.model_id,
+                    func.sum(MetricsDailyRollup.total_cost).label("total_cost"),
+                    func.sum(MetricsDailyRollup.total_input_tokens).label("total_input_tokens"),
+                    func.sum(MetricsDailyRollup.total_output_tokens).label("total_output_tokens"),
+                    func.sum(MetricsDailyRollup.message_count).label("message_count"),
                 )
-                .join(Chat, ChatMessage.chat_id == Chat.id)
                 .filter(
-                    Chat.user_id == user.id,
-                    ChatMessage.created_at >= start_ts,
-                    ChatMessage.created_at <= end_ts,
-                    ChatMessage.model_id.isnot(None),
+                    MetricsDailyRollup.user_id == user.id,
+                    MetricsDailyRollup.date >= start_date_obj,
+                    MetricsDailyRollup.date <= end_date_obj,
+                    MetricsDailyRollup.model_id.isnot(None),
                 )
-                .group_by(ChatMessage.model_id)
+                .group_by(MetricsDailyRollup.model_id)
             )
             
             # Filter by model type
-            query = filter_by_model_type(query, model_ownership_map, model_type, ChatMessage.model_id)
+            query = filter_by_model_type(query, model_ownership_map, model_type, MetricsDailyRollup.model_id)
             
             # Use having clause to filter out zero-token models and order by total tokens
-            # We need to use having() to filter on aggregated values
             results = (
                 query.having(
-                    (func.sum(ChatMessage.input_tokens) + func.sum(ChatMessage.output_tokens)) > 0
+                    (func.sum(MetricsDailyRollup.total_input_tokens) + func.sum(MetricsDailyRollup.total_output_tokens)) > 0
                 )
                 .order_by(
-                    (func.sum(ChatMessage.input_tokens) + func.sum(ChatMessage.output_tokens)).desc()
+                    (func.sum(MetricsDailyRollup.total_input_tokens) + func.sum(MetricsDailyRollup.total_output_tokens)).desc()
                 )
                 .limit(limit)
                 .all()
             )
+        db_query_time = (time.time() - db_query_start) * 1000
+        log.debug(f"[PERF] /models: database query took {db_query_time:.2f}ms, returned {len(results)} rows")
         
-        # Map model IDs to names
-        model_id_to_name = {model["id"]: model.get("name", model["id"]) for model in await get_all_models(request, user=user)}
+        # Map model IDs to names (cached)
+        model_names_start = time.time()
+        model_id_to_name = await get_model_names_map(request, user)
+        model_names_time = (time.time() - model_names_start) * 1000
+        log.debug(f"[PERF] /models: get_model_names_map took {model_names_time:.2f}ms")
         
         response = []
         for row in results:
@@ -218,7 +313,7 @@ async def get_model_metrics(
             response.append(
                 ModelMetricsResponse(
                     model_id=model_id,
-                    model_name=model_id_to_name.get(model_id, model_id),
+                    model_name=model_id_to_name.get(model_id) or model_id,
                     spend=float(row.total_cost or 0),
                     input_tokens=total_input,
                     output_tokens=total_output,
@@ -226,6 +321,9 @@ async def get_model_metrics(
                     message_count=int(row.message_count or 0),
                 )
             )
+        
+        total_time = (time.time() - endpoint_start) * 1000
+        log.debug(f"[PERF] /models: total endpoint time {total_time:.2f}ms (ownership: {model_ownership_time:.2f}ms, db: {db_query_time:.2f}ms, names: {model_names_time:.2f}ms)")
         
         return response
     except Exception as e:
@@ -242,54 +340,44 @@ async def get_daily_token_usage(
     user: UserModel = Depends(get_verified_user),
 ):
     """Get daily token usage (input + output) segmented"""
+    endpoint_start = time.time()
     try:
-        start_ts, end_ts = get_date_range(start_date, end_date)
-        model_ownership_map = await get_model_ownership_map(request, user)
+        start_date_obj, end_date_obj = get_date_range_objects(start_date, end_date)
         
+        model_ownership_start = time.time()
+        model_ownership_map = await get_model_ownership_map(request, user)
+        model_ownership_time = (time.time() - model_ownership_start) * 1000
+        log.debug(f"[PERF] /tokens/daily: get_model_ownership_map took {model_ownership_time:.2f}ms")
+        
+        db_query_start = time.time()
         with get_db() as db:
-            # Get database dialect for date conversion
-            dialect_name = db.bind.dialect.name
-            
-            if dialect_name == "sqlite":
-                # SQLite: Use datetime function with unixepoch
-                # SQLite's datetime() function converts unix timestamp to datetime, then date() extracts date
-                date_expr = func.date(func.datetime(ChatMessage.created_at, 'unixepoch'))
-            elif dialect_name == "postgresql":
-                # PostgreSQL: Use to_timestamp and date extraction
-                date_expr = func.date(func.to_timestamp(ChatMessage.created_at))
-            else:
-                # Fallback: convert in Python (will need post-processing)
-                date_expr = ChatMessage.created_at
-            
+            # Query rollup table directly
             query = (
                 db.query(
-                    date_expr.label("date"),
-                    func.sum(ChatMessage.input_tokens).label("input_tokens"),
-                    func.sum(ChatMessage.output_tokens).label("output_tokens"),
+                    MetricsDailyRollup.date,
+                    func.sum(MetricsDailyRollup.total_input_tokens).label("input_tokens"),
+                    func.sum(MetricsDailyRollup.total_output_tokens).label("output_tokens"),
                 )
-                .join(Chat, ChatMessage.chat_id == Chat.id)
                 .filter(
-                    Chat.user_id == user.id,
-                    ChatMessage.created_at >= start_ts,
-                    ChatMessage.created_at <= end_ts,
+                    MetricsDailyRollup.user_id == user.id,
+                    MetricsDailyRollup.date >= start_date_obj,
+                    MetricsDailyRollup.date <= end_date_obj,
+                    MetricsDailyRollup.model_id.isnot(None),  # Only include model-specific rows
                 )
-                .group_by(date_expr)
-                .order_by(date_expr)
+                .group_by(MetricsDailyRollup.date)
+                .order_by(MetricsDailyRollup.date)
             )
             
             # Filter by model type
-            query = filter_by_model_type(query, model_ownership_map, model_type, ChatMessage.model_id)
+            query = filter_by_model_type(query, model_ownership_map, model_type, MetricsDailyRollup.model_id)
             
             results = query.all()
+        db_query_time = (time.time() - db_query_start) * 1000
+        log.debug(f"[PERF] /tokens/daily: database query took {db_query_time:.2f}ms, returned {len(results)} rows")
         
         response = []
         for row in results:
-            if dialect_name in ("sqlite", "postgresql"):
-                date_str = str(row.date)
-            else:
-                # Fallback: convert timestamp to date
-                date_str = timestamp_to_date_str(int(row.date))
-            
+            date_str = str(row.date)
             input_tokens = int(row.input_tokens or 0)
             output_tokens = int(row.output_tokens or 0)
             
@@ -301,6 +389,9 @@ async def get_daily_token_usage(
                     total_tokens=input_tokens + output_tokens,
                 )
             )
+        
+        total_time = (time.time() - endpoint_start) * 1000
+        log.debug(f"[PERF] /tokens/daily: total endpoint time {total_time:.2f}ms (ownership: {model_ownership_time:.2f}ms, db: {db_query_time:.2f}ms)")
         
         return response
     except Exception as e:
@@ -317,46 +408,42 @@ async def get_daily_spend(
     user: UserModel = Depends(get_verified_user),
 ):
     """Get daily spending"""
+    endpoint_start = time.time()
     try:
-        start_ts, end_ts = get_date_range(start_date, end_date)
-        model_ownership_map = await get_model_ownership_map(request, user)
+        start_date_obj, end_date_obj = get_date_range_objects(start_date, end_date)
         
+        model_ownership_start = time.time()
+        model_ownership_map = await get_model_ownership_map(request, user)
+        model_ownership_time = (time.time() - model_ownership_start) * 1000
+        log.debug(f"[PERF] /spend/daily: get_model_ownership_map took {model_ownership_time:.2f}ms")
+        
+        db_query_start = time.time()
         with get_db() as db:
-            dialect_name = db.bind.dialect.name
-            
-            if dialect_name == "sqlite":
-                date_expr = func.date(func.datetime(ChatMessage.created_at, 'unixepoch'))
-            elif dialect_name == "postgresql":
-                date_expr = func.date(func.to_timestamp(ChatMessage.created_at))
-            else:
-                date_expr = ChatMessage.created_at
-            
+            # Query rollup table directly
             query = (
                 db.query(
-                    date_expr.label("date"),
-                    func.sum(ChatMessage.cost).label("total_cost"),
+                    MetricsDailyRollup.date,
+                    func.sum(MetricsDailyRollup.total_cost).label("total_cost"),
                 )
-                .join(Chat, ChatMessage.chat_id == Chat.id)
                 .filter(
-                    Chat.user_id == user.id,
-                    ChatMessage.created_at >= start_ts,
-                    ChatMessage.created_at <= end_ts,
-                    ChatMessage.cost.isnot(None),
+                    MetricsDailyRollup.user_id == user.id,
+                    MetricsDailyRollup.date >= start_date_obj,
+                    MetricsDailyRollup.date <= end_date_obj,
+                    MetricsDailyRollup.model_id.isnot(None),  # Only include model-specific rows
                 )
-                .group_by(date_expr)
-                .order_by(date_expr)
+                .group_by(MetricsDailyRollup.date)
+                .order_by(MetricsDailyRollup.date)
             )
             
-            query = filter_by_model_type(query, model_ownership_map, model_type, ChatMessage.model_id)
+            query = filter_by_model_type(query, model_ownership_map, model_type, MetricsDailyRollup.model_id)
             
             results = query.all()
+        db_query_time = (time.time() - db_query_start) * 1000
+        log.debug(f"[PERF] /spend/daily: database query took {db_query_time:.2f}ms, returned {len(results)} rows")
         
         response = []
         for row in results:
-            if dialect_name in ("sqlite", "postgresql"):
-                date_str = str(row.date)
-            else:
-                date_str = timestamp_to_date_str(int(row.date))
+            date_str = str(row.date)
             
             response.append(
                 DailySpendResponse(
@@ -364,6 +451,9 @@ async def get_daily_spend(
                     cost=float(row.total_cost or 0),
                 )
             )
+        
+        total_time = (time.time() - endpoint_start) * 1000
+        log.debug(f"[PERF] /spend/daily: total endpoint time {total_time:.2f}ms (ownership: {model_ownership_time:.2f}ms, db: {db_query_time:.2f}ms)")
         
         return response
     except Exception as e:
@@ -381,79 +471,80 @@ async def get_model_daily_tokens(
     user: UserModel = Depends(get_verified_user),
 ):
     """Get tokens per model per day"""
+    endpoint_start = time.time()
     try:
-        start_ts, end_ts = get_date_range(start_date, end_date)
-        model_ownership_map = await get_model_ownership_map(request, user)
-        all_models = await get_all_models(request, user=user)
-        model_id_to_name = {model["id"]: model.get("name", model["id"]) for model in all_models}
+        start_date_obj, end_date_obj = get_date_range_objects(start_date, end_date)
         
+        model_ownership_start = time.time()
+        model_ownership_map = await get_model_ownership_map(request, user)
+        model_ownership_time = (time.time() - model_ownership_start) * 1000
+        log.debug(f"[PERF] /tokens/model/daily: get_model_ownership_map took {model_ownership_time:.2f}ms")
+        
+        # Map model IDs to names (cached)
+        model_names_start = time.time()
+        model_id_to_name = await get_model_names_map(request, user)
+        model_names_time = (time.time() - model_names_start) * 1000
+        log.debug(f"[PERF] /tokens/model/daily: get_model_names_map took {model_names_time:.2f}ms")
+        
+        db_query_start = time.time()
         with get_db() as db:
-            dialect_name = db.bind.dialect.name
-            
-            if dialect_name == "sqlite":
-                date_expr = func.date(func.datetime(ChatMessage.created_at, 'unixepoch'))
-            elif dialect_name == "postgresql":
-                date_expr = func.date(func.to_timestamp(ChatMessage.created_at))
-            else:
-                date_expr = ChatMessage.created_at
-            
-            # First, get top N models by total tokens
+            # First, get top N models by total tokens from rollup table
             top_models_query = (
                 db.query(
-                    ChatMessage.model_id,
-                    func.sum(ChatMessage.input_tokens + ChatMessage.output_tokens).label("total_tokens"),
+                    MetricsDailyRollup.model_id,
+                    func.sum(MetricsDailyRollup.total_input_tokens + MetricsDailyRollup.total_output_tokens).label("total_tokens"),
                 )
-                .join(Chat, ChatMessage.chat_id == Chat.id)
                 .filter(
-                    Chat.user_id == user.id,
-                    ChatMessage.created_at >= start_ts,
-                    ChatMessage.created_at <= end_ts,
-                    ChatMessage.model_id.isnot(None),
+                    MetricsDailyRollup.user_id == user.id,
+                    MetricsDailyRollup.date >= start_date_obj,
+                    MetricsDailyRollup.date <= end_date_obj,
+                    MetricsDailyRollup.model_id.isnot(None),
                 )
-                .group_by(ChatMessage.model_id)
+                .group_by(MetricsDailyRollup.model_id)
             )
             
             # Filter by model type BEFORE order_by and limit
-            top_models_query = filter_by_model_type(top_models_query, model_ownership_map, model_type, ChatMessage.model_id)
+            top_models_query = filter_by_model_type(top_models_query, model_ownership_map, model_type, MetricsDailyRollup.model_id)
             
             top_models_query = (
                 top_models_query
-                .order_by(func.sum(ChatMessage.input_tokens + ChatMessage.output_tokens).desc())
+                .order_by(func.sum(MetricsDailyRollup.total_input_tokens + MetricsDailyRollup.total_output_tokens).desc())
                 .limit(limit)
             )
             top_model_ids = [row.model_id for row in top_models_query.all()]
             
             if not top_model_ids:
+                db_query_time = (time.time() - db_query_start) * 1000
+                log.debug(f"[PERF] /tokens/model/daily: database query took {db_query_time:.2f}ms, no models found")
+                total_time = (time.time() - endpoint_start) * 1000
+                log.debug(f"[PERF] /tokens/model/daily: total endpoint time {total_time:.2f}ms")
                 return []
             
-            # Now get daily breakdown for these models
+            # Now get daily breakdown for these models from rollup table
             query = (
                 db.query(
-                    date_expr.label("date"),
-                    ChatMessage.model_id,
-                    func.sum(ChatMessage.input_tokens).label("input_tokens"),
-                    func.sum(ChatMessage.output_tokens).label("output_tokens"),
+                    MetricsDailyRollup.date,
+                    MetricsDailyRollup.model_id,
+                    func.sum(MetricsDailyRollup.total_input_tokens).label("input_tokens"),
+                    func.sum(MetricsDailyRollup.total_output_tokens).label("output_tokens"),
                 )
-                .join(Chat, ChatMessage.chat_id == Chat.id)
                 .filter(
-                    Chat.user_id == user.id,
-                    ChatMessage.created_at >= start_ts,
-                    ChatMessage.created_at <= end_ts,
-                    ChatMessage.model_id.in_(top_model_ids),
+                    MetricsDailyRollup.user_id == user.id,
+                    MetricsDailyRollup.date >= start_date_obj,
+                    MetricsDailyRollup.date <= end_date_obj,
+                    MetricsDailyRollup.model_id.in_(top_model_ids),
                 )
-                .group_by(date_expr, ChatMessage.model_id)
-                .order_by(date_expr, ChatMessage.model_id)
+                .group_by(MetricsDailyRollup.date, MetricsDailyRollup.model_id)
+                .order_by(MetricsDailyRollup.date, MetricsDailyRollup.model_id)
             )
             
             results = query.all()
+        db_query_time = (time.time() - db_query_start) * 1000
+        log.debug(f"[PERF] /tokens/model/daily: database query took {db_query_time:.2f}ms, returned {len(results)} rows")
         
         response = []
         for row in results:
-            if dialect_name in ("sqlite", "postgresql"):
-                date_str = str(row.date)
-            else:
-                date_str = timestamp_to_date_str(int(row.date))
-            
+            date_str = str(row.date)
             input_tokens = int(row.input_tokens or 0)
             output_tokens = int(row.output_tokens or 0)
             
@@ -461,12 +552,15 @@ async def get_model_daily_tokens(
                 ModelDailyTokensResponse(
                     date=date_str,
                     model_id=row.model_id,
-                    model_name=model_id_to_name.get(row.model_id, row.model_id),
+                    model_name=model_id_to_name.get(row.model_id) or row.model_id,
                     input_tokens=input_tokens,
                     output_tokens=output_tokens,
                     total_tokens=input_tokens + output_tokens,
                 )
             )
+        
+        total_time = (time.time() - endpoint_start) * 1000
+        log.debug(f"[PERF] /tokens/model/daily: total endpoint time {total_time:.2f}ms (ownership: {model_ownership_time:.2f}ms, names: {model_names_time:.2f}ms, db: {db_query_time:.2f}ms)")
         
         return response
     except Exception as e:
@@ -483,57 +577,58 @@ async def get_cost_per_message_daily(
     user: UserModel = Depends(get_verified_user),
 ):
     """Get average cost per message over time"""
+    endpoint_start = time.time()
     try:
-        start_ts, end_ts = get_date_range(start_date, end_date)
-        model_ownership_map = await get_model_ownership_map(request, user)
+        start_date_obj, end_date_obj = get_date_range_objects(start_date, end_date)
         
+        model_ownership_start = time.time()
+        model_ownership_map = await get_model_ownership_map(request, user)
+        model_ownership_time = (time.time() - model_ownership_start) * 1000
+        log.debug(f"[PERF] /cost/message/daily: get_model_ownership_map took {model_ownership_time:.2f}ms")
+        
+        db_query_start = time.time()
         with get_db() as db:
-            dialect_name = db.bind.dialect.name
-            
-            if dialect_name == "sqlite":
-                date_expr = func.date(func.datetime(ChatMessage.created_at, 'unixepoch'))
-            elif dialect_name == "postgresql":
-                date_expr = func.date(func.to_timestamp(ChatMessage.created_at))
-            else:
-                date_expr = ChatMessage.created_at
-            
+            # Query rollup table - calculate avg cost from total_cost / message_count
             query = (
                 db.query(
-                    date_expr.label("date"),
-                    func.avg(ChatMessage.cost).label("avg_cost"),
-                    func.count(ChatMessage.id).label("message_count"),
-                    func.sum(ChatMessage.cost).label("total_cost"),
+                    MetricsDailyRollup.date,
+                    func.sum(MetricsDailyRollup.total_cost).label("total_cost"),
+                    func.sum(MetricsDailyRollup.message_count).label("message_count"),
                 )
-                .join(Chat, ChatMessage.chat_id == Chat.id)
                 .filter(
-                    Chat.user_id == user.id,
-                    ChatMessage.created_at >= start_ts,
-                    ChatMessage.created_at <= end_ts,
-                    ChatMessage.cost.isnot(None),
+                    MetricsDailyRollup.user_id == user.id,
+                    MetricsDailyRollup.date >= start_date_obj,
+                    MetricsDailyRollup.date <= end_date_obj,
+                    MetricsDailyRollup.model_id.isnot(None),  # Only include model-specific rows
                 )
-                .group_by(date_expr)
-                .order_by(date_expr)
+                .group_by(MetricsDailyRollup.date)
+                .order_by(MetricsDailyRollup.date)
             )
             
-            query = filter_by_model_type(query, model_ownership_map, model_type, ChatMessage.model_id)
+            query = filter_by_model_type(query, model_ownership_map, model_type, MetricsDailyRollup.model_id)
             
             results = query.all()
+        db_query_time = (time.time() - db_query_start) * 1000
+        log.debug(f"[PERF] /cost/message/daily: database query took {db_query_time:.2f}ms, returned {len(results)} rows")
         
         response = []
         for row in results:
-            if dialect_name in ("sqlite", "postgresql"):
-                date_str = str(row.date)
-            else:
-                date_str = timestamp_to_date_str(int(row.date))
+            date_str = str(row.date)
+            total_cost = float(row.total_cost or 0)
+            message_count = int(row.message_count or 0)
+            avg_cost = (total_cost / message_count) if message_count > 0 else 0.0
             
             response.append(
                 CostPerMessageDailyResponse(
                     date=date_str,
-                    avg_cost=float(row.avg_cost or 0),
-                    message_count=int(row.message_count or 0),
-                    total_cost=float(row.total_cost or 0),
+                    avg_cost=avg_cost,
+                    message_count=message_count,
+                    total_cost=total_cost,
                 )
             )
+        
+        total_time = (time.time() - endpoint_start) * 1000
+        log.debug(f"[PERF] /cost/message/daily: total endpoint time {total_time:.2f}ms (ownership: {model_ownership_time:.2f}ms, db: {db_query_time:.2f}ms)")
         
         return response
     except Exception as e:
@@ -549,41 +644,33 @@ async def get_message_count_daily(
     user: UserModel = Depends(get_verified_user),
 ):
     """Get message count per day"""
+    endpoint_start = time.time()
     try:
-        start_ts, end_ts = get_date_range(start_date, end_date)
+        start_date_obj, end_date_obj = get_date_range_objects(start_date, end_date)
         
+        db_query_start = time.time()
         with get_db() as db:
-            dialect_name = db.bind.dialect.name
-            
-            if dialect_name == "sqlite":
-                date_expr = func.date(func.datetime(ChatMessage.created_at, 'unixepoch'))
-            elif dialect_name == "postgresql":
-                date_expr = func.date(func.to_timestamp(ChatMessage.created_at))
-            else:
-                date_expr = ChatMessage.created_at
-            
+            # Query rollup table directly - sum message_count across all models per day
             results = (
                 db.query(
-                    date_expr.label("date"),
-                    func.count(ChatMessage.id).label("count"),
+                    MetricsDailyRollup.date,
+                    func.sum(MetricsDailyRollup.message_count).label("count"),
                 )
-                .join(Chat, ChatMessage.chat_id == Chat.id)
                 .filter(
-                    Chat.user_id == user.id,
-                    ChatMessage.created_at >= start_ts,
-                    ChatMessage.created_at <= end_ts,
+                    MetricsDailyRollup.user_id == user.id,
+                    MetricsDailyRollup.date >= start_date_obj,
+                    MetricsDailyRollup.date <= end_date_obj,
                 )
-                .group_by(date_expr)
-                .order_by(date_expr)
+                .group_by(MetricsDailyRollup.date)
+                .order_by(MetricsDailyRollup.date)
                 .all()
             )
+        db_query_time = (time.time() - db_query_start) * 1000
+        log.debug(f"[PERF] /messages/daily: database query took {db_query_time:.2f}ms, returned {len(results)} rows")
         
         response = []
         for row in results:
-            if dialect_name in ("sqlite", "postgresql"):
-                date_str = str(row.date)
-            else:
-                date_str = timestamp_to_date_str(int(row.date))
+            date_str = str(row.date)
             
             response.append(
                 MessageCountDailyResponse(
@@ -591,6 +678,9 @@ async def get_message_count_daily(
                     count=int(row.count or 0),
                 )
             )
+        
+        total_time = (time.time() - endpoint_start) * 1000
+        log.debug(f"[PERF] /messages/daily: total endpoint time {total_time:.2f}ms (db: {db_query_time:.2f}ms)")
         
         return response
     except Exception as e:
@@ -608,45 +698,64 @@ async def get_model_popularity(
     user: UserModel = Depends(get_verified_user),
 ):
     """Get model popularity (number of chats using each model)"""
+    endpoint_start = time.time()
     try:
-        start_ts, end_ts = get_date_range(start_date, end_date)
-        model_ownership_map = await get_model_ownership_map(request, user)
-        all_models = await get_all_models(request, user=user)
-        model_id_to_name = {model["id"]: model.get("name", model["id"]) for model in all_models}
+        start_date_obj, end_date_obj = get_date_range_objects(start_date, end_date)
         
+        model_ownership_start = time.time()
+        model_ownership_map = await get_model_ownership_map(request, user)
+        model_ownership_time = (time.time() - model_ownership_start) * 1000
+        log.debug(f"[PERF] /models/popularity: get_model_ownership_map took {model_ownership_time:.2f}ms")
+        
+        # Map model IDs to names (cached)
+        model_names_start = time.time()
+        model_id_to_name = await get_model_names_map(request, user)
+        model_names_time = (time.time() - model_names_start) * 1000
+        log.debug(f"[PERF] /models/popularity: get_model_names_map took {model_names_time:.2f}ms")
+        
+        db_query_start = time.time()
         with get_db() as db:
-            # Count distinct chats per model
+            # Query rollup table - use distinct_chat_count (max per day) and sum message_count
+            # Note: distinct_chat_count is per day, so we need to take max or sum depending on interpretation
+            # For popularity, we want total unique chats, so we'll sum distinct_chat_count (which represents unique chats per day)
+            # Actually, distinct_chat_count is already the count of distinct chats for that day/model combo
+            # We should use MAX to get the maximum distinct chats across days, or sum if we want cumulative
+            # For popularity ranking, let's use MAX to get the peak usage
             query = (
                 db.query(
-                    ChatMessage.model_id,
-                    func.count(func.distinct(ChatMessage.chat_id)).label("chat_count"),
-                    func.count(ChatMessage.id).label("message_count"),
+                    MetricsDailyRollup.model_id,
+                    func.max(MetricsDailyRollup.distinct_chat_count).label("chat_count"),
+                    func.sum(MetricsDailyRollup.message_count).label("message_count"),
                 )
-                .join(Chat, ChatMessage.chat_id == Chat.id)
                 .filter(
-                    Chat.user_id == user.id,
-                    ChatMessage.created_at >= start_ts,
-                    ChatMessage.created_at <= end_ts,
-                    ChatMessage.model_id.isnot(None),
+                    MetricsDailyRollup.user_id == user.id,
+                    MetricsDailyRollup.date >= start_date_obj,
+                    MetricsDailyRollup.date <= end_date_obj,
+                    MetricsDailyRollup.model_id.isnot(None),
                 )
-                .group_by(ChatMessage.model_id)
-                .order_by(func.count(func.distinct(ChatMessage.chat_id)).desc())
+                .group_by(MetricsDailyRollup.model_id)
+                .order_by(func.max(MetricsDailyRollup.distinct_chat_count).desc())
             )
             
-            query = filter_by_model_type(query, model_ownership_map, model_type, ChatMessage.model_id)
+            query = filter_by_model_type(query, model_ownership_map, model_type, MetricsDailyRollup.model_id)
             
             results = query.limit(limit).all()
+        db_query_time = (time.time() - db_query_start) * 1000
+        log.debug(f"[PERF] /models/popularity: database query took {db_query_time:.2f}ms, returned {len(results)} rows")
         
         response = []
         for row in results:
             response.append(
                 ModelPopularityResponse(
                     model_id=row.model_id,
-                    model_name=model_id_to_name.get(row.model_id, row.model_id),
+                    model_name=model_id_to_name.get(row.model_id) or row.model_id,
                     chat_count=int(row.chat_count or 0),
                     message_count=int(row.message_count or 0),
                 )
             )
+        
+        total_time = (time.time() - endpoint_start) * 1000
+        log.debug(f"[PERF] /models/popularity: total endpoint time {total_time:.2f}ms (ownership: {model_ownership_time:.2f}ms, names: {model_names_time:.2f}ms, db: {db_query_time:.2f}ms)")
         
         return response
     except Exception as e:
@@ -663,48 +772,43 @@ async def get_cost_per_token_daily(
     user: UserModel = Depends(get_verified_user),
 ):
     """Get cost per token trend"""
+    endpoint_start = time.time()
     try:
-        start_ts, end_ts = get_date_range(start_date, end_date)
-        model_ownership_map = await get_model_ownership_map(request, user)
+        start_date_obj, end_date_obj = get_date_range_objects(start_date, end_date)
         
+        model_ownership_start = time.time()
+        model_ownership_map = await get_model_ownership_map(request, user)
+        model_ownership_time = (time.time() - model_ownership_start) * 1000
+        log.debug(f"[PERF] /cost/token/daily: get_model_ownership_map took {model_ownership_time:.2f}ms")
+        
+        db_query_start = time.time()
         with get_db() as db:
-            dialect_name = db.bind.dialect.name
-            
-            if dialect_name == "sqlite":
-                date_expr = func.date(func.datetime(ChatMessage.created_at, 'unixepoch'))
-            elif dialect_name == "postgresql":
-                date_expr = func.date(func.to_timestamp(ChatMessage.created_at))
-            else:
-                date_expr = ChatMessage.created_at
-            
+            # Query rollup table directly
             query = (
                 db.query(
-                    date_expr.label("date"),
-                    func.sum(ChatMessage.cost).label("total_cost"),
-                    func.sum(ChatMessage.input_tokens + ChatMessage.output_tokens).label("total_tokens"),
+                    MetricsDailyRollup.date,
+                    func.sum(MetricsDailyRollup.total_cost).label("total_cost"),
+                    func.sum(MetricsDailyRollup.total_input_tokens + MetricsDailyRollup.total_output_tokens).label("total_tokens"),
                 )
-                .join(Chat, ChatMessage.chat_id == Chat.id)
                 .filter(
-                    Chat.user_id == user.id,
-                    ChatMessage.created_at >= start_ts,
-                    ChatMessage.created_at <= end_ts,
-                    ChatMessage.cost.isnot(None),
+                    MetricsDailyRollup.user_id == user.id,
+                    MetricsDailyRollup.date >= start_date_obj,
+                    MetricsDailyRollup.date <= end_date_obj,
+                    MetricsDailyRollup.model_id.isnot(None),  # Only include model-specific rows
                 )
-                .group_by(date_expr)
-                .order_by(date_expr)
+                .group_by(MetricsDailyRollup.date)
+                .order_by(MetricsDailyRollup.date)
             )
             
-            query = filter_by_model_type(query, model_ownership_map, model_type, ChatMessage.model_id)
+            query = filter_by_model_type(query, model_ownership_map, model_type, MetricsDailyRollup.model_id)
             
             results = query.all()
+        db_query_time = (time.time() - db_query_start) * 1000
+        log.debug(f"[PERF] /cost/token/daily: database query took {db_query_time:.2f}ms, returned {len(results)} rows")
         
         response = []
         for row in results:
-            if dialect_name in ("sqlite", "postgresql"):
-                date_str = str(row.date)
-            else:
-                date_str = timestamp_to_date_str(int(row.date))
-            
+            date_str = str(row.date)
             total_cost = float(row.total_cost or 0)
             total_tokens = int(row.total_tokens or 0)
             # Calculate cost per 1M tokens (multiply by 1,000,000)
@@ -718,6 +822,9 @@ async def get_cost_per_token_daily(
                     total_cost=total_cost,
                 )
             )
+        
+        total_time = (time.time() - endpoint_start) * 1000
+        log.debug(f"[PERF] /cost/token/daily: total endpoint time {total_time:.2f}ms (ownership: {model_ownership_time:.2f}ms, db: {db_query_time:.2f}ms)")
         
         return response
     except Exception as e:
