@@ -1039,6 +1039,18 @@ async def generate_moa_response(
                             usage=usage_data,
                             error=error_data,
                         )
+                        # Store merged content in message meta
+                        if response_text:
+                            try:
+                                from open_webui.models.chat_messages import ChatMessages
+                                ChatMessages.set_merged_metadata(
+                                    message_id_str,
+                                    response_text,
+                                    merged_status=True
+                                )
+                                log.debug(f"MOA streaming: Stored merged content in message meta ({len(response_text)} chars)")
+                            except Exception as e:
+                                log.warning(f"MOA streaming: Failed to store merged metadata: {e}")
                 else:
                     log.warning(f"MOA streaming: Cannot record - chat_id={chat_id}, message_id={message_id}, usage_data={usage_data}")
             
@@ -1076,6 +1088,18 @@ async def generate_moa_response(
                         usage=usage,
                         error=error,
                     )
+                    # Store merged content in message meta
+                    if response_text:
+                        try:
+                            from open_webui.models.chat_messages import ChatMessages
+                            ChatMessages.set_merged_metadata(
+                                message_id_str,
+                                response_text,
+                                merged_status=True
+                            )
+                            log.debug(f"MOA non-streaming: Stored merged content in message meta ({len(response_text)} chars)")
+                        except Exception as e:
+                            log.warning(f"MOA non-streaming: Failed to store merged metadata: {e}")
         
         return response
     except Exception as e:

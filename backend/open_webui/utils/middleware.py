@@ -611,8 +611,16 @@ async def chat_completion_files_handler(
     request: Request, body: dict, user: UserModel
 ) -> tuple[dict, dict[str, list]]:
     sources = []
+    
+    log.info(f"RAG DEBUG: chat_completion_files_handler called")
+    log.info(f"RAG DEBUG: body metadata keys: {list(body.get('metadata', {}).keys())}")
+    log.info(f"RAG DEBUG: body metadata files: {body.get('metadata', {}).get('files', None)}")
 
     if files := body.get("metadata", {}).get("files", None):
+        log.info(f"RAG DEBUG: Found {len(files)} files in metadata")
+        for idx, file in enumerate(files):
+            log.info(f"RAG DEBUG: File {idx}: type={file.get('type')}, id={file.get('id')}, "
+                    f"collection_name={file.get('collection_name')}, keys={list(file.keys())}")
         queries = []
         try:
             # Try to get message_id for query generation tracking
@@ -661,6 +669,8 @@ async def chat_completion_files_handler(
             queries = [get_last_user_message(body["messages"])]
 
         try:
+            log.info(f"RAG DEBUG: Calling get_sources_from_files with {len(files)} files, {len(queries)} queries")
+            log.info(f"RAG DEBUG: Files being passed: {[{'type': f.get('type'), 'id': f.get('id'), 'collection_name': (f.get('collection_name') or (f.get('meta') or {}).get('collection_name'))} for f in files]}")
             # Offload get_sources_from_files to a separate thread
             loop = asyncio.get_running_loop()
             with ThreadPoolExecutor() as executor:
@@ -681,9 +691,17 @@ async def chat_completion_files_handler(
                         full_context=request.app.state.config.RAG_FULL_CONTEXT,
                     ),
                 )
+            log.info(f"RAG DEBUG: get_sources_from_files returned {len(sources)} sources")
+            for idx, source in enumerate(sources):
+                log.info(
+                    f"RAG DEBUG: Source {idx}: has_document={bool(source.get('document'))}, "
+                    f"has_metadata={bool(source.get('metadata'))}, "
+                    f"source_keys={list(source.get('source', {}).keys()) if source.get('source') else []}"
+                )
         except Exception as e:
-            log.exception(e)
+            log.exception(f"RAG DEBUG: Exception in get_sources_from_files: {e}")
 
+        log.info(f"RAG DEBUG: Final sources count: {len(sources)}")
         log.debug(f"rag_contexts:sources: {sources}")
 
     return body, {"sources": sources}
@@ -885,11 +903,65 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                                             "url": url,
                                             "mime_type": file_meta.get("content_type") or file_data.get("content_type"),
                                             "size_bytes": file_meta.get("size"),
-                                            "meta": file_meta
+                                            "metadata": file_meta  # Store full file meta
                                         })
                     # If we have a list with no text, store as JSON
                     if not content_text and content:
                         content_json = {"items": content}
+                
+                # Also attach files from metadata.files (RAG/knowledge bases, etc.)
+                # These are chat-level files that should be attached to the user message
+                metadata_files = metadata.get("files", [])
+                if metadata_files:
+                    for file_item in metadata_files:
+                        file_type = file_item.get("type", "file")
+                        file_id = file_item.get("id")
+                        
+                        # Build full attachment metadata preserving all fields
+                        attachment_meta = {}
+                        
+                        # Copy meta if present
+                        if "meta" in file_item and isinstance(file_item["meta"], dict):
+                            attachment_meta.update(file_item["meta"])
+                        
+                        # Copy all top-level fields that should be preserved
+                        for key in ["name", "description", "status", "collection", "collection_name", "collection_names", 
+                                   "data", "files", "user", "created_at", "updated_at", "urls", "docs"]:
+                            if key in file_item and key not in attachment_meta:
+                                attachment_meta[key] = file_item[key]
+                        
+                        # For regular files, get file record to enrich metadata
+                        if file_id and file_type in ["file", "image"]:
+                            try:
+                                file_model = Files.get_file_by_id(file_id)
+                                if file_model:
+                                    # Merge file record meta with attachment meta
+                                    if file_model.meta:
+                                        for key, value in file_model.meta.items():
+                                            if key not in attachment_meta:
+                                                attachment_meta[key] = value
+                                    # Add file record timestamps
+                                    if not attachment_meta.get("created_at"):
+                                        attachment_meta["created_at"] = file_model.created_at
+                                    if not attachment_meta.get("updated_at"):
+                                        attachment_meta["updated_at"] = file_model.updated_at
+                                    # Ensure name is set
+                                    if "name" not in attachment_meta:
+                                        attachment_meta["name"] = file_model.filename
+                            except Exception as e:
+                                log.debug(f"Failed to get file record {file_id} for attachment: {e}")
+                        
+                        # Create attachment dict
+                        att_dict = {
+                            "type": file_type,
+                            "file_id": file_id if file_type not in ["collection", "web_search"] else None,
+                            "url": file_item.get("url") if file_type not in ["collection", "web_search"] else None,
+                            "mime_type": file_item.get("mime_type"),
+                            "size_bytes": file_item.get("size_bytes"),
+                            "metadata": attachment_meta if attachment_meta else {}
+                        }
+                        
+                        attachments.append(att_dict)
                 
                 # Get parent_id from the message structure if available
                 # Convert to string to ensure consistent format
@@ -1235,8 +1307,10 @@ async def process_chat_payload(request, form_data, user, metadata, model):
     except Exception as e:
         log.exception(e)
 
+    log.info(f"RAG DEBUG: process_chat_payload: Total sources collected: {len(sources)}")
     # If context is not empty, insert it into the messages
     if len(sources) > 0:
+        log.info(f"RAG DEBUG: Inserting {len(sources)} sources into messages")
         context_string = ""
         citated_file_idx = {}
         for _, source in enumerate(sources, 1):
@@ -2028,6 +2102,12 @@ async def process_chat_response(
                             ChatMessages.update_message(
                                 metadata["message_id"],
                                 content_text=event["content"]
+                            )
+                        # Persist sources if present in event
+                        if "sources" in event:
+                            ChatMessages.set_sources(
+                                metadata["message_id"],
+                                event["sources"]
                             )
                     except Exception as e:
                         log.debug(f"Failed to update normalized message from event: {e}")

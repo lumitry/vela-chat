@@ -488,6 +488,130 @@ class ChatMessagesTable:
             db.commit()
             return id_mapping
 
+    def append_status_history(self, message_id: str, status_entry: dict) -> Optional[ChatMessageModel]:
+        """
+        Append a status history entry to a message's statusHistory array.
+        Status history is stored in the status JSON field as statusHistory array.
+        """
+        import logging
+        log = logging.getLogger(__name__)
+        
+        with get_db() as db:
+            message = db.get(ChatMessage, message_id)
+            if not message:
+                log.warning(f"ChatMessages.append_status_history: Message {message_id} not found")
+                return None
+            
+            # Get existing status or initialize
+            existing_status = message.status or {}
+            
+            # Get existing statusHistory or initialize
+            status_history = existing_status.get("statusHistory", [])
+            if not isinstance(status_history, list):
+                status_history = []
+            
+            # Append the new status entry
+            status_history = status_history + [status_entry]
+            
+            # Create new status dict with updated statusHistory
+            message.status = {**existing_status, "statusHistory": status_history}
+            
+            message.updated_at = int(time.time())
+            db.commit()
+            db.refresh(message)
+            log.debug(f"ChatMessages.append_status_history: Appended status entry to message {message_id}")
+            return ChatMessageModel.model_validate(message)
+
+    def set_sources(self, message_id: str, sources: List[dict]) -> Optional[ChatMessageModel]:
+        """
+        Set the sources array for a message (web search results, RAG citations, etc.).
+        Sources are stored in the meta field as 'sources' array.
+        """
+        import logging
+        log = logging.getLogger(__name__)
+        
+        with get_db() as db:
+            message = db.get(ChatMessage, message_id)
+            if not message:
+                log.warning(f"ChatMessages.set_sources: Message {message_id} not found")
+                return None
+            
+            # Get existing meta or initialize
+            existing_meta = message.meta or {}
+            
+            # Create new meta dict with sources
+            message.meta = {**existing_meta, "sources": sources}
+            
+            message.updated_at = int(time.time())
+            db.commit()
+            db.refresh(message)
+            log.debug(f"ChatMessages.set_sources: Set sources for message {message_id} ({len(sources)} sources)")
+            return ChatMessageModel.model_validate(message)
+
+    def add_attachment(self, message_id: str, attachment: dict) -> Optional[ChatMessageAttachmentModel]:
+        """
+        Add an attachment to a message (images, files, knowledge bases, etc.).
+        Returns the created attachment model.
+        """
+        import logging
+        log = logging.getLogger(__name__)
+        
+        with get_db() as db:
+            message = db.get(ChatMessage, message_id)
+            if not message:
+                log.warning(f"ChatMessages.add_attachment: Message {message_id} not found")
+                return None
+            
+            ts = int(time.time())
+            att = ChatMessageAttachment(
+                id=str(uuid.uuid4()),
+                message_id=message_id,
+                type=attachment.get("type", "file"),
+                file_id=attachment.get("file_id"),
+                url=attachment.get("url"),
+                mime_type=attachment.get("mime_type"),
+                size_bytes=attachment.get("size_bytes"),
+                meta=attachment.get("metadata") or attachment.get("meta"),
+                created_at=ts,
+            )
+            db.add(att)
+            db.commit()
+            db.refresh(att)
+            log.debug(f"ChatMessages.add_attachment: Added attachment {att.id} to message {message_id} (type: {att.type})")
+            return ChatMessageAttachmentModel.model_validate(att)
+
+    def set_merged_metadata(self, message_id: str, merged_content: str, merged_status: bool = True) -> Optional[ChatMessageModel]:
+        """
+        Set MOA (merged) metadata for a message.
+        Merged metadata is stored in the meta field as 'merged' object.
+        """
+        import logging
+        log = logging.getLogger(__name__)
+        
+        with get_db() as db:
+            message = db.get(ChatMessage, message_id)
+            if not message:
+                log.warning(f"ChatMessages.set_merged_metadata: Message {message_id} not found")
+                return None
+            
+            # Get existing meta or initialize
+            existing_meta = message.meta or {}
+            
+            # Create new meta dict with merged metadata
+            message.meta = {
+                **existing_meta,
+                "merged": {
+                    "status": merged_status,
+                    "content": merged_content
+                }
+            }
+            
+            message.updated_at = int(time.time())
+            db.commit()
+            db.refresh(message)
+            log.debug(f"ChatMessages.set_merged_metadata: Set merged metadata for message {message_id}")
+            return ChatMessageModel.model_validate(message)
+
 
 ChatMessages = ChatMessagesTable()
 
