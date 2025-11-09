@@ -669,8 +669,25 @@ async def chat_completion_files_handler(
             queries = [get_last_user_message(body["messages"])]
 
         try:
-            log.info(f"RAG DEBUG: Calling get_sources_from_files with {len(files)} files, {len(queries)} queries")
-            log.info(f"RAG DEBUG: Files being passed: {[{'type': f.get('type'), 'id': f.get('id'), 'collection_name': (f.get('collection_name') or (f.get('meta') or {}).get('collection_name'))} for f in files]}")
+            # Merge existing chat-level files with incoming files for multi-file correlation
+            merged_files = files
+            try:
+                chat_id = body.get("metadata", {}).get("chat_id")
+                if chat_id:
+                    from open_webui.models.chat_converter import normalized_to_legacy_format as _to_legacy
+                    legacy = _to_legacy(chat_id, embed_files_as_base64=False) or {}
+                    existing = legacy.get("files", []) or []
+                    def _key(f):
+                        return (f.get("type"), f.get("id") or f.get("collection_name") or (f.get("meta") or {}).get("collection_name"))
+                    merged = { _key(f): f for f in existing }
+                    for f in files or []:
+                        merged[_key(f)] = f
+                    merged_files = list(merged.values())
+            except Exception as e:
+                log.debug(f"RAG DEBUG: Failed to merge chat-level files: {e}")
+
+            log.debug(f"RAG DEBUG: Calling get_sources_from_files with {len(merged_files)} files, {len(queries)} queries")
+            log.debug(f"RAG DEBUG: Files being passed: {[{'type': f.get('type'), 'id': f.get('id'), 'collection_name': (f.get('collection_name') or (f.get('meta') or {}).get('collection_name'))} for f in merged_files]}")
             # Offload get_sources_from_files to a separate thread
             loop = asyncio.get_running_loop()
             with ThreadPoolExecutor() as executor:
@@ -678,7 +695,7 @@ async def chat_completion_files_handler(
                     executor,
                     lambda: get_sources_from_files(
                         request=request,
-                        files=files,
+                        files=merged_files,
                         queries=queries,
                         embedding_function=lambda query, prefix: request.app.state.EMBEDDING_FUNCTION(
                             query, prefix=prefix, user=user
@@ -691,9 +708,9 @@ async def chat_completion_files_handler(
                         full_context=request.app.state.config.RAG_FULL_CONTEXT,
                     ),
                 )
-            log.info(f"RAG DEBUG: get_sources_from_files returned {len(sources)} sources")
+            log.debug(f"RAG DEBUG: get_sources_from_files returned {len(sources)} sources")
             for idx, source in enumerate(sources):
-                log.info(
+                log.debug(
                     f"RAG DEBUG: Source {idx}: has_document={bool(source.get('document'))}, "
                     f"has_metadata={bool(source.get('metadata'))}, "
                     f"source_keys={list(source.get('source', {}).keys()) if source.get('source') else []}"
@@ -701,7 +718,7 @@ async def chat_completion_files_handler(
         except Exception as e:
             log.exception(f"RAG DEBUG: Exception in get_sources_from_files: {e}")
 
-        log.info(f"RAG DEBUG: Final sources count: {len(sources)}")
+        log.debug(f"RAG DEBUG: Final sources count: {len(sources)}")
         log.debug(f"rag_contexts:sources: {sources}")
 
     return body, {"sources": sources}
@@ -909,59 +926,8 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                     if not content_text and content:
                         content_json = {"items": content}
                 
-                # Also attach files from metadata.files (RAG/knowledge bases, etc.)
-                # These are chat-level files that should be attached to the user message
-                metadata_files = metadata.get("files", [])
-                if metadata_files:
-                    for file_item in metadata_files:
-                        file_type = file_item.get("type", "file")
-                        file_id = file_item.get("id")
-                        
-                        # Build full attachment metadata preserving all fields
-                        attachment_meta = {}
-                        
-                        # Copy meta if present
-                        if "meta" in file_item and isinstance(file_item["meta"], dict):
-                            attachment_meta.update(file_item["meta"])
-                        
-                        # Copy all top-level fields that should be preserved
-                        for key in ["name", "description", "status", "collection", "collection_name", "collection_names", 
-                                   "data", "files", "user", "created_at", "updated_at", "urls", "docs"]:
-                            if key in file_item and key not in attachment_meta:
-                                attachment_meta[key] = file_item[key]
-                        
-                        # For regular files, get file record to enrich metadata
-                        if file_id and file_type in ["file", "image"]:
-                            try:
-                                file_model = Files.get_file_by_id(file_id)
-                                if file_model:
-                                    # Merge file record meta with attachment meta
-                                    if file_model.meta:
-                                        for key, value in file_model.meta.items():
-                                            if key not in attachment_meta:
-                                                attachment_meta[key] = value
-                                    # Add file record timestamps
-                                    if not attachment_meta.get("created_at"):
-                                        attachment_meta["created_at"] = file_model.created_at
-                                    if not attachment_meta.get("updated_at"):
-                                        attachment_meta["updated_at"] = file_model.updated_at
-                                    # Ensure name is set
-                                    if "name" not in attachment_meta:
-                                        attachment_meta["name"] = file_model.filename
-                            except Exception as e:
-                                log.debug(f"Failed to get file record {file_id} for attachment: {e}")
-                        
-                        # Create attachment dict
-                        att_dict = {
-                            "type": file_type,
-                            "file_id": file_id if file_type not in ["collection", "web_search"] else None,
-                            "url": file_item.get("url") if file_type not in ["collection", "web_search"] else None,
-                            "mime_type": file_item.get("mime_type"),
-                            "size_bytes": file_item.get("size_bytes"),
-                            "metadata": attachment_meta if attachment_meta else {}
-                        }
-                        
-                        attachments.append(att_dict)
+                # IMPORTANT: Do not attach metadata.files to this message.
+                # metadata.files are chat-level context; use them for retrieval only, not as message attachments.
                 
                 # Get parent_id from the message structure if available
                 # Convert to string to ensure consistent format
@@ -1025,26 +991,33 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                 if should_insert_user and parent_id:
                     parent_msg = ChatMessages.get_message_by_id(parent_id)
                     if not parent_msg:
-                        log.warning(f"Parent message {parent_id} not found in database for chat {chat_id}. This may indicate an ID mismatch between frontend and backend.")
-                        # Try to use active_message_id as fallback
-                        chat_model = Chats.get_chat_by_id(chat_id)
-                        if chat_model and chat_model.active_message_id:
-                            active_msg = ChatMessages.get_message_by_id(chat_model.active_message_id)
-                            if active_msg:
-                                parent_id = str(chat_model.active_message_id)
-                                log.warning(f"Using active_message_id {parent_id} as parent instead of missing {parent_id}")
-                            else:
-                                # If active_message_id also doesn't exist, clear parent_id (root message)
-                                parent_id = None
-                                log.warning(f"active_message_id {chat_model.active_message_id} also not found, treating as root message")
-                        else:
-                            # No active_message_id, this is likely a root message
-                            parent_id = None
-                            log.warning(f"No active_message_id found, treating message as root")
+                        log.debug(f"Parent message {parent_id} not found in database for chat {chat_id}. Attempting to fall back to last assistant message.")
+                        # Fallback: use the most recent assistant message in this chat as parent
+                        try:
+                            with get_db() as db:
+                                last_assistant = (
+                                    db.query(ChatMessage)
+                                    .filter_by(chat_id=chat_id, role="assistant")
+                                    .order_by(ChatMessage.created_at.desc())
+                                    .first()
+                                )
+                                if last_assistant:
+                                    parent_id = str(last_assistant.id)
+                                    log.debug(f"Using last assistant message {parent_id} as parent fallback")
+                                else:
+                                    # As a final fallback, use active_message_id if valid
+                                    chat_model = Chats.get_chat_by_id(chat_id)
+                                    if chat_model and chat_model.active_message_id:
+                                        active_msg = ChatMessages.get_message_by_id(chat_model.active_message_id)
+                                        if active_msg:
+                                            parent_id = str(chat_model.active_message_id)
+                                            log.debug(f"Using active_message_id {parent_id} as parent fallback")
+                        except Exception as e:
+                            log.debug(f"Fallback parent resolution failed: {e}")
                     else:
                         # Parent exists - verify the ID matches (should be string)
                         if str(parent_msg.id) != str(parent_id):
-                            log.warning(f"Parent ID mismatch: requested {parent_id}, got {parent_msg.id}")
+                            log.debug(f"Parent ID mismatch: requested {parent_id}, got {parent_msg.id}")
                             parent_id = str(parent_msg.id)
                 
                 # If parent_id is still not set and we're inserting, try to get it from chat's active_message_id
@@ -1108,6 +1081,15 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                         # If this is the first message (no parent), set it as root_message_id
                         if not parent_id:
                             Chats.update_chat_active_and_root_message_ids(chat_id, root_message_id=user_message_id)
+                        # Persist per-message attached files to message meta - only files from this request
+                        try:
+                            request_files = metadata.get("_request_files", []) or []
+                            if request_files:
+                                combined_meta = user_meta.copy() if user_meta else {}
+                                combined_meta["files"] = request_files
+                                ChatMessages.update_message(user_message_id, meta=combined_meta)
+                        except Exception as e:
+                            log.debug(f"Failed to persist per-message files into meta: {e}")
                 
                 # Insert assistant placeholder if we have message_id and it doesn't exist
                 assistant_id = metadata.get("message_id")
@@ -1246,6 +1228,8 @@ async def process_chat_payload(request, form_data, user, metadata, model):
         "tool_ids": tool_ids,
         "files": files,
     }
+    # Mark request-scoped files so we can persist per-message attachments only for this turn
+    metadata["_request_files"] = files
     form_data["metadata"] = metadata
 
     # Server side tools
@@ -1304,6 +1288,31 @@ async def process_chat_payload(request, form_data, user, metadata, model):
     try:
         form_data, flags = await chat_completion_files_handler(request, form_data, user)
         sources.extend(flags.get("sources", []))
+        # Persist chat-level files explicitly to chat.chat.files (KISS)
+        try:
+            chat_id = metadata.get("chat_id")
+            if chat_id:
+                from open_webui.models.chats import Chats as _Chats
+                chat_model = _Chats.get_chat_by_id(chat_id)
+                existing_chat_blob = chat_model.chat or {}
+                existing_files = existing_chat_blob.get("files", []) or []
+                new_files = flags.get("files", []) or []
+                # Prefer metadata.files if present
+                meta_files = metadata.get("files", []) or []
+                candidate_files = meta_files if meta_files else new_files
+                # Dedup by (type, id or collection_name)
+                def _key(f):
+                    return (f.get("type"), f.get("id") or f.get("collection_name") or (f.get("meta") or {}).get("collection_name"))
+                merged_map = { _key(f): f for f in existing_files if isinstance(f, dict) }
+                for f in candidate_files:
+                    if isinstance(f, dict):
+                        merged_map[_key(f)] = f
+                updated_files = list(merged_map.values())
+                new_blob = dict(existing_chat_blob)
+                new_blob["files"] = updated_files
+                _Chats.update_chat_by_id(chat_id, {"chat": new_blob})
+        except Exception as e2:
+            log.debug(f"Failed to persist chat-level files to legacy chat blob: {e2}")
     except Exception as e:
         log.exception(e)
 

@@ -329,6 +329,34 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
                     if isinstance(file_obj, dict):
                         files.append(file_obj)
             
+            # Also include any explicit files stored in message meta (KISS: trust per-message meta)
+            try:
+                meta_files = []
+                if msg.meta and isinstance(msg.meta, dict) and "files" in msg.meta:
+                    if isinstance(msg.meta["files"], list):
+                        meta_files = msg.meta["files"]
+                if meta_files:
+                    # Normalize meta files to legacy shape: ensure id/url/type set where possible
+                    for mf in meta_files:
+                        if not isinstance(mf, dict):
+                            continue
+                        out = dict(mf)
+                        # If URL missing but id present, provide default URL
+                        if out.get("id") and not out.get("url") and out.get("type") in ["file", "image"]:
+                            out["url"] = f"/api/v1/files/{out['id']}/content"
+                        files.append(out)
+                    # Deduplicate by (type, id or collection_name)
+                    seen_keys = set()
+                    dedup = []
+                    for f in files:
+                        key = (f.get("type"), f.get("id") or f.get("collection_name"))
+                        if key not in seen_keys:
+                            seen_keys.add(key)
+                            dedup.append(f)
+                    files = dedup
+            except Exception:
+                pass
+            
             # Build message in old format
             # Access SQLAlchemy model attributes (they're values, not Column objects at runtime)
             msg_id = str(msg.id) if msg.id else None
@@ -450,8 +478,19 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
                 att_type = att.get("type", "file")
                 att_meta = att.get("meta") or att.get("metadata") or {}
                 
-                # Handle regular files with file_id - use same logic as message-level files
+                # Recover file_id from multiple sources (file_id, url, meta.file_id)
                 file_id = att.get("file_id")
+                if not file_id:
+                    url = att.get("url")
+                    if url and "/files/" in url:
+                        try:
+                            file_id = url.split("/files/")[1].split("/")[0]
+                        except Exception:
+                            file_id = None
+                if not file_id and isinstance(att_meta, dict):
+                    file_id = att_meta.get("file_id")
+                
+                # Handle regular files with file_id - use same logic as message-level files
                 if file_id and att_type in ["file", "image"] and file_id not in seen_file_ids:
                     try:
                         from open_webui.models.files import Files
@@ -825,7 +864,7 @@ def legacy_to_normalized_format(chat_id: str, legacy_chat: Dict, regenerate_ids:
             attachment_meta = {}
             
             # Copy all fields that should be in meta
-            if "meta" in file_item:
+            if "meta" in file_item and isinstance(file_item.get("meta"), dict):
                 attachment_meta.update(file_item["meta"])
             if "metadata" in file_item:
                 attachment_meta.update(file_item["metadata"])

@@ -514,12 +514,14 @@ def get_sources_from_files(
             if ftype in ["file", "image"] and file.get("id"):
                 per_file_collection = f"file-{file['id']}"
                 collection_names.append(per_file_collection)
-                log.info(f"RAG DEBUG: File attachment - using per-file collection_name={per_file_collection}")
+                log.debug(f"RAG DEBUG: File attachment - using per-file collection_name={per_file_collection}")
                 # Ensure per-file collection has at least one vector; auto-index if empty
                 try:
+                    # Gate auto-indexing behind env var to avoid heavy-handed mutation
+                    auto_index = (os.getenv("RAG_AUTO_INDEX_MISSING", "false").lower() == "true")
                     get_res = VECTOR_DB_CLIENT.get(collection_name=per_file_collection)
                     has_any = bool(get_res and get_res.ids and len(get_res.ids[0]) > 0)
-                    if not has_any:
+                    if auto_index and not has_any:
                         fobj = Files.get_file_by_id(file["id"])
                         content_text = (fobj.data or {}).get("content") if fobj else None
                         if content_text:
@@ -539,9 +541,9 @@ def get_sources_from_files(
                                     }
                                 ],
                             )
-                            log.info("RAG DEBUG: Auto-indexed per-file collection with raw content")
+                            log.info("RAG: Auto-indexed per-file collection (enabled via RAG_AUTO_INDEX_MISSING)")
                         else:
-                            log.info("RAG DEBUG: Per-file collection empty and file has no stored content; skipping auto-index")
+                            log.debug("RAG DEBUG: Per-file collection empty and file has no stored content; skipping auto-index")
                 except Exception as e:
                     log.debug(f"RAG DEBUG: Unable to auto-index per-file collection: {e}")
             elif ftype == "collection":
