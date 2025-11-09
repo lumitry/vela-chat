@@ -1346,7 +1346,7 @@ IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE = PersistentConfig(
 )
 
 DEFAULT_IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE = """### Task:
-Generate a detailed prompt for am image generation task based on the given language and context. Describe the image as if you were explaining it to someone who cannot see it. Include relevant details, colors, shapes, and any other important elements.
+Generate a detailed prompt for a text-to-image generation task based on the given language and context. Describe the image as if you were explaining it to someone who cannot see it. Include relevant details, colors, shapes, and any other important elements.
 
 ### Guidelines:
 - Be descriptive and detailed, focusing on the most important aspects of the image.

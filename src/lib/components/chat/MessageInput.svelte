@@ -95,6 +95,7 @@
 
 	export let history;
 	export let taskIds = null;
+	export let chatId: string | undefined = undefined;
 
 	export let prompt = '';
 	export let files = [];
@@ -924,13 +925,30 @@
 														toast.error($i18n.t('Please select a model first.'));
 													}
 
+													// Get the last user message ID for tracking
+													let messageId = null;
+													if (history?.currentId && history?.messages) {
+														const currentMessage = history.messages[history.currentId];
+														if (currentMessage && currentMessage.role === 'user') {
+															messageId = currentMessage.id;
+														} else if (currentMessage?.parentId) {
+															const parentMessage = history.messages[currentMessage.parentId];
+															if (parentMessage && parentMessage.role === 'user') {
+																messageId = parentMessage.id;
+															}
+														}
+													}
+
 													const res = await generateAutoCompletion(
 														localStorage.token,
 														selectedModelIds.at(0),
 														text,
 														history?.currentId
 															? createMessagesList(history, history.currentId)
-															: null
+															: null,
+														'search query',
+														chatId,
+														messageId
 													).catch((error) => {
 														console.log(error);
 

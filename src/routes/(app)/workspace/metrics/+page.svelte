@@ -510,9 +510,14 @@
 				copy", cost is <em>not</em> included (the cost column is left null) but token usage
 				<em>is</em> included in the metrics.
 			</p>
+			<br />
 			<p>
-				Additionally, note that arena models are flattened to the actual model used for each
-				generation.
+				Additionally, note that <strong>arena models</strong> are flattened to the actual model used
+				for each generation. However, workspace models are <em>not</em> flattened to their base models.
+			</p>
+			<br />
+			<p>
+				<strong>Task model generations</strong> are included in the metrics.
 			</p>
 		</div>
 	</div>

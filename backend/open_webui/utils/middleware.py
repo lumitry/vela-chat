@@ -312,6 +312,20 @@ async def chat_web_search_handler(
     messages = form_data["messages"]
     user_message = get_last_user_message(messages)
 
+    # Try to get message_id for query generation tracking
+    # For queries, we want the most recent user message ID
+    message_id = None
+    chat_id = form_data.get("chat_id") or extra_params.get("__metadata__", {}).get("chat_id")
+    if chat_id:
+        try:
+            # Get the last user message from the chat
+            all_messages = ChatMessages.get_all_messages_by_chat_id(chat_id)
+            user_messages = [m for m in all_messages if m.role == "user"]
+            if user_messages:
+                message_id = user_messages[-1].id
+        except Exception as e:
+            log.debug(f"Could not get message_id for query generation: {e}")
+
     queries = []
     try:
         res = await generate_queries(
@@ -321,6 +335,8 @@ async def chat_web_search_handler(
                 "messages": messages,
                 "prompt": user_message,
                 "type": "web_search",
+                "chat_id": chat_id,
+                "message_id": message_id,  # May be None, recording will skip if missing
             },
             user,
         )
@@ -494,11 +510,26 @@ async def chat_image_generation_handler(
 
     if request.app.state.config.ENABLE_IMAGE_PROMPT_GENERATION:
         try:
+            # Get chat_id and message_id for tracking
+            chat_id = form_data.get("chat_id") or extra_params.get("__metadata__", {}).get("chat_id")
+            message_id = None
+            if chat_id:
+                try:
+                    # Get the last user message from the chat
+                    all_messages = ChatMessages.get_all_messages_by_chat_id(chat_id)
+                    user_messages = [m for m in all_messages if m.role == "user"]
+                    if user_messages:
+                        message_id = user_messages[-1].id
+                except Exception as e:
+                    log.debug(f"Could not get message_id for image prompt generation: {e}")
+            
             res = await generate_image_prompt(
                 request,
                 {
                     "model": form_data["model"],
                     "messages": messages,
+                    "chat_id": chat_id,
+                    "message_id": message_id,  # May be None, recording will skip if missing
                 },
                 user,
             )
@@ -584,12 +615,27 @@ async def chat_completion_files_handler(
     if files := body.get("metadata", {}).get("files", None):
         queries = []
         try:
+            # Try to get message_id for query generation tracking
+            message_id = None
+            chat_id = body.get("metadata", {}).get("chat_id")
+            if chat_id:
+                try:
+                    # Get the last user message from the chat
+                    all_messages = ChatMessages.get_all_messages_by_chat_id(chat_id)
+                    user_messages = [m for m in all_messages if m.role == "user"]
+                    if user_messages:
+                        message_id = user_messages[-1].id
+                except Exception as e:
+                    log.debug(f"Could not get message_id for retrieval query generation: {e}")
+            
             queries_response = await generate_queries(
                 request,
                 {
                     "model": body["model"],
                     "messages": body["messages"],
                     "type": "retrieval",
+                    "chat_id": chat_id,
+                    "message_id": message_id,  # May be None, recording will skip if missing
                 },
                 user,
             )
@@ -1334,6 +1380,7 @@ async def process_chat_response(
                                 "model": message["model"],
                                 "messages": messages,
                                 "chat_id": metadata["chat_id"],
+                                "message_id": metadata["message_id"],  # Assistant message ID
                             },
                             user,
                         )
@@ -1389,6 +1436,7 @@ async def process_chat_response(
                             "model": message["model"],
                             "messages": messages,
                             "chat_id": metadata["chat_id"],
+                            "message_id": metadata["message_id"],  # Assistant message ID
                         },
                         user,
                     )

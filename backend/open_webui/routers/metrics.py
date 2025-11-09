@@ -11,6 +11,7 @@ from sqlalchemy.orm import aliased
 
 from open_webui.internal.db import get_db
 from open_webui.models.chat_messages import ChatMessage, MetricsDailyRollup
+from open_webui.models.tasks import TaskMetricsDailyRollup
 from open_webui.models.chats import Chat
 from open_webui.utils.auth import get_verified_user
 from open_webui.utils.models import get_all_models
@@ -248,6 +249,7 @@ async def get_model_metrics(
     model_type: str = Query("both", regex="^(local|external|both)$"),
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    include_tasks: bool = Query(True, description="Include task model generations in metrics"),
     user: UserModel = Depends(get_verified_user),
 ):
     """Get top N models with aggregated metrics"""
@@ -262,8 +264,8 @@ async def get_model_metrics(
         
         db_query_start = time.time()
         with get_db() as db:
-            # Query rollup table directly - aggregate across date range
-            query = (
+            # Query message rollup table
+            message_query = (
                 db.query(
                     MetricsDailyRollup.model_id,
                     func.sum(MetricsDailyRollup.total_cost).label("total_cost"),
@@ -281,21 +283,77 @@ async def get_model_metrics(
             )
             
             # Filter by model type
-            query = filter_by_model_type(query, model_ownership_map, model_type, MetricsDailyRollup.model_id)
+            message_query = filter_by_model_type(message_query, model_ownership_map, model_type, MetricsDailyRollup.model_id)
             
-            # Use having clause to filter out zero-token models and order by total tokens
-            results = (
-                query.having(
-                    (func.sum(MetricsDailyRollup.total_input_tokens) + func.sum(MetricsDailyRollup.total_output_tokens)) > 0
+            message_results = message_query.all()
+            
+            # Query task rollup table if include_tasks is True
+            task_results = []
+            if include_tasks:
+                task_query = (
+                    db.query(
+                        TaskMetricsDailyRollup.model_id,
+                        func.sum(TaskMetricsDailyRollup.total_cost).label("total_cost"),
+                        func.sum(TaskMetricsDailyRollup.total_input_tokens).label("total_input_tokens"),
+                        func.sum(TaskMetricsDailyRollup.total_output_tokens).label("total_output_tokens"),
+                        func.sum(TaskMetricsDailyRollup.task_count).label("task_count"),
+                    )
+                    .filter(
+                        TaskMetricsDailyRollup.user_id == user.id,
+                        TaskMetricsDailyRollup.date >= start_date_obj,
+                        TaskMetricsDailyRollup.date <= end_date_obj,
+                    )
+                    .group_by(TaskMetricsDailyRollup.model_id)
                 )
-                .order_by(
-                    (func.sum(MetricsDailyRollup.total_input_tokens) + func.sum(MetricsDailyRollup.total_output_tokens)).desc()
-                )
-                .limit(limit)
-                .all()
+                
+                # Filter by model type based on task_model_type
+                if model_type == "local":
+                    task_query = task_query.filter(TaskMetricsDailyRollup.task_model_type == "internal")
+                elif model_type == "external":
+                    task_query = task_query.filter(TaskMetricsDailyRollup.task_model_type == "external")
+                # else "both" - no filter
+                
+                task_results = task_query.all()
+            
+            # Merge results by model_id
+            model_metrics = {}
+            for row in message_results:
+                model_id = row.model_id
+                model_metrics[model_id] = {
+                    "model_id": model_id,
+                    "total_cost": float(row.total_cost or 0),
+                    "total_input_tokens": int(row.total_input_tokens or 0),
+                    "total_output_tokens": int(row.total_output_tokens or 0),
+                    "message_count": int(row.message_count or 0),
+                }
+            
+            # Add task metrics
+            for row in task_results:
+                model_id = row.model_id
+                if model_id in model_metrics:
+                    model_metrics[model_id]["total_cost"] += float(row.total_cost or 0)
+                    model_metrics[model_id]["total_input_tokens"] += int(row.total_input_tokens or 0)
+                    model_metrics[model_id]["total_output_tokens"] += int(row.total_output_tokens or 0)
+                    model_metrics[model_id]["message_count"] += int(row.task_count or 0)  # Add task_count to message_count
+                else:
+                    model_metrics[model_id] = {
+                        "model_id": model_id,
+                        "total_cost": float(row.total_cost or 0),
+                        "total_input_tokens": int(row.total_input_tokens or 0),
+                        "total_output_tokens": int(row.total_output_tokens or 0),
+                        "message_count": int(row.task_count or 0),
+                    }
+            
+            # Convert to list and sort by total tokens
+            results_list = list(model_metrics.values())
+            results_list.sort(
+                key=lambda x: x["total_input_tokens"] + x["total_output_tokens"],
+                reverse=True
             )
+            results_list = results_list[:limit]
+            
         db_query_time = (time.time() - db_query_start) * 1000
-        log.debug(f"[PERF] /models: database query took {db_query_time:.2f}ms, returned {len(results)} rows")
+        log.debug(f"[PERF] /models: database query took {db_query_time:.2f}ms, returned {len(results_list)} rows")
         
         # Map model IDs to names (cached)
         model_names_start = time.time()
@@ -304,21 +362,25 @@ async def get_model_metrics(
         log.debug(f"[PERF] /models: get_model_names_map took {model_names_time:.2f}ms")
         
         response = []
-        for row in results:
-            model_id = row.model_id
-            total_input = int(row.total_input_tokens or 0)
-            total_output = int(row.total_output_tokens or 0)
+        for row in results_list:
+            model_id = row["model_id"]
+            total_input = row["total_input_tokens"]
+            total_output = row["total_output_tokens"]
             total_tokens = total_input + total_output
+            
+            # Skip models with zero tokens
+            if total_tokens == 0:
+                continue
             
             response.append(
                 ModelMetricsResponse(
                     model_id=model_id,
                     model_name=model_id_to_name.get(model_id) or model_id,
-                    spend=float(row.total_cost or 0),
+                    spend=row["total_cost"],
                     input_tokens=total_input,
                     output_tokens=total_output,
                     total_tokens=total_tokens,
-                    message_count=int(row.message_count or 0),
+                    message_count=row["message_count"],
                 )
             )
         
@@ -337,6 +399,7 @@ async def get_daily_token_usage(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     model_type: str = Query("both", regex="^(local|external|both)$"),
+    include_tasks: bool = Query(True, description="Include task model generations in metrics"),
     user: UserModel = Depends(get_verified_user),
 ):
     """Get daily token usage (input + output) segmented"""
@@ -351,8 +414,8 @@ async def get_daily_token_usage(
         
         db_query_start = time.time()
         with get_db() as db:
-            # Query rollup table directly
-            query = (
+            # Query message rollup table
+            message_query = (
                 db.query(
                     MetricsDailyRollup.date,
                     func.sum(MetricsDailyRollup.total_input_tokens).label("input_tokens"),
@@ -365,25 +428,76 @@ async def get_daily_token_usage(
                     MetricsDailyRollup.model_id.isnot(None),  # Only include model-specific rows
                 )
                 .group_by(MetricsDailyRollup.date)
-                .order_by(MetricsDailyRollup.date)
             )
             
             # Filter by model type
-            query = filter_by_model_type(query, model_ownership_map, model_type, MetricsDailyRollup.model_id)
+            message_query = filter_by_model_type(message_query, model_ownership_map, model_type, MetricsDailyRollup.model_id)
             
-            results = query.all()
+            message_results = message_query.all()
+            
+            # Query task rollup table if include_tasks is True
+            task_results = []
+            if include_tasks:
+                task_query = (
+                    db.query(
+                        TaskMetricsDailyRollup.date,
+                        func.sum(TaskMetricsDailyRollup.total_input_tokens).label("input_tokens"),
+                        func.sum(TaskMetricsDailyRollup.total_output_tokens).label("output_tokens"),
+                    )
+                    .filter(
+                        TaskMetricsDailyRollup.user_id == user.id,
+                        TaskMetricsDailyRollup.date >= start_date_obj,
+                        TaskMetricsDailyRollup.date <= end_date_obj,
+                    )
+                    .group_by(TaskMetricsDailyRollup.date)
+                )
+                
+                # Filter by model type based on task_model_type
+                if model_type == "local":
+                    task_query = task_query.filter(TaskMetricsDailyRollup.task_model_type == "internal")
+                elif model_type == "external":
+                    task_query = task_query.filter(TaskMetricsDailyRollup.task_model_type == "external")
+                # else "both" - no filter
+                
+                task_results = task_query.all()
+            
+            # Merge results by date
+            date_metrics = {}
+            for row in message_results:
+                date_str = str(row.date)
+                date_metrics[date_str] = {
+                    "date": date_str,
+                    "input_tokens": int(row.input_tokens or 0),
+                    "output_tokens": int(row.output_tokens or 0),
+                }
+            
+            # Add task metrics
+            for row in task_results:
+                date_str = str(row.date)
+                if date_str in date_metrics:
+                    date_metrics[date_str]["input_tokens"] += int(row.input_tokens or 0)
+                    date_metrics[date_str]["output_tokens"] += int(row.output_tokens or 0)
+                else:
+                    date_metrics[date_str] = {
+                        "date": date_str,
+                        "input_tokens": int(row.input_tokens or 0),
+                        "output_tokens": int(row.output_tokens or 0),
+                    }
+            
+            # Convert to list and sort by date
+            results_list = sorted(date_metrics.values(), key=lambda x: x["date"])
+            
         db_query_time = (time.time() - db_query_start) * 1000
-        log.debug(f"[PERF] /tokens/daily: database query took {db_query_time:.2f}ms, returned {len(results)} rows")
+        log.debug(f"[PERF] /tokens/daily: database query took {db_query_time:.2f}ms, returned {len(results_list)} rows")
         
         response = []
-        for row in results:
-            date_str = str(row.date)
-            input_tokens = int(row.input_tokens or 0)
-            output_tokens = int(row.output_tokens or 0)
+        for row in results_list:
+            input_tokens = row["input_tokens"]
+            output_tokens = row["output_tokens"]
             
             response.append(
                 DailyTokenUsageResponse(
-                    date=date_str,
+                    date=row["date"],
                     input_tokens=input_tokens,
                     output_tokens=output_tokens,
                     total_tokens=input_tokens + output_tokens,
@@ -405,6 +519,7 @@ async def get_daily_spend(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     model_type: str = Query("both", regex="^(local|external|both)$"),
+    include_tasks: bool = Query(True, description="Include task model generations in metrics"),
     user: UserModel = Depends(get_verified_user),
 ):
     """Get daily spending"""
@@ -419,8 +534,8 @@ async def get_daily_spend(
         
         db_query_start = time.time()
         with get_db() as db:
-            # Query rollup table directly
-            query = (
+            # Query message rollup table
+            message_query = (
                 db.query(
                     MetricsDailyRollup.date,
                     func.sum(MetricsDailyRollup.total_cost).label("total_cost"),
@@ -432,23 +547,69 @@ async def get_daily_spend(
                     MetricsDailyRollup.model_id.isnot(None),  # Only include model-specific rows
                 )
                 .group_by(MetricsDailyRollup.date)
-                .order_by(MetricsDailyRollup.date)
             )
             
-            query = filter_by_model_type(query, model_ownership_map, model_type, MetricsDailyRollup.model_id)
+            message_query = filter_by_model_type(message_query, model_ownership_map, model_type, MetricsDailyRollup.model_id)
             
-            results = query.all()
+            message_results = message_query.all()
+            
+            # Query task rollup table if include_tasks is True
+            task_results = []
+            if include_tasks:
+                task_query = (
+                    db.query(
+                        TaskMetricsDailyRollup.date,
+                        func.sum(TaskMetricsDailyRollup.total_cost).label("total_cost"),
+                    )
+                    .filter(
+                        TaskMetricsDailyRollup.user_id == user.id,
+                        TaskMetricsDailyRollup.date >= start_date_obj,
+                        TaskMetricsDailyRollup.date <= end_date_obj,
+                    )
+                    .group_by(TaskMetricsDailyRollup.date)
+                )
+                
+                # Filter by model type based on task_model_type
+                if model_type == "local":
+                    task_query = task_query.filter(TaskMetricsDailyRollup.task_model_type == "internal")
+                elif model_type == "external":
+                    task_query = task_query.filter(TaskMetricsDailyRollup.task_model_type == "external")
+                # else "both" - no filter
+                
+                task_results = task_query.all()
+            
+            # Merge results by date
+            date_metrics = {}
+            for row in message_results:
+                date_str = str(row.date)
+                date_metrics[date_str] = {
+                    "date": date_str,
+                    "cost": float(row.total_cost or 0),
+                }
+            
+            # Add task metrics
+            for row in task_results:
+                date_str = str(row.date)
+                if date_str in date_metrics:
+                    date_metrics[date_str]["cost"] += float(row.total_cost or 0)
+                else:
+                    date_metrics[date_str] = {
+                        "date": date_str,
+                        "cost": float(row.total_cost or 0),
+                    }
+            
+            # Convert to list and sort by date
+            results_list = sorted(date_metrics.values(), key=lambda x: x["date"])
+            
         db_query_time = (time.time() - db_query_start) * 1000
-        log.debug(f"[PERF] /spend/daily: database query took {db_query_time:.2f}ms, returned {len(results)} rows")
+        log.debug(f"[PERF] /spend/daily: database query took {db_query_time:.2f}ms, returned {len(results_list)} rows")
         
         response = []
-        for row in results:
-            date_str = str(row.date)
-            
+        for row in results_list:
             response.append(
                 DailySpendResponse(
-                    date=date_str,
-                    cost=float(row.total_cost or 0),
+                    date=row["date"],
+                    cost=row["cost"],
                 )
             )
         

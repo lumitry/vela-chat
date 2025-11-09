@@ -2245,7 +2245,9 @@
 				localStorage.token,
 				message.model,
 				history.messages[message.parentId].content,
-				responses
+				responses,
+				_chatId,
+				messageId
 			);
 
 			if (res && res.ok && res.body) {
@@ -2650,6 +2652,7 @@
 							<MessageInput
 								{history}
 								{taskIds}
+								chatId={$chatId}
 								bind:selectedModels
 								bind:files
 								bind:prompt
