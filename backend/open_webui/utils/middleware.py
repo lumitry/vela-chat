@@ -16,6 +16,7 @@ import ast
 
 from uuid import uuid4
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 
 
 from fastapi import Request, HTTPException
@@ -611,16 +612,8 @@ async def chat_completion_files_handler(
     request: Request, body: dict, user: UserModel
 ) -> tuple[dict, dict[str, list]]:
     sources = []
-    
-    log.info(f"RAG DEBUG: chat_completion_files_handler called")
-    log.info(f"RAG DEBUG: body metadata keys: {list(body.get('metadata', {}).keys())}")
-    log.info(f"RAG DEBUG: body metadata files: {body.get('metadata', {}).get('files', None)}")
 
     if files := body.get("metadata", {}).get("files", None):
-        log.info(f"RAG DEBUG: Found {len(files)} files in metadata")
-        for idx, file in enumerate(files):
-            log.info(f"RAG DEBUG: File {idx}: type={file.get('type')}, id={file.get('id')}, "
-                    f"collection_name={file.get('collection_name')}, keys={list(file.keys())}")
         queries = []
         try:
             # Try to get message_id for query generation tracking
@@ -669,33 +662,15 @@ async def chat_completion_files_handler(
             queries = [get_last_user_message(body["messages"])]
 
         try:
-            # Merge existing chat-level files with incoming files for multi-file correlation
-            merged_files = files
-            try:
-                chat_id = body.get("metadata", {}).get("chat_id")
-                if chat_id:
-                    from open_webui.models.chat_converter import normalized_to_legacy_format as _to_legacy
-                    legacy = _to_legacy(chat_id, embed_files_as_base64=False) or {}
-                    existing = legacy.get("files", []) or []
-                    def _key(f):
-                        return (f.get("type"), f.get("id") or f.get("collection_name") or (f.get("meta") or {}).get("collection_name"))
-                    merged = { _key(f): f for f in existing }
-                    for f in files or []:
-                        merged[_key(f)] = f
-                    merged_files = list(merged.values())
-            except Exception as e:
-                log.debug(f"RAG DEBUG: Failed to merge chat-level files: {e}")
-
-            log.debug(f"RAG DEBUG: Calling get_sources_from_files with {len(merged_files)} files, {len(queries)} queries")
-            log.debug(f"RAG DEBUG: Files being passed: {[{'type': f.get('type'), 'id': f.get('id'), 'collection_name': (f.get('collection_name') or (f.get('meta') or {}).get('collection_name'))} for f in merged_files]}")
-            # Offload get_sources_from_files to a separate thread
+            # Trust the frontend's file list - it already includes chat-level files + per-message files
+            # The frontend builds this in sendPromptSocket: chatFiles + userMessage.files + responseMessage.files
             loop = asyncio.get_running_loop()
             with ThreadPoolExecutor() as executor:
                 sources = await loop.run_in_executor(
                     executor,
                     lambda: get_sources_from_files(
                         request=request,
-                        files=merged_files,
+                        files=files,
                         queries=queries,
                         embedding_function=lambda query, prefix: request.app.state.EMBEDDING_FUNCTION(
                             query, prefix=prefix, user=user
@@ -708,17 +683,9 @@ async def chat_completion_files_handler(
                         full_context=request.app.state.config.RAG_FULL_CONTEXT,
                     ),
                 )
-            log.debug(f"RAG DEBUG: get_sources_from_files returned {len(sources)} sources")
-            for idx, source in enumerate(sources):
-                log.debug(
-                    f"RAG DEBUG: Source {idx}: has_document={bool(source.get('document'))}, "
-                    f"has_metadata={bool(source.get('metadata'))}, "
-                    f"source_keys={list(source.get('source', {}).keys()) if source.get('source') else []}"
-                )
         except Exception as e:
-            log.exception(f"RAG DEBUG: Exception in get_sources_from_files: {e}")
+            log.exception(e)
 
-        log.debug(f"RAG DEBUG: Final sources count: {len(sources)}")
         log.debug(f"rag_contexts:sources: {sources}")
 
     return body, {"sources": sources}
@@ -881,8 +848,88 @@ async def process_chat_payload(request, form_data, user, metadata, model):
     if "messages" not in form_data or form_data["messages"] is None:
         form_data["messages"] = []
     
-    # Insert user message into normalized database if we have chat_id and a user message
+    # Compute _request_files BEFORE processing user messages so files are available when we need them
+    # This determines which files should be attached to the user message
+    files = form_data.get("files", [])
     chat_id = metadata.get("chat_id")
+    new_request_files: list[dict] = []
+    if files and chat_id:
+        all_request_files = [f for f in files if isinstance(f, dict)]
+        
+        try:
+            from open_webui.models.chat_messages import ChatMessage, ChatMessageAttachment
+            from open_webui.internal.db import get_db
+            
+            # Get files already in chat.files
+            chat_model = Chats.get_chat_by_id(chat_id)
+            existing_chat_files: list[dict] = []
+            if chat_model and chat_model.chat and isinstance(chat_model.chat, dict):
+                existing_chat_files = chat_model.chat.get("files", []) or []
+            
+            # Get all files already attached to messages in this chat
+            with get_db() as db:
+                # Get all user messages in this chat
+                attached_messages = db.query(ChatMessage).filter_by(
+                    chat_id=chat_id,
+                    role="user"
+                ).all()
+                
+                # Collect all file IDs/keys from message attachments and meta
+                attached_file_keys = set()
+                for msg in attached_messages:
+                    # Check message meta for files
+                    msg_meta = msg.meta if hasattr(msg, 'meta') else None
+                    if msg_meta and isinstance(msg_meta, dict) and "files" in msg_meta:
+                        msg_files = msg_meta.get("files", [])
+                        if isinstance(msg_files, list):
+                            for f in msg_files:
+                                if isinstance(f, dict):
+                                    file_id = f.get("id") or f.get("collection_name") or (f.get("meta") or {}).get("collection_name")
+                                    file_type = f.get("type", "file")
+                                    if file_id:
+                                        attached_file_keys.add((file_type, file_id))
+                
+                # Check message attachments table directly
+                message_ids = [msg.id for msg in attached_messages]
+                if message_ids:
+                    attachments = db.query(ChatMessageAttachment).filter(
+                        ChatMessageAttachment.message_id.in_(message_ids)
+                    ).all()
+                    for att in attachments:
+                        if att.file_id:
+                            attached_file_keys.add((att.type or "file", att.file_id))
+                        elif att.url and isinstance(att.url, str) and "/files/" in att.url:
+                            # Extract file_id from URL
+                            match = re.search(r"/files/([A-Za-z0-9\-]+)", att.url)
+                            if match:
+                                attached_file_keys.add((att.type or "file", match.group(1)))
+            
+            def _file_key(file_item: dict) -> tuple:
+                if not isinstance(file_item, dict):
+                    return (None, None)
+                meta = file_item.get("meta") or {}
+                file_id = file_item.get("id") or file_item.get("collection_name") or meta.get("collection_name")
+                return (file_item.get("type", "file"), file_id)
+            
+            # Files that should be attached: in chat.files but not yet attached to any message
+            existing_chat_keys = {_file_key(f) for f in existing_chat_files if isinstance(f, dict)}
+            for file_item in all_request_files:
+                file_key = _file_key(file_item)
+                # Attach if: file is in chat.files AND not yet attached to any message
+                if file_key in existing_chat_keys and file_key not in attached_file_keys:
+                    new_request_files.append(file_item)
+                elif file_key not in existing_chat_keys:
+                    # File is new to chat entirely - attach it
+                    new_request_files.append(file_item)
+        except Exception as e:
+            log.debug(f"Error checking attached files for chat {chat_id}: {e}", exc_info=True)
+            # Fallback: if we can't check, don't attach any files (safer than duplicating)
+            new_request_files = []
+    
+    # Store _request_files in metadata so it's available when processing user messages
+    metadata["_request_files"] = new_request_files
+    
+    # Insert user message into normalized database if we have chat_id and a user message
     if chat_id and form_data.get("messages"):
         try:
             # Find the last user message to insert
@@ -926,8 +973,66 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                     if not content_text and content:
                         content_json = {"items": content}
                 
-                # IMPORTANT: Do not attach metadata.files to this message.
-                # metadata.files are chat-level context; use them for retrieval only, not as message attachments.
+                # Attach files explicitly provided on this user message.
+                # We only attach files that the frontend marked on this specific user message.
+                request_files = metadata.get("_request_files", [])
+                user_msg_files = user_msg.get("files", [])  # Files from message object (may be empty)
+                user_meta = None
+                
+                files_to_attach: list[dict] = []
+                # Priority 1: Files explicitly in user_msg.files (explicitly attached to this message)
+                if isinstance(user_msg_files, list) and user_msg_files:
+                    files_to_attach = [f for f in user_msg_files if isinstance(f, dict)]
+                # Priority 2: Files that are new to the chat (not already in chat.files)
+                elif isinstance(request_files, list) and request_files:
+                    files_to_attach = [f for f in request_files if isinstance(f, dict)]
+                
+                meta_files = []
+                if files_to_attach:
+                    for file_item in files_to_attach:
+                        file_type = file_item.get("type", "file")
+                        file_id = file_item.get("id")
+                        
+                        # Build attachment metadata preserving all fields
+                        attachment_meta = {}
+                        if "meta" in file_item and isinstance(file_item["meta"], dict):
+                            attachment_meta.update(file_item["meta"])
+                        # Copy top-level fields that should be preserved
+                        # For collections, include id and other important fields
+                        fields_to_copy = ["name", "description", "status", "collection", "collection_name", "collection_names"]
+                        if file_type == "collection":
+                            # For collections, also copy id and other collection-specific fields
+                            fields_to_copy.extend(["id", "user_id", "data", "files", "user", "access_control", "created_at", "updated_at"])
+                        for key in fields_to_copy:
+                            if key in file_item:
+                                attachment_meta[key] = file_item[key]
+                        
+                        # Create attachment dict
+                        att_dict = {
+                            "type": file_type,
+                            "file_id": file_id if file_type not in ["collection", "web_search"] else None,
+                            "url": file_item.get("url") if file_type not in ["collection", "web_search"] else None,
+                            "mime_type": file_item.get("mime_type"),
+                            "size_bytes": file_item.get("size_bytes"),
+                            "metadata": attachment_meta if attachment_meta else {}
+                        }
+                        attachments.append(att_dict)
+                        
+                        # Preserve full file metadata for the message meta (deep copy to avoid mutation)
+                        sanitized = deepcopy(file_item)
+                        # Avoid storing large in-memory data blobs on the message meta
+                        if isinstance(sanitized.get("data"), (bytes, bytearray)):
+                            sanitized.pop("data", None)
+                        if isinstance(sanitized.get("file"), dict):
+                            sanitized["file"] = {
+                                k: v for k, v in sanitized["file"].items() if k != "data"
+                            }
+                        meta_files.append(sanitized)
+
+                if meta_files:
+                    user_meta = user_meta.copy() if user_meta else {}
+                    user_meta["files"] = meta_files
+                metadata.pop("_request_files", None)
                 
                 # Get parent_id from the message structure if available
                 # Convert to string to ensure consistent format
@@ -951,6 +1056,38 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                         user_message_id = existing.id
                         # Use the existing message's parent_id to maintain sibling relationships
                         parent_id = existing.parent_id
+                        # Update existing message with files and attachments if we have them
+                        if (meta_files and len(meta_files) > 0) or (attachments and len(attachments) > 0):
+                            # Update meta with files
+                            if meta_files and len(meta_files) > 0:
+                                update_meta = user_meta.copy() if user_meta else {}
+                                if "files" not in update_meta:
+                                    update_meta["files"] = meta_files
+                                ChatMessages.update_message(user_message_id, meta=update_meta)
+                            # Add attachments if they don't already exist
+                            if attachments and len(attachments) > 0:
+                                from open_webui.models.chat_messages import ChatMessageAttachment
+                                from open_webui.internal.db import get_db
+                                with get_db() as db:
+                                    # Check which attachments already exist
+                                    existing_attachments = db.query(ChatMessageAttachment).filter_by(
+                                        message_id=user_message_id
+                                    ).all()
+                                    existing_att_keys = set()
+                                    for att in existing_attachments:
+                                        if att.file_id:
+                                            existing_att_keys.add((att.type or "file", att.file_id))
+                                        elif att.url and isinstance(att.url, str) and "/files/" in att.url:
+                                            match = re.search(r"/files/([A-Za-z0-9\-]+)", att.url)
+                                            if match:
+                                                existing_att_keys.add((att.type or "file", match.group(1)))
+                                    # Add new attachments
+                                    for att_dict in attachments:
+                                        att_type = att_dict.get("type", "file")
+                                        att_file_id = att_dict.get("file_id")
+                                        att_key = (att_type, att_file_id) if att_file_id else None
+                                        if att_key and att_key not in existing_att_keys:
+                                            ChatMessages.add_attachment(user_message_id, att_dict)
                     else:
                         user_message_id = None
                 else:
@@ -984,6 +1121,38 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                             # Use the duplicate's parent_id to maintain correct hierarchy
                             # Access the SQLAlchemy model attribute directly
                             parent_id = duplicate.parent_id if duplicate.parent_id else None
+                            # Update existing message with files and attachments if we have them
+                            if (meta_files and len(meta_files) > 0) or (attachments and len(attachments) > 0):
+                                # Update meta with files
+                                if meta_files and len(meta_files) > 0:
+                                    update_meta = user_meta.copy() if user_meta else {}
+                                    if "files" not in update_meta:
+                                        update_meta["files"] = meta_files
+                                    ChatMessages.update_message(user_message_id, meta=update_meta)
+                                # Add attachments if they don't already exist
+                                if attachments and len(attachments) > 0:
+                                    from open_webui.models.chat_messages import ChatMessageAttachment
+                                    from open_webui.internal.db import get_db
+                                    with get_db() as db_att:
+                                        # Check which attachments already exist
+                                        existing_attachments = db_att.query(ChatMessageAttachment).filter_by(
+                                            message_id=user_message_id
+                                        ).all()
+                                        existing_att_keys = set()
+                                        for att in existing_attachments:
+                                            if att.file_id:
+                                                existing_att_keys.add((att.type or "file", att.file_id))
+                                            elif att.url and isinstance(att.url, str) and "/files/" in att.url:
+                                                match = re.search(r"/files/([A-Za-z0-9\-]+)", att.url)
+                                                if match:
+                                                    existing_att_keys.add((att.type or "file", match.group(1)))
+                                        # Add new attachments
+                                        for att_dict in attachments:
+                                            att_type = att_dict.get("type", "file")
+                                            att_file_id = att_dict.get("file_id")
+                                            att_key = (att_type, att_file_id) if att_file_id else None
+                                            if att_key and att_key not in existing_att_keys:
+                                                ChatMessages.add_attachment(user_message_id, att_dict)
                 
                 # Validate parent_id exists in database if provided
                 # If parent_id is provided but doesn't exist, it might be a frontend ID that wasn't saved correctly
@@ -1057,9 +1226,9 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                     if not user_models and chat_model and chat_model.params:
                         user_models = chat_model.params.get("models")
                 
-                user_meta = None
                 if user_models:
-                    user_meta = {"models": user_models}
+                    user_meta = user_meta.copy() if user_meta else {}
+                    user_meta["models"] = user_models
                 
                 # Insert user message if needed
                 if should_insert_user:
@@ -1081,15 +1250,6 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                         # If this is the first message (no parent), set it as root_message_id
                         if not parent_id:
                             Chats.update_chat_active_and_root_message_ids(chat_id, root_message_id=user_message_id)
-                        # Persist per-message attached files to message meta - only files from this request
-                        try:
-                            request_files = metadata.get("_request_files", []) or []
-                            if request_files:
-                                combined_meta = user_meta.copy() if user_meta else {}
-                                combined_meta["files"] = request_files
-                                ChatMessages.update_message(user_message_id, meta=combined_meta)
-                        except Exception as e:
-                            log.debug(f"Failed to persist per-message files into meta: {e}")
                 
                 # Insert assistant placeholder if we have message_id and it doesn't exist
                 assistant_id = metadata.get("message_id")
@@ -1228,8 +1388,10 @@ async def process_chat_payload(request, form_data, user, metadata, model):
         "tool_ids": tool_ids,
         "files": files,
     }
-    # Mark request-scoped files so we can persist per-message attachments only for this turn
-    metadata["_request_files"] = files
+    # _request_files was already computed earlier, before user message processing
+    # Just ensure it's in metadata
+    if "_request_files" not in metadata:
+        metadata["_request_files"] = []
     form_data["metadata"] = metadata
 
     # Server side tools
@@ -1288,38 +1450,10 @@ async def process_chat_payload(request, form_data, user, metadata, model):
     try:
         form_data, flags = await chat_completion_files_handler(request, form_data, user)
         sources.extend(flags.get("sources", []))
-        # Persist chat-level files explicitly to chat.chat.files (KISS)
-        try:
-            chat_id = metadata.get("chat_id")
-            if chat_id:
-                from open_webui.models.chats import Chats as _Chats
-                chat_model = _Chats.get_chat_by_id(chat_id)
-                existing_chat_blob = chat_model.chat or {}
-                existing_files = existing_chat_blob.get("files", []) or []
-                new_files = flags.get("files", []) or []
-                # Prefer metadata.files if present
-                meta_files = metadata.get("files", []) or []
-                candidate_files = meta_files if meta_files else new_files
-                # Dedup by (type, id or collection_name)
-                def _key(f):
-                    return (f.get("type"), f.get("id") or f.get("collection_name") or (f.get("meta") or {}).get("collection_name"))
-                merged_map = { _key(f): f for f in existing_files if isinstance(f, dict) }
-                for f in candidate_files:
-                    if isinstance(f, dict):
-                        merged_map[_key(f)] = f
-                updated_files = list(merged_map.values())
-                new_blob = dict(existing_chat_blob)
-                new_blob["files"] = updated_files
-                _Chats.update_chat_by_id(chat_id, {"chat": new_blob})
-        except Exception as e2:
-            log.debug(f"Failed to persist chat-level files to legacy chat blob: {e2}")
     except Exception as e:
         log.exception(e)
-
-    log.info(f"RAG DEBUG: process_chat_payload: Total sources collected: {len(sources)}")
     # If context is not empty, insert it into the messages
     if len(sources) > 0:
-        log.info(f"RAG DEBUG: Inserting {len(sources)} sources into messages")
         context_string = ""
         citated_file_idx = {}
         for _, source in enumerate(sources, 1):

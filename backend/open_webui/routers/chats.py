@@ -665,11 +665,37 @@ async def update_chat_by_id(
             if history_current_id:
                 Chats.update_chat_active_and_root_message_ids(id, active_message_id=history_current_id)
         
-        # Reload chat and convert back to legacy format for response
+        # Generate legacy response for the API response (includes full message history)
+        legacy_chat_response = normalized_to_legacy_format(id)
+        
+        # Persist only minimal chat metadata (no message history) to the database
+        # Read current chat blob and merge only metadata fields
+        with get_db() as db:
+            from open_webui.models.chats import Chat
+            chat_item = db.query(Chat).filter_by(id=id).first()
+            if chat_item:
+                existing_chat = chat_item.chat if chat_item.chat else {}
+                # Update only metadata fields, preserve anything else that might be there
+                minimal_chat = dict(existing_chat)
+                minimal_chat["files"] = legacy_chat_response.get("files", [])
+                minimal_chat["params"] = legacy_chat_response.get("params", {})
+                minimal_chat["models"] = legacy_chat_response.get("models", [])
+                if "title" in legacy_chat_response:
+                    minimal_chat["title"] = legacy_chat_response["title"]
+                # Explicitly remove history and messages if present
+                if "history" in minimal_chat:
+                    del minimal_chat["history"]
+                if "messages" in minimal_chat:
+                    del minimal_chat["messages"]
+                chat_item.chat = minimal_chat
+                db.commit()
+
+        # Reload chat model for response with full legacy payload
         chat = Chats.get_chat_by_id_and_user_id(id, user.id)
         if chat:
-            legacy_chat = normalized_to_legacy_format(id)
-            chat.chat = legacy_chat
+            chat_data = chat.model_dump()
+            chat_data["chat"] = legacy_chat_response
+            return ChatResponse(**chat_data)
     else:
         # Legacy chat, update the JSON blob
         updated_chat = {**chat.chat, **form_data.chat}

@@ -342,28 +342,60 @@ async def chat_completed(request: Request, form_data: dict, user: Any):
         )
         
         # Update normalized message table with usage data if present
+        # Also enrich messages with files from normalized storage
         if result and isinstance(result, dict) and "messages" in result:
-            from open_webui.models.chat_messages import ChatMessages
+            from open_webui.models.chat_messages import ChatMessages, ChatMessage
             from open_webui.models.chats import Chats
+            from open_webui.internal.db import get_db
             
             messages = result.get("messages", [])
-            for msg in messages:
-                if msg.get("id") and msg.get("usage"):
-                    try:
-                        ChatMessages.update_message(
-                            msg["id"],
-                            usage=msg["usage"]
-                        )
-                        # Update active_message_id if this is the response message
-                        if msg.get("id") == metadata["message_id"]:
-                            Chats.update_chat_active_and_root_message_ids(
-                                metadata["chat_id"],
-                                active_message_id=metadata["message_id"]
-                            )
-                    except Exception as e:
-                        import logging
-                        log = logging.getLogger(__name__)
-                        log.debug(f"Failed to update normalized message usage in chat_completed: {e}")
+            chat_id = metadata.get("chat_id")
+            
+            # Get all message files from normalized storage
+            if chat_id:
+                with get_db() as db:
+                    for msg in messages:
+                        msg_id = msg.get("id")
+                        if not msg_id:
+                            continue
+                        
+                        # Update usage if present
+                        if msg.get("usage"):
+                            try:
+                                ChatMessages.update_message(
+                                    msg_id,
+                                    usage=msg["usage"]
+                                )
+                                # Update active_message_id if this is the response message
+                                if msg_id == metadata["message_id"]:
+                                    Chats.update_chat_active_and_root_message_ids(
+                                        metadata["chat_id"],
+                                        active_message_id=metadata["message_id"]
+                                    )
+                            except Exception as e:
+                                import logging
+                                log = logging.getLogger(__name__)
+                                log.debug(f"Failed to update normalized message usage in chat_completed: {e}")
+                        
+                        # Enrich message with files from normalized storage
+                        # This ensures files attached to messages are preserved in the response
+                        try:
+                            db_msg = db.query(ChatMessage).filter_by(id=msg_id).first()
+                            if db_msg:
+                                db_msg_meta = db_msg.meta if hasattr(db_msg, 'meta') else None
+                                if db_msg_meta and isinstance(db_msg_meta, dict) and "files" in db_msg_meta:
+                                    msg_files = db_msg_meta.get("files", [])
+                                    if isinstance(msg_files, list) and len(msg_files) > 0:
+                                        # Only set files if they're not already present (preserve frontend's version if it exists)
+                                        if "files" not in msg or not msg.get("files"):
+                                            msg["files"] = msg_files
+                                            import logging
+                                            log = logging.getLogger(__name__)
+                                            log.debug(f"chat_completed: Enriched message {msg_id} with {len(msg_files)} files from normalized storage")
+                        except Exception as e:
+                            import logging
+                            log = logging.getLogger(__name__)
+                            log.debug(f"chat_completed: Failed to enrich message {msg_id} with files: {e}")
         
         return result
     except Exception as e:

@@ -29,7 +29,7 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
     Returns a dict in the old `chat.chat` format.
     
     This function works entirely from normalized tables - it does not depend on
-    the legacy chat.chat blob. All data should have been migrated during the
+    the legacy chat.chat blob for message content. All messages should have been migrated during the
     backfill migration, including fields like modelIdx, userContext, lastSentence
     stored in the meta column.
     """
@@ -64,7 +64,6 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
                         "size_bytes": int(att.size_bytes) if att.size_bytes else None,
                         "metadata": att.meta if att.meta else {}
                     })
-                    log.debug(f"normalized_to_legacy_format: Loaded attachment from DB: message_id={msg_id_str}, file_id={att.file_id}, url={att.url}, mime_type={att.mime_type}, type={att.type}")
         
         # Build message map (old format) - use OrderedDict to preserve creation order
         messages_dict: OrderedDict[str, Dict] = OrderedDict()
@@ -304,7 +303,6 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
                                                "application/octet-stream")
                                     file_obj["url"] = f"data:{mime_type};base64,{base64_data}"
                                     
-                                    log.debug(f"normalized_to_legacy_format: Embedded file {file_id} as data URL ({len(file_content)} bytes, {mime_type})")
                                 else:
                                     # File doesn't exist on disk, use file URL as fallback
                                     file_obj["url"] = f"/api/v1/files/{file_id}/content"
@@ -320,7 +318,6 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
                     elif file_id and not embed_files_as_base64 and isinstance(file_obj, dict) and "url" not in file_obj:
                         # For API responses, use file URL (don't embed base64)
                         file_obj["url"] = f"/api/v1/files/{file_id}/content"
-                        log.debug(f"normalized_to_legacy_format: Using file URL for file_id {file_id}")
                     elif not file_id and att.get("url") and isinstance(file_obj, dict):
                         # No file_id, keep URL if present
                         file_obj["url"] = att.get("url")
@@ -329,7 +326,7 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
                     if isinstance(file_obj, dict):
                         files.append(file_obj)
             
-            # Also include any explicit files stored in message meta (KISS: trust per-message meta)
+            # Also include any explicit files stored in message meta
             try:
                 meta_files = []
                 if msg.meta and isinstance(msg.meta, dict) and "files" in msg.meta:
@@ -346,13 +343,36 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
                             out["url"] = f"/api/v1/files/{out['id']}/content"
                         files.append(out)
                     # Deduplicate by (type, id or collection_name)
+                    # Prefer files from meta (more complete) over those reconstructed from attachments
                     seen_keys = set()
                     dedup = []
                     for f in files:
-                        key = (f.get("type"), f.get("id") or f.get("collection_name"))
+                        file_type = f.get("type")
+                        file_id = f.get("id")
+                        collection_name = f.get("collection_name")
+                        
+                        # Build deduplication key
+                        key = (file_type, file_id or collection_name)
+                        
                         if key not in seen_keys:
                             seen_keys.add(key)
                             dedup.append(f)
+                        else:
+                            # Key already exists - check if we should replace with a more complete version
+                            existing_idx = next((i for i, existing in enumerate(dedup) if (existing.get("type"), existing.get("id") or existing.get("collection_name")) == key), None)
+                            if existing_idx is not None:
+                                existing = dedup[existing_idx]
+                                # Prefer the one with an id field (more complete)
+                                if not existing.get("id") and f.get("id"):
+                                    dedup[existing_idx] = f
+                                # If both have id, prefer the one with more fields (likely from meta, more complete)
+                                elif existing.get("id") and f.get("id") and existing.get("id") == f.get("id"):
+                                    if len(f) > len(existing):
+                                        dedup[existing_idx] = f
+                                # If neither has id but both have collection_name, prefer the one with more fields
+                                elif not existing.get("id") and not f.get("id") and collection_name:
+                                    if len(f) > len(existing):
+                                        dedup[existing_idx] = f
                     files = dedup
             except Exception:
                 pass
@@ -468,142 +488,14 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
             chat_content["params"] = {}
         
         # Get files (stored at chat level in old format)
-        # In normalized, files are per-message attachments, but old format has them at chat level
-        # We'll reconstruct from attachments, including collections and web_search files
+        # Trust the frontend's canonical copy stored in chat.chat["files"]
+        # If the frontend sends an empty array, respect that - don't reconstruct from attachments
         all_files = []
-        seen_file_ids = set()
-        seen_collection_ids = set()
-        for msg_attachments in attachments_map.values():
-            for att in msg_attachments:
-                att_type = att.get("type", "file")
-                att_meta = att.get("meta") or att.get("metadata") or {}
-                
-                # Recover file_id from multiple sources (file_id, url, meta.file_id)
-                file_id = att.get("file_id")
-                if not file_id:
-                    url = att.get("url")
-                    if url and "/files/" in url:
-                        try:
-                            file_id = url.split("/files/")[1].split("/")[0]
-                        except Exception:
-                            file_id = None
-                if not file_id and isinstance(att_meta, dict):
-                    file_id = att_meta.get("file_id")
-                
-                # Handle regular files with file_id - use same logic as message-level files
-                if file_id and att_type in ["file", "image"] and file_id not in seen_file_ids:
-                    try:
-                        from open_webui.models.files import Files
-                        file_record = Files.get_file_by_id(file_id)
-                        if file_record:
-                            # Reconstruct full file structure matching legacy format
-                            file_meta = dict(file_record.meta) if file_record.meta else {}
-                            
-                            # Merge attachment metadata
-                            if att_meta:
-                                for key, value in att_meta.items():
-                                    if key not in file_meta or value is not None:
-                                        file_meta[key] = value
-                            
-                            file_obj = {
-                                "id": file_record.id,
-                                "type": att_type,
-                                "meta": file_meta,
-                                "created_at": file_record.created_at,
-                                "updated_at": file_record.updated_at,
-                            }
-                            
-                            # Add name
-                            if "name" in att_meta:
-                                file_obj["name"] = att_meta["name"]
-                            elif file_meta.get("name"):
-                                file_obj["name"] = file_meta["name"]
-                            else:
-                                file_obj["name"] = file_record.filename
-                            
-                            # Add description if present
-                            if "description" in att_meta:
-                                file_obj["description"] = att_meta["description"]
-                            elif file_meta.get("description"):
-                                file_obj["description"] = file_meta["description"]
-                            
-                            # Add status
-                            if "status" in att_meta:
-                                file_obj["status"] = att_meta["status"]
-                            elif file_meta.get("status"):
-                                file_obj["status"] = file_meta["status"]
-                            else:
-                                file_obj["status"] = "processed"
-                            
-                            # Add collection info if present
-                            collection_name = att_meta.get("collection_name") or file_meta.get("collection_name")
-                            if collection_name:
-                                if "collection_name" not in file_obj["meta"]:
-                                    file_obj["meta"]["collection_name"] = collection_name
-                                if "collection" in att_meta:
-                                    file_obj["collection"] = att_meta["collection"]
-                                else:
-                                    try:
-                                        from open_webui.models.knowledge import Knowledge
-                                        with get_db() as db:
-                                            knowledge = db.query(Knowledge).filter_by(id=collection_name).first()
-                                            if knowledge:
-                                                file_obj["collection"] = {
-                                                    "name": knowledge.name or "",
-                                                    "description": knowledge.description or ""
-                                                }
-                                    except Exception:
-                                        pass
-                            
-                            # Add URL
-                            file_obj["url"] = att.get("url") or f"/api/v1/files/{file_id}/content"
-                            
-                            all_files.append(file_obj)
-                            seen_file_ids.add(file_id)
-                        else:
-                            # File record not found, use minimal structure
-                            all_files.append({
-                                "id": file_id,
-                                "type": att_type,
-                                "url": att.get("url") or f"/api/v1/files/{file_id}/content"
-                            })
-                            seen_file_ids.add(file_id)
-                    except Exception as e:
-                        log.warning(f"normalized_to_legacy_format: Failed to get file record {file_id} for chat-level file: {e}")
-                        all_files.append({
-                            "id": file_id,
-                            "type": att_type,
-                            "url": att.get("url") or f"/api/v1/files/{file_id}/content"
-                        })
-                        seen_file_ids.add(file_id)
-                # Handle collections (knowledge bases) - they don't have file_ids
-                elif att_type == "collection" and att_meta:
-                    collection_id = att_meta.get("id") or att_meta.get("collection_name")
-                    if collection_id and collection_id not in seen_collection_ids:
-                        # Reconstruct full collection structure from meta
-                        collection_file = {
-                            "type": "collection",
-                        }
-                        # Copy all collection fields from meta
-                        for key in ["id", "name", "description", "data", "files", "status", "user", "collection_name", "collection_names"]:
-                            if key in att_meta:
-                                collection_file[key] = att_meta[key]
-                        all_files.append(collection_file)
-                        seen_collection_ids.add(collection_id)
-                # Handle web_search files
-                elif att_type == "web_search" and att_meta:
-                    # Web search files are identified by collection_name
-                    collection_name = att_meta.get("collection_name")
-                    if collection_name and collection_name not in seen_collection_ids:
-                        web_search_file = {
-                            "type": "web_search",
-                        }
-                        # Copy all web_search fields from meta
-                        for key in ["collection_name", "name", "urls", "docs"]:
-                            if key in att_meta:
-                                web_search_file[key] = att_meta[key]
-                        all_files.append(web_search_file)
-                        seen_collection_ids.add(collection_name)
+        if chat.chat and isinstance(chat.chat, dict) and "files" in chat.chat:
+            stored_files = chat.chat.get("files", [])
+            if isinstance(stored_files, list):
+                all_files = stored_files
+        
         if all_files:
             chat_content["files"] = all_files
         
@@ -679,14 +571,9 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
                 if "files" in msg_dict:
                     msg_entry["files"] = msg_dict["files"]
                 
-                # Usage goes into both "usage" and "info" fields (legacy format)
+                # Usage goes into "usage" field
                 if msg_dict.get("usage"):
                     msg_entry["usage"] = msg_dict["usage"]
-                    msg_entry["info"] = msg_dict["usage"]
-                elif msg_dict.get("info"):
-                    msg_entry["info"] = msg_dict["info"]
-                else:
-                    msg_entry["info"] = None
                 
                 if msg_dict.get("sources"):
                     msg_entry["sources"] = msg_dict["sources"]
@@ -1194,9 +1081,12 @@ def legacy_to_normalized_format(chat_id: str, legacy_chat: Dict, regenerate_ids:
     
     log.info(f"legacy_to_normalized_format: Completed import for chat {chat_id}. Processed: {processed_count}, Errors: {error_count}, Total messages: {len(messages)}")
     
-    # Note: Chat-level files are handled separately - they're for reference/display only.
-    # Files are attached to specific messages via message.files, which is processed above.
-    # Chat-level files don't need to be attached to messages - they're just metadata for the chat.
+    # Preserve chat-level files in the chat blob (frontend's canonical source)
+    # This is critical for RAG to work correctly - the frontend sends chat.files and expects it to be preserved
+    chat_blob_update = {}
+    if "files" in legacy_chat:
+        chat_blob_update["files"] = legacy_chat["files"]
+        log.debug(f"legacy_to_normalized_format: Preserving {len(legacy_chat['files']) if isinstance(legacy_chat['files'], list) else 0} chat-level files in chat blob")
     
     # Update params (but NOT models - models should be in user message meta, not params)
     # NOTE: We use update_chat_by_id which now preserves the title if not in the dict
@@ -1205,7 +1095,20 @@ def legacy_to_normalized_format(chat_id: str, legacy_chat: Dict, regenerate_ids:
         params_clean = legacy_chat["params"].copy() if isinstance(legacy_chat["params"], dict) else {}
         if "models" in params_clean:
             del params_clean["models"]
-        Chats.update_chat_by_id(chat_id, {"params": params_clean})
+        chat_blob_update["params"] = params_clean
+    
+    # Update chat blob with files and/or params if we have updates
+    if chat_blob_update:
+        # Get existing chat blob and merge updates
+        from open_webui.models.chats import Chat
+        with get_db() as db:
+            chat_item = db.query(Chat).filter_by(id=chat_id).first()
+            if chat_item:
+                existing_chat = chat_item.chat if chat_item.chat else {}
+                updated_chat = {**existing_chat, **chat_blob_update}
+                chat_item.chat = updated_chat
+                db.commit()
+                log.debug(f"legacy_to_normalized_format: Updated chat blob with files and/or params")
     
     # Update models: store in first user message's meta (not in params)
     if "models" in legacy_chat:
