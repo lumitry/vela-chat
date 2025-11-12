@@ -16,6 +16,7 @@ from open_webui.retrieval.vector.connector import VECTOR_DB_CLIENT
 
 from open_webui.models.users import UserModel
 from open_webui.models.files import Files
+from open_webui.models.knowledge import Knowledges
 
 from open_webui.retrieval.vector.main import GetResult
 
@@ -462,7 +463,18 @@ def get_sources_from_files(
         ):
             # BYPASS_EMBEDDING_AND_RETRIEVAL
             if file.get("type") == "collection":
+                collection_id = file.get("id")
+                # Try to get file_ids from the file object first (for backward compatibility)
                 file_ids = file.get("data", {}).get("file_ids", [])
+                # If not present, query the knowledge table
+                if not file_ids and collection_id:
+                    try:
+                        knowledge = Knowledges.get_knowledge_by_id(collection_id)
+                        if knowledge and knowledge.data:
+                            file_ids = knowledge.data.get("file_ids", [])
+                    except Exception as e:
+                        log.warning(f"Failed to fetch file_ids from knowledge table for collection {collection_id}: {e}")
+                        file_ids = []
 
                 documents = []
                 metadatas = []

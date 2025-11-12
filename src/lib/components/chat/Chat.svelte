@@ -97,6 +97,23 @@
 
 	export let chatIdProp = '';
 
+	// Helper function to strip files array and data.file_ids from collection objects
+	const stripCollectionFiles = (file) => {
+		if (file?.type === 'collection') {
+			const { files, data, ...rest } = file;
+			const stripped = { ...rest };
+			// Keep data but remove file_ids if present
+			if (data && typeof data === 'object') {
+				const { file_ids, ...dataRest } = data;
+				if (Object.keys(dataRest).length > 0) {
+					stripped.data = dataRest;
+				}
+			}
+			return stripped;
+		}
+		return file;
+	};
+
 	let loading = false;
 
 	const eventTarget = new EventTarget();
@@ -1649,7 +1666,9 @@
 		}
 
 		const _files = JSON.parse(JSON.stringify(files));
-		chatFiles.push(..._files.filter((item) => ['doc', 'file', 'collection'].includes(item.type)));
+		// Strip files array and data.file_ids from collections before adding to chatFiles
+		const strippedFiles = _files.map(stripCollectionFiles);
+		chatFiles.push(...strippedFiles.filter((item) => ['doc', 'file', 'collection'].includes(item.type)));
 		chatFiles = chatFiles.filter(
 			// Remove duplicates
 			(item, index, array) =>
@@ -1667,7 +1686,7 @@
 			childrenIds: [],
 			role: 'user',
 			content: userPrompt,
-			files: _files.length > 0 ? _files : undefined,
+			files: _files.length > 0 ? strippedFiles : undefined,
 			timestamp: Math.floor(Date.now() / 1000), // Unix epoch
 			models: selectedModels
 		};
@@ -1833,11 +1852,11 @@
 		const responseMessage = _history.messages[responseMessageId];
 		const userMessage = _history.messages[responseMessage.parentId];
 
-		let files = JSON.parse(JSON.stringify(chatFiles));
+		let files = JSON.parse(JSON.stringify(chatFiles)).map(stripCollectionFiles);
 		files.push(
-			...(userMessage?.files ?? []).filter((item) =>
-				['doc', 'file', 'collection'].includes(item.type)
-			),
+			...(userMessage?.files ?? [])
+				.filter((item) => ['doc', 'file', 'collection'].includes(item.type))
+				.map(stripCollectionFiles),
 			...(responseMessage?.files ?? []).filter((item) => ['web_search_results'].includes(item.type))
 		);
 		// Remove duplicates

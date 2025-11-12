@@ -252,14 +252,19 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
                             if not embed_files_as_base64:
                                 file_obj["url"] = f"/api/v1/files/{file_id}/content"
                     elif att_type == "collection" and att_meta:
-                        # For collections, reconstruct from attachment meta
+                        # For collections, reconstruct from attachment meta (excluding files and data.file_ids)
                         file_obj = {
                             "type": "collection",
                         }
-                        # Copy all collection fields from meta
-                        for key in ["id", "name", "description", "data", "files", "type", "status", "user", "collection_name", "collection_names"]:
+                        # Copy collection fields from meta, but exclude files and data.file_ids
+                        for key in ["id", "name", "description", "type", "status", "user", "collection_name", "collection_names", "user_id", "access_control", "created_at", "updated_at"]:
                             if key in att_meta:
                                 file_obj[key] = att_meta[key]
+                        # Copy data but exclude file_ids
+                        if "data" in att_meta and isinstance(att_meta["data"], dict):
+                            data_copy = {k: v for k, v in att_meta["data"].items() if k != "file_ids"}
+                            if data_copy:  # Only add data if there are other fields besides file_ids
+                                file_obj["data"] = data_copy
                     elif att_type == "web_search" and att_meta:
                         # For web_search, reconstruct from attachment meta
                         file_obj = {
@@ -338,6 +343,14 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
                         if not isinstance(mf, dict):
                             continue
                         out = dict(mf)
+                        # For collections, strip files array and data.file_ids
+                        if out.get("type") == "collection":
+                            out.pop("files", None)
+                            if isinstance(out.get("data"), dict):
+                                out["data"].pop("file_ids", None)
+                                # Remove data entirely if it's now empty
+                                if not out["data"]:
+                                    out.pop("data", None)
                         # If URL missing but id present, provide default URL
                         if out.get("id") and not out.get("url") and out.get("type") in ["file", "image"]:
                             out["url"] = f"/api/v1/files/{out['id']}/content"

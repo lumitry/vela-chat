@@ -998,11 +998,16 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                         if "meta" in file_item and isinstance(file_item["meta"], dict):
                             attachment_meta.update(file_item["meta"])
                         # Copy top-level fields that should be preserved
-                        # For collections, include id and other important fields
+                        # For collections, include id and other important fields (but NOT files or data.file_ids)
                         fields_to_copy = ["name", "description", "status", "collection", "collection_name", "collection_names"]
                         if file_type == "collection":
-                            # For collections, also copy id and other collection-specific fields
-                            fields_to_copy.extend(["id", "user_id", "data", "files", "user", "access_control", "created_at", "updated_at"])
+                            # For collections, copy id and other collection-specific fields, but exclude files and data.file_ids
+                            fields_to_copy.extend(["id", "user_id", "user", "access_control", "created_at", "updated_at"])
+                            # Copy data but exclude file_ids from it
+                            if "data" in file_item and isinstance(file_item["data"], dict):
+                                data_copy = {k: v for k, v in file_item["data"].items() if k != "file_ids"}
+                                if data_copy:  # Only add data if there are other fields besides file_ids
+                                    attachment_meta["data"] = data_copy
                         for key in fields_to_copy:
                             if key in file_item:
                                 attachment_meta[key] = file_item[key]
@@ -1027,6 +1032,14 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                             sanitized["file"] = {
                                 k: v for k, v in sanitized["file"].items() if k != "data"
                             }
+                        # For collections, strip files array and data.file_ids
+                        if file_type == "collection":
+                            sanitized.pop("files", None)
+                            if isinstance(sanitized.get("data"), dict):
+                                sanitized["data"].pop("file_ids", None)
+                                # Remove data entirely if it's now empty
+                                if not sanitized["data"]:
+                                    sanitized.pop("data", None)
                         meta_files.append(sanitized)
 
                 if meta_files:
