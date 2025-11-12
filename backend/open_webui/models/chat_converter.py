@@ -23,6 +23,24 @@ log = logging.getLogger(__name__)
 log.setLevel(SRC_LOG_LEVELS.get("MODELS", logging.INFO))
 
 
+def strip_collection_files(file_item: dict) -> dict:
+    """Strip files array and data.file_ids from collection objects."""
+    if not isinstance(file_item, dict):
+        return file_item
+    
+    if file_item.get("type") == "collection":
+        # Create a copy without files and data.file_ids
+        stripped = {k: v for k, v in file_item.items() if k != "files"}
+        if "data" in stripped and isinstance(stripped["data"], dict):
+            data_copy = {k: v for k, v in stripped["data"].items() if k != "file_ids"}
+            if data_copy:
+                stripped["data"] = data_copy
+            else:
+                stripped.pop("data", None)
+        return stripped
+    return file_item
+
+
 def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = False) -> Dict:
     """
     Convert normalized chat_message tables to legacy JSON blob format.
@@ -454,8 +472,22 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
                 if "lastSentence" in msg.meta:
                     message_dict["lastSentence"] = msg.meta["lastSentence"]
                 # Preserve sources (web search, RAG citations) if stored in meta
+                # Strip collections from sources to reduce payload size
                 if "sources" in msg.meta:
-                    message_dict["sources"] = msg.meta["sources"]
+                    sources = msg.meta["sources"]
+                    if isinstance(sources, list):
+                        stripped_sources = []
+                        for source in sources:
+                            if isinstance(source, dict) and "source" in source:
+                                source_copy = dict(source)
+                                if isinstance(source_copy["source"], dict) and source_copy["source"].get("type") == "collection":
+                                    source_copy["source"] = strip_collection_files(source_copy["source"])
+                                stripped_sources.append(source_copy)
+                            else:
+                                stripped_sources.append(source)
+                        message_dict["sources"] = stripped_sources
+                    else:
+                        message_dict["sources"] = sources
                 # Preserve merged (MOA) metadata if stored in meta
                 if "merged" in msg.meta:
                     message_dict["merged"] = msg.meta["merged"]
@@ -507,7 +539,8 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
         if chat.chat and isinstance(chat.chat, dict) and "files" in chat.chat:
             stored_files = chat.chat.get("files", [])
             if isinstance(stored_files, list):
-                all_files = stored_files
+                # Strip collections to remove files array and data.file_ids
+                all_files = [strip_collection_files(f) for f in stored_files]
         
         if all_files:
             chat_content["files"] = all_files
@@ -1096,10 +1129,17 @@ def legacy_to_normalized_format(chat_id: str, legacy_chat: Dict, regenerate_ids:
     
     # Preserve chat-level files in the chat blob (frontend's canonical source)
     # This is critical for RAG to work correctly - the frontend sends chat.files and expects it to be preserved
+    # Strip collections to remove files array and data.file_ids to reduce payload size
     chat_blob_update = {}
     if "files" in legacy_chat:
-        chat_blob_update["files"] = legacy_chat["files"]
-        log.debug(f"legacy_to_normalized_format: Preserving {len(legacy_chat['files']) if isinstance(legacy_chat['files'], list) else 0} chat-level files in chat blob")
+        files_list = legacy_chat["files"]
+        if isinstance(files_list, list):
+            # Strip collections to remove files array and data.file_ids
+            stripped_files = [strip_collection_files(f) for f in files_list]
+            chat_blob_update["files"] = stripped_files
+            log.debug(f"legacy_to_normalized_format: Preserving {len(stripped_files)} chat-level files in chat blob (collections stripped)")
+        else:
+            chat_blob_update["files"] = files_list
     
     # Update params (but NOT models - models should be in user message meta, not params)
     # NOTE: We use update_chat_by_id which now preserves the title if not in the dict

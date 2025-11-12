@@ -677,7 +677,13 @@ async def update_chat_by_id(
                 existing_chat = chat_item.chat if chat_item.chat else {}
                 # Update only metadata fields, preserve anything else that might be there
                 minimal_chat = dict(existing_chat)
-                minimal_chat["files"] = legacy_chat_response.get("files", [])
+                # Strip collections from chat-level files to remove files array and data.file_ids
+                files_list = legacy_chat_response.get("files", [])
+                if isinstance(files_list, list):
+                    from open_webui.models.chat_converter import strip_collection_files
+                    minimal_chat["files"] = [strip_collection_files(f) for f in files_list]
+                else:
+                    minimal_chat["files"] = files_list
                 minimal_chat["params"] = legacy_chat_response.get("params", {})
                 minimal_chat["models"] = legacy_chat_response.get("models", [])
                 if "title" in legacy_chat_response:

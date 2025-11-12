@@ -1,3 +1,10 @@
+from langchain_core.documents import BaseDocumentCompressor, Document
+from langchain_core.callbacks import Callbacks
+from typing import Optional, Sequence
+import operator
+from langchain_core.retrievers import BaseRetriever
+from langchain_core.callbacks import CallbackManagerForRetrieverRun
+from typing import Any
 import logging
 import os
 from typing import Optional, Union
@@ -36,12 +43,6 @@ log = logging.getLogger(__name__)
 log.setLevel(SRC_LOG_LEVELS["RAG"])
 
 
-from typing import Any
-
-from langchain_core.callbacks import CallbackManagerForRetrieverRun
-from langchain_core.retrievers import BaseRetriever
-
-
 class VectorSearchRetriever(BaseRetriever):
     collection_name: Any
     embedding_function: Any
@@ -55,7 +56,8 @@ class VectorSearchRetriever(BaseRetriever):
     ) -> list[Document]:
         result = VECTOR_DB_CLIENT.search(
             collection_name=self.collection_name,
-            vectors=[self.embedding_function(query, RAG_EMBEDDING_QUERY_PREFIX)],
+            vectors=[self.embedding_function(
+                query, RAG_EMBEDDING_QUERY_PREFIX)],
             limit=self.top_k,
         )
 
@@ -90,7 +92,8 @@ def query_doc(
 
         return result
     except Exception as e:
-        log.exception(f"Error querying doc {collection_name} with limit {k}: {e}")
+        log.exception(
+            f"Error querying doc {collection_name} with limit {k}: {e}")
         raise e
 
 
@@ -133,7 +136,8 @@ def query_doc_with_hybrid_search(
         )
 
         ensemble_retriever = EnsembleRetriever(
-            retrievers=[bm25_retriever, vector_search_retriever], weights=[0.5, 0.5]
+            retrievers=[bm25_retriever,
+                        vector_search_retriever], weights=[0.5, 0.5]
         )
         compressor = RerankCompressor(
             embedding_function=embedding_function,
@@ -172,7 +176,8 @@ def query_doc_with_hybrid_search(
         )
         return result
     except Exception as e:
-        log.exception(f"Error querying doc {collection_name} with hybrid search: {e}")
+        log.exception(
+            f"Error querying doc {collection_name} with hybrid search: {e}")
         raise e
 
 
@@ -263,7 +268,8 @@ def query_collection(
     results = []
     for query in queries:
         log.debug(f"query_collection:query {query}")
-        query_embedding = embedding_function(query, prefix=RAG_EMBEDDING_QUERY_PREFIX)
+        query_embedding = embedding_function(
+            query, prefix=RAG_EMBEDDING_QUERY_PREFIX)
         for collection_name in collection_names:
             if collection_name:
                 try:
@@ -326,7 +332,8 @@ def query_collection_with_hybrid_search(
             )
             return result, None
         except Exception as e:
-            log.exception(f"Error when querying the collection with hybrid_search: {e}")
+            log.exception(
+                f"Error when querying the collection with hybrid_search: {e}")
             return None, e
 
     # Prepare tasks for all collections and queries
@@ -339,7 +346,8 @@ def query_collection_with_hybrid_search(
     ]
 
     with ThreadPoolExecutor() as executor:
-        future_results = [executor.submit(process_query, cn, q) for cn, q in tasks]
+        future_results = [executor.submit(
+            process_query, cn, q) for cn, q in tasks]
         task_results = [future.result() for future in future_results]
 
     for result, err in task_results:
@@ -369,7 +377,7 @@ def get_embedding_function(
             query, **({"prompt": prefix} if prefix else {})
         ).tolist()
     elif embedding_engine in ["ollama", "openai"]:
-        func = lambda query, prefix=None, user=None: generate_embeddings(
+        def func(query, prefix=None, user=None): return generate_embeddings(
             engine=embedding_engine,
             model=embedding_model,
             text=query,
@@ -385,7 +393,7 @@ def get_embedding_function(
                 for i in range(0, len(query), embedding_batch_size):
                     embeddings.extend(
                         func(
-                            query[i : i + embedding_batch_size],
+                            query[i: i + embedding_batch_size],
                             prefix=prefix,
                             user=user,
                         )
@@ -417,8 +425,10 @@ def get_sources_from_files(
         try:
             documents = ctx.get("documents") or []
             metadatas = ctx.get("metadatas") or []
-            num_docs = len(documents[0]) if isinstance(documents, list) and len(documents) > 0 else 0
-            num_metas = len(metadatas[0]) if isinstance(metadatas, list) and len(metadatas) > 0 else 0
+            num_docs = len(documents[0]) if isinstance(
+                documents, list) and len(documents) > 0 else 0
+            num_metas = len(metadatas[0]) if isinstance(
+                metadatas, list) and len(metadatas) > 0 else 0
             return num_docs, num_metas
         except Exception:
             return 0, 0
@@ -430,8 +440,10 @@ def get_sources_from_files(
         except Exception:
             return False
 
-    log.info(f"RAG DEBUG get_sources_from_files: Called with {len(files)} files, {len(queries)} queries")
-    log.info(f"RAG DEBUG get_sources_from_files: full_context={full_context}, hybrid_search={hybrid_search}")
+    log.info(
+        f"RAG DEBUG get_sources_from_files: Called with {len(files)} files, {len(queries)} queries")
+    log.info(
+        f"RAG DEBUG get_sources_from_files: full_context={full_context}, hybrid_search={hybrid_search}")
     log.debug(
         f"files: {files} {queries} {embedding_function} {reranking_function} {full_context}"
     )
@@ -441,8 +453,8 @@ def get_sources_from_files(
 
     for file_idx, file in enumerate(files):
         log.info(f"RAG DEBUG get_sources_from_files: Processing file {file_idx}: type={file.get('type')}, "
-                f"id={file.get('id')}, collection_name={file.get('collection_name')}, "
-                f"keys={list(file.keys())}")
+                 f"id={file.get('id')}, collection_name={file.get('collection_name')}, "
+                 f"keys={list(file.keys())}")
 
         context = None
         if file.get("docs"):
@@ -469,11 +481,13 @@ def get_sources_from_files(
                 # If not present, query the knowledge table
                 if not file_ids and collection_id:
                     try:
-                        knowledge = Knowledges.get_knowledge_by_id(collection_id)
+                        knowledge = Knowledges.get_knowledge_by_id(
+                            collection_id)
                         if knowledge and knowledge.data:
                             file_ids = knowledge.data.get("file_ids", [])
                     except Exception as e:
-                        log.warning(f"Failed to fetch file_ids from knowledge table for collection {collection_id}: {e}")
+                        log.warning(
+                            f"Failed to fetch file_ids from knowledge table for collection {collection_id}: {e}")
                         file_ids = []
 
                 documents = []
@@ -526,18 +540,24 @@ def get_sources_from_files(
             if ftype in ["file", "image"] and file.get("id"):
                 per_file_collection = f"file-{file['id']}"
                 collection_names.append(per_file_collection)
-                log.debug(f"RAG DEBUG: File attachment - using per-file collection_name={per_file_collection}")
+                log.debug(
+                    f"RAG DEBUG: File attachment - using per-file collection_name={per_file_collection}")
                 # Ensure per-file collection has at least one vector; auto-index if empty
                 try:
                     # Gate auto-indexing behind env var to avoid heavy-handed mutation
-                    auto_index = (os.getenv("RAG_AUTO_INDEX_MISSING", "false").lower() == "true")
-                    get_res = VECTOR_DB_CLIENT.get(collection_name=per_file_collection)
-                    has_any = bool(get_res and get_res.ids and len(get_res.ids[0]) > 0)
+                    auto_index = (
+                        os.getenv("RAG_AUTO_INDEX_MISSING", "false").lower() == "true")
+                    get_res = VECTOR_DB_CLIENT.get(
+                        collection_name=per_file_collection)
+                    has_any = bool(
+                        get_res and get_res.ids and len(get_res.ids[0]) > 0)
                     if auto_index and not has_any:
                         fobj = Files.get_file_by_id(file["id"])
-                        content_text = (fobj.data or {}).get("content") if fobj else None
+                        content_text = (fobj.data or {}).get(
+                            "content") if fobj else None
                         if content_text:
-                            vector = embedding_function(content_text, prefix=RAG_EMBEDDING_CONTENT_PREFIX)
+                            vector = embedding_function(
+                                content_text, prefix=RAG_EMBEDDING_CONTENT_PREFIX)
                             VECTOR_DB_CLIENT.upsert(
                                 collection_name=per_file_collection,
                                 items=[
@@ -553,23 +573,30 @@ def get_sources_from_files(
                                     }
                                 ],
                             )
-                            log.info("RAG: Auto-indexed per-file collection (enabled via RAG_AUTO_INDEX_MISSING)")
+                            log.info(
+                                "RAG: Auto-indexed per-file collection (enabled via RAG_AUTO_INDEX_MISSING)")
                         else:
-                            log.debug("RAG DEBUG: Per-file collection empty and file has no stored content; skipping auto-index")
+                            log.debug(
+                                "RAG DEBUG: Per-file collection empty and file has no stored content; skipping auto-index")
                 except Exception as e:
-                    log.debug(f"RAG DEBUG: Unable to auto-index per-file collection: {e}")
+                    log.debug(
+                        f"RAG DEBUG: Unable to auto-index per-file collection: {e}")
             elif ftype == "collection":
                 if file.get("legacy"):
                     collection_names = file.get("collection_names", [])
-                    log.info(f"RAG DEBUG: Collection (legacy) - collection_names={collection_names}")
+                    log.info(
+                        f"RAG DEBUG: Collection (legacy) - collection_names={collection_names}")
                 else:
                     # Prefer explicit id; otherwise try meta.collection_name
-                    collection_id = file.get("id") or meta.get("collection_name")
+                    collection_id = file.get(
+                        "id") or meta.get("collection_name")
                     if collection_id:
                         collection_names.append(collection_id)
-                        log.info(f"RAG DEBUG: Collection (non-legacy) - using id/collection_name={collection_id}")
+                        log.info(
+                            f"RAG DEBUG: Collection (non-legacy) - using id/collection_name={collection_id}")
                     else:
-                        log.warning(f"RAG DEBUG: Collection type file has no id or meta.collection_name: {file}")
+                        log.warning(
+                            f"RAG DEBUG: Collection type file has no id or meta.collection_name: {file}")
             elif file.get("collection_name") or meta.get("collection_name"):
                 cn = file.get("collection_name") or meta.get("collection_name")
                 collection_names.append(cn)
@@ -577,37 +604,48 @@ def get_sources_from_files(
             elif file.get("id"):
                 if file.get("legacy"):
                     collection_names.append(f"{file['id']}")
-                    log.info(f"RAG DEBUG: File (legacy) - using id={file['id']}")
+                    log.info(
+                        f"RAG DEBUG: File (legacy) - using id={file['id']}")
                 else:
                     collection_name = f"file-{file['id']}"
                     collection_names.append(collection_name)
-                    log.info(f"RAG DEBUG: File (non-legacy) - constructed collection_name={collection_name}")
+                    log.info(
+                        f"RAG DEBUG: File (non-legacy) - constructed collection_name={collection_name}")
             else:
-                log.warning(f"RAG DEBUG: File has no id or collection_name: {file}")
+                log.warning(
+                    f"RAG DEBUG: File has no id or collection_name: {file}")
 
-            collection_names = set(collection_names).difference(extracted_collections)
-            log.info(f"RAG DEBUG: Final collection_names for file {file_idx}: {collection_names}")
+            collection_names = set(collection_names).difference(
+                extracted_collections)
+            log.info(
+                f"RAG DEBUG: Final collection_names for file {file_idx}: {collection_names}")
             if not collection_names:
-                log.info(f"RAG DEBUG: Skipping file {file_idx} as it has already been extracted")
+                log.info(
+                    f"RAG DEBUG: Skipping file {file_idx} as it has already been extracted")
                 continue
 
             if full_context:
                 try:
-                    log.info(f"RAG DEBUG: Using full_context mode for collections: {collection_names}")
+                    log.info(
+                        f"RAG DEBUG: Using full_context mode for collections: {collection_names}")
                     context = get_all_items_from_collections(collection_names)
                     d, m = _ctx_counts(context or {})
-                    log.info(f"RAG DEBUG: Full context retrieved: docs={d}, metas={m}")
+                    log.info(
+                        f"RAG DEBUG: Full context retrieved: docs={d}, metas={m}")
                 except Exception as e:
-                    log.exception(f"RAG DEBUG: Exception in get_all_items_from_collections: {e}")
+                    log.exception(
+                        f"RAG DEBUG: Exception in get_all_items_from_collections: {e}")
 
             else:
                 try:
                     context = None
                     if file.get("type") == "text":
-                        log.info(f"RAG DEBUG: File type is text, using content directly")
+                        log.info(
+                            f"RAG DEBUG: File type is text, using content directly")
                         context = file["content"]
                     else:
-                        log.info(f"RAG DEBUG: Querying collections: {collection_names}, hybrid_search={hybrid_search}")
+                        log.info(
+                            f"RAG DEBUG: Querying collections: {collection_names}, hybrid_search={hybrid_search}")
                         if hybrid_search:
                             try:
                                 context = query_collection_with_hybrid_search(
@@ -620,12 +658,15 @@ def get_sources_from_files(
                                     r=r,
                                 )
                                 d, m = _ctx_counts(context or {})
-                                log.info(f"RAG DEBUG: Hybrid search returned context: docs={d}, metas={m}")
+                                log.info(
+                                    f"RAG DEBUG: Hybrid search returned context: docs={d}, metas={m}")
                             except Exception as e:
-                                log.warning(f"RAG DEBUG: Error when using hybrid search: {e}, using non hybrid search as fallback.")
+                                log.warning(
+                                    f"RAG DEBUG: Error when using hybrid search: {e}, using non hybrid search as fallback.")
 
                         if (not hybrid_search) or (context is None) or (not _has_results(context)):
-                            log.info(f"RAG DEBUG: Using standard query_collection (hybrid_search={hybrid_search}, context_has_results={_has_results(context) if context is not None else None})")
+                            log.info(
+                                f"RAG DEBUG: Using standard query_collection (hybrid_search={hybrid_search}, context_has_results={_has_results(context) if context is not None else None})")
                             context = query_collection(
                                 collection_names=collection_names,
                                 queries=queries,
@@ -633,7 +674,8 @@ def get_sources_from_files(
                                 k=k,
                             )
                             d, m = _ctx_counts(context or {})
-                            log.info(f"RAG DEBUG: query_collection returned: docs={d}, metas={m}")
+                            log.info(
+                                f"RAG DEBUG: query_collection returned: docs={d}, metas={m}")
 
                     # Fallback: if no results, try loading full file content directly
                     if (context is None or not _has_results(context)) and file.get("id") and file.get("type") in ["file", "image"]:
@@ -651,34 +693,47 @@ def get_sources_from_files(
                                         }
                                     ]],
                                 }
-                                log.info("RAG DEBUG: Fallback used - built context from raw file content")
+                                log.info(
+                                    "RAG DEBUG: Fallback used - built context from raw file content")
                         except Exception as e:
-                            log.debug(f"RAG DEBUG: Fallback failed to read file content: {e}")
+                            log.debug(
+                                f"RAG DEBUG: Fallback failed to read file content: {e}")
                 except Exception as e:
-                    log.exception(f"RAG DEBUG: Exception querying collections: {e}")
+                    log.exception(
+                        f"RAG DEBUG: Exception querying collections: {e}")
 
             extracted_collections.extend(collection_names)
 
         if context:
             d, m = _ctx_counts(context if isinstance(context, dict) else {})
-            log.info(f"RAG DEBUG: File {file_idx} produced context: docs={d}, metas={m}")
+            log.info(
+                f"RAG DEBUG: File {file_idx} produced context: docs={d}, metas={m}")
             if "data" in file:
                 del file["data"]
 
             relevant_contexts.append({**context, "file": file})
         else:
-            log.warning(f"RAG DEBUG: File {file_idx} produced NO context (context is None or empty)")
+            log.warning(
+                f"RAG DEBUG: File {file_idx} produced NO context (context is None or empty)")
 
-    log.info(f"RAG DEBUG: Processing {len(relevant_contexts)} relevant contexts into sources")
+    log.info(
+        f"RAG DEBUG: Processing {len(relevant_contexts)} relevant contexts into sources")
     sources = []
     for ctx_idx, context in enumerate(relevant_contexts):
         try:
             d, m = _ctx_counts(context)
-            log.info(f"RAG DEBUG: Processing context {ctx_idx}: docs={d}, metas={m}, file_type={context.get('file', {}).get('type')}")
+            log.info(
+                f"RAG DEBUG: Processing context {ctx_idx}: docs={d}, metas={m}, file_type={context.get('file', {}).get('type')}")
             if "documents" in context:
                 if "metadatas" in context:
+                    # Strip collections from source object to reduce payload size
+                    file_obj = context["file"]
+                    if isinstance(file_obj, dict) and file_obj.get("type") == "collection":
+                        from open_webui.models.chat_converter import strip_collection_files
+                        file_obj = strip_collection_files(file_obj)
+
                     source = {
-                        "source": context["file"],
+                        "source": file_obj,
                         "document": context["documents"][0],
                         "metadata": context["metadatas"][0],
                     }
@@ -688,7 +743,8 @@ def get_sources_from_files(
                     if source["document"] and source["metadata"] and len(source["document"]) > 0 and len(source["metadata"]) > 0:
                         sources.append(source)
                     else:
-                        log.info(f"RAG DEBUG: Skipping empty source for context {ctx_idx}")
+                        log.info(
+                            f"RAG DEBUG: Skipping empty source for context {ctx_idx}")
         except Exception as e:
             log.exception(e)
 
@@ -880,13 +936,6 @@ def generate_embeddings(
         return embeddings[0] if isinstance(text, str) else embeddings
 
 
-import operator
-from typing import Optional, Sequence
-
-from langchain_core.callbacks import Callbacks
-from langchain_core.documents import BaseDocumentCompressor, Document
-
-
 class RerankCompressor(BaseDocumentCompressor):
     embedding_function: Any
     top_n: int
@@ -912,7 +961,8 @@ class RerankCompressor(BaseDocumentCompressor):
         else:
             from sentence_transformers import util
 
-            query_embedding = self.embedding_function(query, RAG_EMBEDDING_QUERY_PREFIX)
+            query_embedding = self.embedding_function(
+                query, RAG_EMBEDDING_QUERY_PREFIX)
             document_embedding = self.embedding_function(
                 [doc.page_content for doc in documents], RAG_EMBEDDING_CONTENT_PREFIX
             )
@@ -924,7 +974,8 @@ class RerankCompressor(BaseDocumentCompressor):
                 (d, s) for d, s in docs_with_scores if s >= self.r_score
             ]
 
-        result = sorted(docs_with_scores, key=operator.itemgetter(1), reverse=True)
+        result = sorted(docs_with_scores,
+                        key=operator.itemgetter(1), reverse=True)
         final_results = []
         for doc, doc_score in result[: self.top_n]:
             metadata = doc.metadata

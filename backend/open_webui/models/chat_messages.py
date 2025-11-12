@@ -526,6 +526,7 @@ class ChatMessagesTable:
         """
         Set the sources array for a message (web search results, RAG citations, etc.).
         Sources are stored in the meta field as 'sources' array.
+        Strips collections from source objects to reduce payload size.
         """
         import logging
         log = logging.getLogger(__name__)
@@ -536,16 +537,28 @@ class ChatMessagesTable:
                 log.warning(f"ChatMessages.set_sources: Message {message_id} not found")
                 return None
             
+            # Strip collections from sources to reduce payload size
+            from open_webui.models.chat_converter import strip_collection_files
+            stripped_sources = []
+            for source in sources:
+                if isinstance(source, dict) and "source" in source:
+                    source_copy = dict(source)
+                    if isinstance(source_copy["source"], dict) and source_copy["source"].get("type") == "collection":
+                        source_copy["source"] = strip_collection_files(source_copy["source"])
+                    stripped_sources.append(source_copy)
+                else:
+                    stripped_sources.append(source)
+            
             # Get existing meta or initialize
             existing_meta = message.meta or {}
             
             # Create new meta dict with sources
-            message.meta = {**existing_meta, "sources": sources}
+            message.meta = {**existing_meta, "sources": stripped_sources}
             
             message.updated_at = int(time.time())
             db.commit()
             db.refresh(message)
-            log.debug(f"ChatMessages.set_sources: Set sources for message {message_id} ({len(sources)} sources)")
+            log.debug(f"ChatMessages.set_sources: Set sources for message {message_id} ({len(stripped_sources)} sources)")
             return ChatMessageModel.model_validate(message)
 
     def add_attachment(self, message_id: str, attachment: dict) -> Optional[ChatMessageAttachmentModel]:
