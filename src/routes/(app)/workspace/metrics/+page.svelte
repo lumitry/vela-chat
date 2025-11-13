@@ -10,10 +10,12 @@
 		getDailyTokenUsage,
 		getDailySpend,
 		getModelDailyTokens,
+		getModelDailyCost,
 		getCostPerMessageDaily,
 		getMessageCountDaily,
 		getModelPopularity,
 		getCostPerTokenDaily,
+		getTaskGenerationTypesDaily,
 		type MetricsParams
 	} from '$lib/apis/metrics';
 
@@ -27,9 +29,11 @@
 	import MessageCountChart from '$lib/components/workspace/Metrics/MessageCountChart.svelte';
 	import ModelPopularityChart from '$lib/components/workspace/Metrics/ModelPopularityChart.svelte';
 	import CostPerTokenChart from '$lib/components/workspace/Metrics/CostPerTokenChart.svelte';
+	import TaskGenerationTypesChart from '$lib/components/workspace/Metrics/TaskGenerationTypesChart.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import Info from '$lib/components/icons/Info.svelte';
 	import Download from '$lib/components/icons/Download.svelte';
+	import Switch from '$lib/components/common/Switch.svelte';
 	import { formatSmartCurrency } from '$lib/utils/currency';
 
 	const i18n = getContext('i18n');
@@ -96,26 +100,31 @@
 	let startDate = '';
 	let endDate = '';
 	let modelType: 'local' | 'external' | 'both' = 'both';
+	let showCost = false;
 
 	// Data stores
 	let modelMetrics: any[] = [];
 	let dailyTokenUsage: any[] = [];
 	let dailySpend: any[] = [];
 	let modelDailyTokens: any[] = [];
+	let modelDailyCost: any[] = [];
 	let costPerMessageDaily: any[] = [];
 	let messageCountDaily: any[] = [];
 	let modelPopularity: any[] = [];
 	let costPerTokenDaily: any[] = [];
+	let taskGenerationTypesDaily: any[] = [];
 
 	// Loading states for each component
 	let loadingModels = false;
 	let loadingTokens = false;
 	let loadingSpend = false;
 	let loadingModelTokens = false;
+	let loadingModelCost = false;
 	let loadingCostPerMessage = false;
 	let loadingMessageCount = false;
 	let loadingPopularity = false;
 	let loadingCostPerToken = false;
+	let loadingTaskGenerationTypes = false;
 
 	// Track request IDs to prevent race conditions
 	let currentRequestId = 0;
@@ -234,6 +243,14 @@
 			requestId
 		);
 		fetchMetric(
+			'cost/model/daily',
+			getModelDailyCost,
+			{ ...params, limit: 10 },
+			(v) => (loadingModelCost = v),
+			(v) => (modelDailyCost = v),
+			requestId
+		);
+		fetchMetric(
 			'cost/message/daily',
 			getCostPerMessageDaily,
 			params,
@@ -263,6 +280,14 @@
 			params,
 			(v) => (loadingCostPerToken = v),
 			(v) => (costPerTokenDaily = v),
+			requestId
+		);
+		fetchMetric(
+			'tasks/types/daily',
+			getTaskGenerationTypesDaily,
+			params,
+			(v) => (loadingTaskGenerationTypes = v),
+			(v) => (taskGenerationTypesDaily = v),
 			requestId
 		);
 	};
@@ -454,9 +479,25 @@
 
 			<!-- Tokens per Model per Day -->
 			<div class="lg:col-span-2">
-				<h3 class="text-lg font-semibold mb-2">{$i18n.t('Tokens per Model per Day')}</h3>
+				<div class="flex items-center justify-between mb-2">
+					<h3 class="text-lg font-semibold">{$i18n.t('Tokens per Model per Day')}</h3>
+					<div class="flex items-center gap-2">
+						<span class="text-sm text-gray-600 dark:text-gray-400">{$i18n.t('Cost')}</span>
+						<Switch
+							bind:state={showCost}
+							on:change={(e) => {
+								showCost = e.detail;
+							}}
+						/>
+					</div>
+				</div>
 				<div class="bg-white dark:bg-gray-800 rounded-xl p-4">
-					<ModelDailyTokensChart data={modelDailyTokens} loading={loadingModelTokens} />
+					<ModelDailyTokensChart
+						tokensData={modelDailyTokens}
+						costData={modelDailyCost}
+						loading={loadingModelTokens || loadingModelCost}
+						bind:showCost
+					/>
 				</div>
 			</div>
 
@@ -465,6 +506,22 @@
 				<h3 class="text-lg font-semibold mb-2">{$i18n.t('Average Cost per Message')}</h3>
 				<div class="bg-white dark:bg-gray-800 rounded-xl p-4">
 					<CostPerMessageChart data={costPerMessageDaily} loading={loadingCostPerMessage} />
+				</div>
+			</div>
+
+			<!-- Cost per Token -->
+			<div>
+				<div class="flex items-center gap-2 mb-2">
+					<h3 class="text-lg font-semibold">{$i18n.t('Cost per 1M Tokens Trend')}</h3>
+					<Tooltip
+						content="This metric calculates cost per 1M total tokens (input + output combined). Note that actual LLM providers charge differently for input and output tokens. Currently, this calculation only includes messages with cost data (local models are excluded)."
+						placement="top"
+					>
+						<Info className="w-4 h-4 text-gray-500 dark:text-gray-400 cursor-help" />
+					</Tooltip>
+				</div>
+				<div class="bg-white dark:bg-gray-800 rounded-xl p-4">
+					<CostPerTokenChart data={costPerTokenDaily} loading={loadingCostPerToken} />
 				</div>
 			</div>
 
@@ -484,19 +541,14 @@
 				</div>
 			</div>
 
-			<!-- Cost per Token -->
-			<div>
-				<div class="flex items-center gap-2 mb-2">
-					<h3 class="text-lg font-semibold">{$i18n.t('Cost per 1M Tokens Trend')}</h3>
-					<Tooltip
-						content="This metric calculates cost per 1M total tokens (input + output combined). Note that actual LLM providers charge differently for input and output tokens. Currently, this calculation only includes messages with cost data (local models are excluded)."
-						placement="top"
-					>
-						<Info className="w-4 h-4 text-gray-500 dark:text-gray-400 cursor-help" />
-					</Tooltip>
-				</div>
+			<!-- Task Generation Types -->
+			<div class="lg:col-span-2">
+				<h3 class="text-lg font-semibold mb-2">{$i18n.t('Task Generation Types')}</h3>
 				<div class="bg-white dark:bg-gray-800 rounded-xl p-4">
-					<CostPerTokenChart data={costPerTokenDaily} loading={loadingCostPerToken} />
+					<TaskGenerationTypesChart
+						data={taskGenerationTypesDaily}
+						loading={loadingTaskGenerationTypes}
+					/>
 				</div>
 			</div>
 		</div>

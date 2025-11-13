@@ -12,12 +12,14 @@
 		TimeScale
 	} from 'chart.js';
 	import 'chartjs-adapter-date-fns';
-	import { getTimeScaleConfig, getTooltipConfig, getChartColors, getChartDefaults } from '$lib/utils/charts';
+	import { getTimeScaleConfig, getTooltipConfig, getCurrencyTooltipConfig, getCurrencyYTicks, getChartColors, getChartDefaults } from '$lib/utils/charts';
+	import { formatSmartCurrency } from '$lib/utils/currency';
 	import Spinner from '$lib/components/common/Spinner.svelte';
+	import Switch from '$lib/components/common/Switch.svelte';
 
 	ChartJS.register(Title, Tooltip, Legend, LineElement, CategoryScale, LinearScale, PointElement, TimeScale);
 
-	export let data: Array<{
+	export let tokensData: Array<{
 		date: string;
 		model_id: string;
 		model_name: string;
@@ -25,16 +27,24 @@
 		output_tokens: number;
 		total_tokens: number;
 	}> = [];
+	export let costData: Array<{
+		date: string;
+		model_id: string;
+		model_name: string;
+		cost: number;
+	}> = [];
 	export let loading: boolean = false;
+	export let showCost: boolean = false;
 
 	$: chartColors = getChartColors();
 	$: defaults = getChartDefaults();
+	$: currentData = showCost ? costData : tokensData;
 
 	// Group data by model and create datasets
 	$: modelMap = (() => {
-		const map = new Map<string, typeof data>();
-		if (data && Array.isArray(data)) {
-			data.forEach((d) => {
+		const map = new Map<string, typeof currentData>();
+		if (currentData && Array.isArray(currentData)) {
+			currentData.forEach((d) => {
 				if (d && d.model_id) {
 					if (!map.has(d.model_id)) {
 						map.set(d.model_id, []);
@@ -46,7 +56,7 @@
 		return map;
 	})();
 
-	$: allDates = data && Array.isArray(data) ? [...new Set(data.map((d) => d.date).filter(Boolean))].sort() : [];
+	$: allDates = currentData && Array.isArray(currentData) ? [...new Set(currentData.map((d) => d.date).filter(Boolean))].sort() : [];
 
 	$: datasets = (() => {
 		if (!allDates.length || !modelMap.size) {
@@ -63,11 +73,19 @@
 				label: firstEntry?.model_name || modelId,
 				data: allDates.map((dateStr) => {
 					const dayEntry = modelData.find((d) => d.date === dateStr);
-					const tokens = dayEntry ? dayEntry.total_tokens : 0;
-					return {
-						x: dateStr,
-						y: tokens
-					};
+					if (showCost) {
+						const cost = (dayEntry as any)?.cost || 0;
+						return {
+							x: dateStr,
+							y: cost
+						};
+					} else {
+						const tokens = (dayEntry as any)?.total_tokens || 0;
+						return {
+							x: dateStr,
+							y: tokens
+						};
+					}
 				}),
 				borderColor: borderColor,
 				backgroundColor: backgroundColor,
@@ -100,24 +118,27 @@
 				display: true,
 				position: 'right' as const
 			},
-			tooltip: {
-				...getTooltipConfig({
-					formatLabel: (context: any) => {
-						const value = context.parsed.y || 0;
-						return `${context.dataset.label}: ${new Intl.NumberFormat().format(value)} tokens`;
+			tooltip: showCost
+				? getCurrencyTooltipConfig('Cost')
+				: {
+						...getTooltipConfig({
+							formatLabel: (context: any) => {
+								const value = context.parsed.y || 0;
+								return `${context.dataset.label}: ${new Intl.NumberFormat().format(value)} tokens`;
+							}
+						}),
+						filter: (tooltipItem: any) => {
+							// Only show tooltip items with nonzero values
+							return (tooltipItem.parsed?.y || 0) > 0;
+						}
 					}
-				}),
-				filter: (tooltipItem: any) => {
-					// Only show tooltip items with nonzero values
-					return (tooltipItem.parsed?.y || 0) > 0;
-				}
-			}
 		},
 		scales: {
 			x: getTimeScaleConfig(),
 			y: {
 				...defaults.scales.y,
-				beginAtZero: true
+				beginAtZero: true,
+				...(showCost ? { ticks: getCurrencyYTicks() } : {})
 			}
 		}
 	};
@@ -132,7 +153,7 @@
 		<Line data={chartData} options={chartOptions} />
 	{:else}
 		<div class="flex flex-col items-center justify-center h-full text-gray-500 text-sm">
-			<div>No model token usage data for this date range</div>
+			<div>No model {showCost ? 'cost' : 'token usage'} data for this date range</div>
 			<div class="text-xs mt-1 opacity-70">Try selecting a different time period or model type</div>
 		</div>
 	{/if}

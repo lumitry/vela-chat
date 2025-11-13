@@ -17,7 +17,7 @@
 	}> = [];
 	export let loading: boolean = false;
 
-	type SortColumn = 'model_name' | 'spend' | 'input_tokens' | 'output_tokens' | 'total_tokens';
+	type SortColumn = 'model_name' | 'spend' | 'input_tokens' | 'output_tokens' | 'total_tokens' | 'message_count';
 	type SortDirection = 'asc' | 'desc';
 
 	let sortColumn: SortColumn = 'total_tokens';
@@ -47,6 +47,10 @@
 			case 'total_tokens':
 				aVal = a.total_tokens;
 				bVal = b.total_tokens;
+				break;
+			case 'message_count':
+				aVal = a.message_count;
+				bVal = b.message_count;
 				break;
 		}
 
@@ -147,6 +151,17 @@
 							{/if}
 						</div>
 					</th>
+					<th
+						class="text-right py-3 px-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition text-sm font-semibold"
+						on:click={() => handleSort('message_count')}
+					>
+						<div class="flex items-center justify-end gap-1.5">
+							<span>{$i18n.t('Messages')}</span>
+							{#if sortColumn === 'message_count'}
+								<span class="text-xs opacity-70">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+							{/if}
+						</div>
+					</th>
 				</tr>
 			</thead>
 			<tbody>
@@ -173,6 +188,9 @@
 						>
 						<td class="py-3 px-4 text-right text-sm font-semibold tabular-nums"
 							>{formatNumber(model.total_tokens)}</td
+						>
+						<td class="py-3 px-4 text-right text-sm tabular-nums"
+							>{formatNumber(model.message_count)}</td
 						>
 					</tr>
 				{/each}

@@ -38,6 +38,13 @@ type ModelDailyTokens = {
 	total_tokens: number;
 };
 
+type ModelDailyCost = {
+	date: string;
+	model_id: string;
+	model_name: string;
+	cost: number;
+};
+
 type CostPerMessageDaily = {
 	date: string;
 	avg_cost: number;
@@ -62,6 +69,12 @@ type CostPerTokenDaily = {
 	avg_cost_per_token: number;
 	total_tokens: number;
 	total_cost: number;
+};
+
+type TaskGenerationTypesDaily = {
+	date: string;
+	task_type: string;
+	task_count: number;
 };
 
 const buildQueryString = (params: MetricsParams): string => {
@@ -147,6 +160,13 @@ export const getModelDailyTokens = async (
 	return fetchMetrics<ModelDailyTokens[]>(token, 'tokens/model/daily', params);
 };
 
+export const getModelDailyCost = async (
+	token: string,
+	params?: MetricsParams
+): Promise<ModelDailyCost[]> => {
+	return fetchMetrics<ModelDailyCost[]>(token, 'cost/model/daily', params);
+};
+
 export const getCostPerMessageDaily = async (
 	token: string,
 	params?: MetricsParams
@@ -173,5 +193,12 @@ export const getCostPerTokenDaily = async (
 	params?: MetricsParams
 ): Promise<CostPerTokenDaily[]> => {
 	return fetchMetrics<CostPerTokenDaily[]>(token, 'cost/token/daily', params);
+};
+
+export const getTaskGenerationTypesDaily = async (
+	token: string,
+	params?: MetricsParams
+): Promise<TaskGenerationTypesDaily[]> => {
+	return fetchMetrics<TaskGenerationTypesDaily[]>(token, 'tasks/types/daily', params);
 };
 

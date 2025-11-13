@@ -64,6 +64,13 @@ class ModelDailyTokensResponse(BaseModel):
     total_tokens: int
 
 
+class ModelDailyCostResponse(BaseModel):
+    date: str
+    model_id: str
+    model_name: str
+    cost: float
+
+
 class CostPerMessageDailyResponse(BaseModel):
     date: str
     avg_cost: float
@@ -88,6 +95,12 @@ class CostPerTokenDailyResponse(BaseModel):
     avg_cost_per_token: float
     total_tokens: int
     total_cost: float
+
+
+class TaskGenerationTypesDailyResponse(BaseModel):
+    date: str
+    task_type: str
+    task_count: int
 
 
 # Helper function to get model ownership map
@@ -729,6 +742,110 @@ async def get_model_daily_tokens(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
+@router.get("/cost/model/daily", response_model=List[ModelDailyCostResponse])
+async def get_model_daily_cost(
+    request: Request,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    model_type: str = Query("both", regex="^(local|external|both)$"),
+    limit: int = Query(10, ge=1, le=50),
+    user: UserModel = Depends(get_verified_user),
+):
+    """Get cost per model per day"""
+    endpoint_start = time.time()
+    try:
+        start_date_obj, end_date_obj = get_date_range_objects(start_date, end_date)
+        
+        model_ownership_start = time.time()
+        model_ownership_map = await get_model_ownership_map(request, user)
+        model_ownership_time = (time.time() - model_ownership_start) * 1000
+        log.debug(f"[PERF] /cost/model/daily: get_model_ownership_map took {model_ownership_time:.2f}ms")
+        
+        # Map model IDs to names (cached)
+        model_names_start = time.time()
+        model_id_to_name = await get_model_names_map(request, user)
+        model_names_time = (time.time() - model_names_start) * 1000
+        log.debug(f"[PERF] /cost/model/daily: get_model_names_map took {model_names_time:.2f}ms")
+        
+        db_query_start = time.time()
+        with get_db() as db:
+            # First, get top N models by total cost from rollup table
+            top_models_query = (
+                db.query(
+                    MetricsDailyRollup.model_id,
+                    func.sum(MetricsDailyRollup.total_cost).label("total_cost"),
+                )
+                .filter(
+                    MetricsDailyRollup.user_id == user.id,
+                    MetricsDailyRollup.date >= start_date_obj,
+                    MetricsDailyRollup.date <= end_date_obj,
+                    MetricsDailyRollup.model_id.isnot(None),
+                    MetricsDailyRollup.total_cost.isnot(None),  # Only models with cost data
+                )
+                .group_by(MetricsDailyRollup.model_id)
+            )
+            
+            # Filter by model type BEFORE order_by and limit
+            top_models_query = filter_by_model_type(top_models_query, model_ownership_map, model_type, MetricsDailyRollup.model_id)
+            
+            top_models_query = (
+                top_models_query
+                .order_by(func.sum(MetricsDailyRollup.total_cost).desc())
+                .limit(limit)
+            )
+            top_model_ids = [row.model_id for row in top_models_query.all()]
+            
+            if not top_model_ids:
+                db_query_time = (time.time() - db_query_start) * 1000
+                log.debug(f"[PERF] /cost/model/daily: database query took {db_query_time:.2f}ms, no models found")
+                total_time = (time.time() - endpoint_start) * 1000
+                log.debug(f"[PERF] /cost/model/daily: total endpoint time {total_time:.2f}ms")
+                return []
+            
+            # Now get daily breakdown for these models from rollup table
+            query = (
+                db.query(
+                    MetricsDailyRollup.date,
+                    MetricsDailyRollup.model_id,
+                    func.sum(MetricsDailyRollup.total_cost).label("cost"),
+                )
+                .filter(
+                    MetricsDailyRollup.user_id == user.id,
+                    MetricsDailyRollup.date >= start_date_obj,
+                    MetricsDailyRollup.date <= end_date_obj,
+                    MetricsDailyRollup.model_id.in_(top_model_ids),
+                )
+                .group_by(MetricsDailyRollup.date, MetricsDailyRollup.model_id)
+                .order_by(MetricsDailyRollup.date, MetricsDailyRollup.model_id)
+            )
+            
+            results = query.all()
+        db_query_time = (time.time() - db_query_start) * 1000
+        log.debug(f"[PERF] /cost/model/daily: database query took {db_query_time:.2f}ms, returned {len(results)} rows")
+        
+        response = []
+        for row in results:
+            date_str = str(row.date)
+            cost = float(row.cost or 0)
+            
+            response.append(
+                ModelDailyCostResponse(
+                    date=date_str,
+                    model_id=row.model_id,
+                    model_name=model_id_to_name.get(row.model_id) or row.model_id,
+                    cost=cost,
+                )
+            )
+        
+        total_time = (time.time() - endpoint_start) * 1000
+        log.debug(f"[PERF] /cost/model/daily: total endpoint time {total_time:.2f}ms (ownership: {model_ownership_time:.2f}ms, names: {model_names_time:.2f}ms, db: {db_query_time:.2f}ms)")
+        
+        return response
+    except Exception as e:
+        log.exception(e)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
 @router.get("/cost/message/daily", response_model=List[CostPerMessageDailyResponse])
 async def get_cost_per_message_daily(
     request: Request,
@@ -986,6 +1103,69 @@ async def get_cost_per_token_daily(
         
         total_time = (time.time() - endpoint_start) * 1000
         log.debug(f"[PERF] /cost/token/daily: total endpoint time {total_time:.2f}ms (ownership: {model_ownership_time:.2f}ms, db: {db_query_time:.2f}ms)")
+        
+        return response
+    except Exception as e:
+        log.exception(e)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.get("/tasks/types/daily", response_model=List[TaskGenerationTypesDailyResponse])
+async def get_task_generation_types_daily(
+    request: Request,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    model_type: str = Query("both", regex="^(local|external|both)$"),
+    user: UserModel = Depends(get_verified_user),
+):
+    """Get task generation types per day"""
+    endpoint_start = time.time()
+    try:
+        start_date_obj, end_date_obj = get_date_range_objects(start_date, end_date)
+        
+        db_query_start = time.time()
+        with get_db() as db:
+            query = (
+                db.query(
+                    TaskMetricsDailyRollup.date,
+                    TaskMetricsDailyRollup.task_type,
+                    func.sum(TaskMetricsDailyRollup.task_count).label("task_count"),
+                )
+                .filter(
+                    TaskMetricsDailyRollup.user_id == user.id,
+                    TaskMetricsDailyRollup.date >= start_date_obj,
+                    TaskMetricsDailyRollup.date <= end_date_obj,
+                )
+                .group_by(TaskMetricsDailyRollup.date, TaskMetricsDailyRollup.task_type)
+                .order_by(TaskMetricsDailyRollup.date, TaskMetricsDailyRollup.task_type)
+            )
+            
+            # Filter by model type based on task_model_type
+            if model_type == "local":
+                query = query.filter(TaskMetricsDailyRollup.task_model_type == "internal")
+            elif model_type == "external":
+                query = query.filter(TaskMetricsDailyRollup.task_model_type == "external")
+            # else "both" - no filter
+            
+            results = query.all()
+        db_query_time = (time.time() - db_query_start) * 1000
+        log.debug(f"[PERF] /tasks/types/daily: database query took {db_query_time:.2f}ms, returned {len(results)} rows")
+        
+        response = []
+        for row in results:
+            date_str = str(row.date)
+            task_count = int(row.task_count or 0)
+            
+            response.append(
+                TaskGenerationTypesDailyResponse(
+                    date=date_str,
+                    task_type=row.task_type,
+                    task_count=task_count,
+                )
+            )
+        
+        total_time = (time.time() - endpoint_start) * 1000
+        log.debug(f"[PERF] /tasks/types/daily: total endpoint time {total_time:.2f}ms (db: {db_query_time:.2f}ms)")
         
         return response
     except Exception as e:
