@@ -11,6 +11,7 @@
 
 	import AdvancedParams from './Advanced/AdvancedParams.svelte';
 	import Textarea from '$lib/components/common/Textarea.svelte';
+	import Switch from '$lib/components/common/Switch.svelte';
 
 	export let saveSettings: Function;
 	export let getModels: Function;
@@ -405,19 +406,7 @@
 				<div class=" py-0.5 flex w-full justify-between">
 					<div class=" self-center text-xs font-medium">{$i18n.t('Notifications')}</div>
 
-					<button
-						class="p-1 px-3 text-xs flex rounded-sm transition"
-						on:click={() => {
-							toggleNotification();
-						}}
-						type="button"
-					>
-						{#if notificationEnabled === true}
-							<span class="ml-2 self-center">{$i18n.t('On')}</span>
-						{:else}
-							<span class="ml-2 self-center">{$i18n.t('Off')}</span>
-						{/if}
-					</button>
+					<Switch bind:state={notificationEnabled} on:change={() => saveSettings({ notificationEnabled })} />
 				</div>
 			</div>
 		</div>

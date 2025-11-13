@@ -205,6 +205,7 @@ type Settings = {
 	title?: TitleSettings;
 	splitLargeDeltas?: boolean;
 	chatDirection: 'LTR' | 'RTL' | 'auto';
+	chatFontScale?: number;
 	ctrlEnterToSend?: boolean;
 	customThemeColor?: string;
 

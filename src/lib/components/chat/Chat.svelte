@@ -1668,7 +1668,9 @@
 		const _files = JSON.parse(JSON.stringify(files));
 		// Strip files array and data.file_ids from collections before adding to chatFiles
 		const strippedFiles = _files.map(stripCollectionFiles);
-		chatFiles.push(...strippedFiles.filter((item) => ['doc', 'file', 'collection'].includes(item.type)));
+		chatFiles.push(
+			...strippedFiles.filter((item) => ['doc', 'file', 'collection'].includes(item.type))
+		);
 		chatFiles = chatFiles.filter(
 			// Remove duplicates
 			(item, index, array) =>
@@ -2636,6 +2638,7 @@
 						<div
 							class=" pb-2.5 flex flex-col justify-between w-full flex-auto overflow-auto h-0 max-w-full z-10 scrollbar-hidden"
 							id="messages-container"
+							style={`--chat-font-scale: ${$settings?.chatFontScale ?? 1};`}
 							bind:this={messagesContainerElement}
 							on:scroll={(e) => {
 								autoScroll =

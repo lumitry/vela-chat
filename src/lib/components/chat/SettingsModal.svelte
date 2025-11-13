@@ -11,6 +11,7 @@
 	import About from './Settings/About.svelte';
 	import General from './Settings/General.svelte';
 	import Interface from './Settings/Interface.svelte';
+	import { getAllInterfaceKeywords } from './Settings/interfaceKeywords';
 	import Audio from './Settings/Audio.svelte';
 	import Chats from './Settings/Chats.svelte';
 	import User from '../icons/User.svelte';
@@ -70,6 +71,10 @@
 				'chat',
 				'chatbubble',
 				'chatui',
+				'font',
+				'fontsize',
+				'textsize',
+				'typography',
 				'username',
 				'showusername',
 				'displayusername',
@@ -305,11 +310,25 @@
 	const searchSettings = (query: string): string[] => {
 		const lowerCaseQuery = query.toLowerCase().trim();
 		return searchData
-			.filter(
-				(tab) =>
+			.filter((tab) => {
+				// Check tab title and hardcoded keywords
+				if (
 					tab.title.toLowerCase().includes(lowerCaseQuery) ||
 					tab.keywords.some((keyword) => keyword.includes(lowerCaseQuery))
-			)
+				) {
+					return true;
+				}
+
+				// For Interface tab, also check individual setting keywords
+				if (tab.id === 'interface') {
+					const interfaceKeywords = getAllInterfaceKeywords();
+					return interfaceKeywords.some((keyword) =>
+						keyword.toLowerCase().includes(lowerCaseQuery)
+					);
+				}
+
+				return false;
+			})
 			.map((tab) => tab.id);
 	};
 
@@ -688,6 +707,7 @@
 				{:else if selectedTab === 'interface'}
 					<Interface
 						{saveSettings}
+						searchQuery={search}
 						on:save={() => {
 							toast.success($i18n.t('Settings saved successfully!'));
 						}}
