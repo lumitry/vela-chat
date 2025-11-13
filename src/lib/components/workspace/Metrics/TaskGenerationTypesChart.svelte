@@ -11,7 +11,12 @@
 		TimeScale
 	} from 'chart.js';
 	import 'chartjs-adapter-date-fns';
-	import { getTimeScaleConfig, getTooltipConfig, getChartColors, getChartDefaults } from '$lib/utils/charts';
+	import {
+		getTimeScaleConfig,
+		getTooltipConfig,
+		getChartColors,
+		getChartDefaults
+	} from '$lib/utils/charts';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 
 	ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale, TimeScale);
@@ -42,7 +47,8 @@
 		return map;
 	})();
 
-	$: allDates = data && Array.isArray(data) ? [...new Set(data.map((d) => d.date).filter(Boolean))].sort() : [];
+	$: allDates =
+		data && Array.isArray(data) ? [...new Set(data.map((d) => d.date).filter(Boolean))].sort() : [];
 
 	// Format task type names for display
 	const formatTaskType = (taskType: string): string => {
@@ -50,7 +56,7 @@
 		if (taskType === 'moa_response_generation') {
 			return 'Multi-Response Merge';
 		}
-		
+
 		return taskType
 			.split('_')
 			.map((word) => word.charAt(0).toUpperCase() + word.slice(1))
@@ -134,4 +140,3 @@
 		</div>
 	{/if}
 </div>
-

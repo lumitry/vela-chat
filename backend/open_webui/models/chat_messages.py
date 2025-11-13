@@ -230,9 +230,11 @@ class MessageCreateForm(BaseModel):
 
 
 class ChatMessagesTable:
-    def insert_message(self, chat_id: str, form: MessageCreateForm, message_id: Optional[str] = None) -> Optional[ChatMessageModel]:
+    def insert_message(self, chat_id: str, form: MessageCreateForm, message_id: Optional[str] = None, created_at: Optional[int] = None) -> Optional[ChatMessageModel]:
         with get_db() as db:
             ts = int(time.time())
+            # Use provided created_at if available (for imports), otherwise use current time
+            msg_created_at = created_at if created_at is not None else ts
             mid = message_id if message_id else str(uuid.uuid4())
             
             # Calculate position for sibling ordering if not provided
@@ -268,8 +270,8 @@ class ChatMessagesTable:
                     "annotation": form.annotation,
                     "feedback_id": form.feedback_id,
                     "selected_model_id": form.selected_model_id,
-                    "created_at": ts,
-                    "updated_at": ts,
+                    "created_at": msg_created_at,
+                    "updated_at": ts,  # Always use current time for updated_at
                 }
             )
             db.add(message)

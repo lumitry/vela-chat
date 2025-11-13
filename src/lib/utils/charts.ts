@@ -249,6 +249,9 @@ export function getCurrencyYTicks() {
 
 /**
  * Transform date-based data to Chart.js format with time scale
+ * Note: Dates are in UTC as extracted by the backend. A UTC date represents
+ * all activity during that calendar day in UTC timezone, which may span
+ * two local calendar days depending on the user's timezone offset.
  */
 export function transformToTimeSeriesData<T extends { date: string }>(
 	data: T[],

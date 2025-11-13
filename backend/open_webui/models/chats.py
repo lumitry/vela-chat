@@ -136,7 +136,7 @@ class ChatTable:
                 if "title" in form_data.chat
                 else "New Chat"
             )
-            
+
             chat = ChatModel(
                 **{
                     "id": id,
@@ -165,18 +165,52 @@ class ChatTable:
                 if "title" in form_data.chat
                 else "New Chat"
             )
-            
+
+            # Extract created_at from import data (check both created_at and timestamp)
+            # Use timestamp from import file if available, otherwise use current time
+            # IMPORTANT: Detect and convert milliseconds to seconds (timestamps > year 2100 are likely milliseconds)
+            import_time = int(time.time())
+            chat_created_at = import_time
+            if isinstance(form_data.chat, dict):
+                if "created_at" in form_data.chat and form_data.chat["created_at"]:
+                    try:
+                        chat_created_at = int(form_data.chat["created_at"])
+                        # Convert milliseconds to seconds if timestamp is too large (year 2100 = 4102444800)
+                        if chat_created_at > 4102444800:
+                            chat_created_at = chat_created_at // 1000
+                            log.debug(
+                                f"import_chat: Converted created_at from milliseconds to seconds")
+                    except (ValueError, TypeError):
+                        log.warning(
+                            f"import_chat: Invalid created_at value, using current time")
+                elif "timestamp" in form_data.chat and form_data.chat["timestamp"]:
+                    try:
+                        chat_created_at = int(form_data.chat["timestamp"])
+                        # Convert milliseconds to seconds if timestamp is too large (year 2100 = 4102444800)
+                        if chat_created_at > 4102444800:
+                            chat_created_at = chat_created_at // 1000
+                            log.debug(
+                                f"import_chat: Converted timestamp from milliseconds to seconds")
+                    except (ValueError, TypeError):
+                        log.warning(
+                            f"import_chat: Invalid timestamp value, using current time")
+
+            # Mark this chat as imported in meta so it can be excluded from metrics
+            import_meta = form_data.meta.copy() if form_data.meta else {}
+            import_meta["imported"] = True
+            import_meta["imported_at"] = import_time
+
             chat = ChatModel(
                 **{
                     "id": id,
                     "user_id": user_id,
                     "title": title,
                     "chat": form_data.chat,
-                    "meta": form_data.meta,
+                    "meta": import_meta,
                     "pinned": form_data.pinned,
                     "folder_id": form_data.folder_id,
-                    "created_at": int(time.time()),
-                    "updated_at": int(time.time()),
+                    "created_at": chat_created_at,
+                    "updated_at": import_time,  # Set updated_at to import time
                 }
             )
 
@@ -193,20 +227,21 @@ class ChatTable:
                 if not chat_item:
                     log.warning(f"update_chat_by_id: Chat {id} not found")
                     return None
-                
+
                 chat_item.chat = chat
                 # Only update title if it's explicitly provided in the chat dict
                 # Otherwise preserve the existing title
                 if "title" in chat:
                     chat_item.title = chat["title"]
-                
+
                 chat_item.updated_at = int(time.time())
                 db.commit()
                 db.refresh(chat_item)
 
                 return ChatModel.model_validate(chat_item)
         except Exception as e:
-            log.error(f"update_chat_by_id: Exception updating chat {id}: {e}", exc_info=True)
+            log.error(
+                f"update_chat_by_id: Exception updating chat {id}: {e}", exc_info=True)
             return None
 
     def update_chat_title_by_id(self, id: str, title: str) -> Optional[ChatModel]:
@@ -225,12 +260,12 @@ class ChatTable:
             chat_item = db.get(Chat, id)
             if chat_item is None:
                 return None
-            
+
             if active_message_id is not None:
                 chat_item.active_message_id = active_message_id
             if root_message_id is not None:
                 chat_item.root_message_id = root_message_id
-            
+
             chat_item.updated_at = int(time.time())
             db.commit()
             db.refresh(chat_item)
@@ -253,7 +288,8 @@ class ChatTable:
             if tag_name.lower() == "none":
                 continue
 
-            self.add_chat_tag_by_id_and_user_id_and_tag_name(id, user.id, tag_name)
+            self.add_chat_tag_by_id_and_user_id_and_tag_name(
+                id, user.id, tag_name)
         return self.get_chat_by_id(id)
 
     def get_chat_title_by_id(self, id: str) -> Optional[str]:
@@ -272,10 +308,11 @@ class ChatTable:
         from open_webui.internal.db import get_db
         from open_webui.models.chat_messages import ChatMessage
         from open_webui.models.chat_converter import normalized_to_legacy_format
-        
+
         with get_db() as db:
-            has_normalized = db.query(ChatMessage).filter_by(chat_id=id).first() is not None
-        
+            has_normalized = db.query(ChatMessage).filter_by(
+                chat_id=id).first() is not None
+
         if has_normalized:
             # For normalized chats, convert to legacy format to get messages dict
             legacy_chat = normalized_to_legacy_format(id)
@@ -284,7 +321,7 @@ class ChatTable:
             # Legacy chat, use existing chat.chat blob
             if chat.chat is None:
                 return {}
-            
+
             return chat.chat.get("history", {}).get("messages", {}) or {}
 
     def get_message_by_id_and_message_id(
@@ -296,7 +333,7 @@ class ChatTable:
 
         if chat.chat is None:
             return {}
-        
+
         return chat.chat.get("history", {}).get("messages", {}).get(message_id, {})
 
     def upsert_message_to_chat_by_id_and_message_id(
@@ -309,7 +346,7 @@ class ChatTable:
         chat = chat.chat
         if chat is None:
             chat = {}
-        
+
         history = chat.get("history", {})
         if "messages" not in history:
             history["messages"] = {}
@@ -338,7 +375,8 @@ class ChatTable:
         history = chat.get("history", {})
 
         if message_id in history.get("messages", {}):
-            status_history = history["messages"][message_id].get("statusHistory", [])
+            status_history = history["messages"][message_id].get(
+                "statusHistory", [])
             status_history.append(status)
             history["messages"][message_id]["statusHistory"] = status_history
 
@@ -382,7 +420,8 @@ class ChatTable:
             with get_db() as db:
                 chat = db.get(Chat, chat_id)
                 shared_chat = (
-                    db.query(Chat).filter_by(user_id=f"shared-{chat_id}").first()
+                    db.query(Chat).filter_by(
+                        user_id=f"shared-{chat_id}").first()
                 )
 
                 if shared_chat is None:
@@ -404,11 +443,13 @@ class ChatTable:
             with get_db() as db:
                 # Get the shared chat ID before deleting
                 from open_webui.models.chat_messages import ChatMessage
-                shared_chat = db.query(Chat).filter_by(user_id=f"shared-{chat_id}").first()
+                shared_chat = db.query(Chat).filter_by(
+                    user_id=f"shared-{chat_id}").first()
                 if shared_chat:
                     # Delete all messages for the shared chat (and their attachments via CASCADE)
-                    db.query(ChatMessage).filter_by(chat_id=shared_chat.id).delete()
-                
+                    db.query(ChatMessage).filter_by(
+                        chat_id=shared_chat.id).delete()
+
                 # Delete the shared chat
                 db.query(Chat).filter_by(user_id=f"shared-{chat_id}").delete()
                 db.commit()
@@ -457,7 +498,8 @@ class ChatTable:
     def archive_all_chats_by_user_id(self, user_id: str) -> bool:
         try:
             with get_db() as db:
-                db.query(Chat).filter_by(user_id=user_id).update({"archived": True})
+                db.query(Chat).filter_by(
+                    user_id=user_id).update({"archived": True})
                 db.commit()
                 return True
         except Exception:
@@ -506,8 +548,10 @@ class ChatTable:
         limit: Optional[int] = None,
     ) -> list[ChatTitleIdResponse]:
         with get_db() as db:
-            query = db.query(Chat).filter_by(user_id=user_id).filter_by(folder_id=None)
-            query = query.filter(or_(Chat.pinned == False, Chat.pinned == None))
+            query = db.query(Chat).filter_by(
+                user_id=user_id).filter_by(folder_id=None)
+            query = query.filter(
+                or_(Chat.pinned == False, Chat.pinned == None))
 
             if not include_archived:
                 query = query.filter_by(archived=False)
@@ -628,7 +672,7 @@ class ChatTable:
         """
         import time
         perf_start = time.time()
-        
+
         search_text = search_text.lower().strip()
 
         if not search_text:
@@ -648,9 +692,10 @@ class ChatTable:
         ]
 
         search_text = " ".join(search_text_words)
-        
+
         perf_after_prep = time.time()
-        log.debug(f"Search prep took {(perf_after_prep - perf_start) * 1000:.2f}ms")
+        log.debug(
+            f"Search prep took {(perf_after_prep - perf_start) * 1000:.2f}ms")
 
         with get_db() as db:
             query = db.query(Chat).filter(Chat.user_id == user_id)
@@ -666,7 +711,7 @@ class ChatTable:
             # Check if the database dialect is either 'sqlite' or 'postgresql'
             dialect_name = db.bind.dialect.name
             has_fulltext_search = False  # Initialize for all dialects
-            
+
             if dialect_name == "sqlite":
                 # SQLite case: search in normalized chat_message table
                 # Search in title OR normalized messages
@@ -680,7 +725,8 @@ class ChatTable:
                                 and_(
                                     ChatMessage.chat_id == Chat.id,
                                     ChatMessage.content_text.isnot(None),
-                                    ChatMessage.content_text.ilike(f"%{search_text}%")
+                                    ChatMessage.content_text.ilike(
+                                        f"%{search_text}%")
                                 )
                             )
                         )
@@ -735,53 +781,61 @@ class ChatTable:
                 except Exception:
                     # If check fails, assume columns don't exist and fall back to ILIKE
                     has_fulltext_search = False
-                
+
                 if has_fulltext_search:
                     # PostgreSQL case: use full-text search with tsvector and GIN indexes
                     # Avoid OR condition which prevents index usage - use UNION approach instead
                     # This allows PostgreSQL to use both GIN indexes efficiently
-                    
+
                     perf_before_union = time.time()
-                    
+
                     # Get chat IDs matching in title (uses title_search GIN index)
                     title_match_ids = db.query(Chat.id).filter(
                         Chat.user_id == user_id,
-                        text("chat.title_search @@ plainto_tsquery('english', :search_text)")
+                        text(
+                            "chat.title_search @@ plainto_tsquery('english', :search_text)")
                     )
                     if not include_archived:
-                        title_match_ids = title_match_ids.filter(Chat.archived == False)
-                    
+                        title_match_ids = title_match_ids.filter(
+                            Chat.archived == False)
+
                     # Get chat IDs matching in messages (uses content_text_search GIN index)
                     message_match_ids = db.query(ChatMessage.chat_id).join(
                         Chat, ChatMessage.chat_id == Chat.id
                     ).filter(
                         Chat.user_id == user_id,
                         ChatMessage.content_text.isnot(None),
-                        text("chat_message.content_text_search @@ plainto_tsquery('english', :search_text)")
+                        text(
+                            "chat_message.content_text_search @@ plainto_tsquery('english', :search_text)")
                     )
                     if not include_archived:
-                        message_match_ids = message_match_ids.filter(Chat.archived == False)
-                    
+                        message_match_ids = message_match_ids.filter(
+                            Chat.archived == False)
+
                     # Union both result sets and filter main query by matching IDs
                     # This avoids OR and allows both indexes to be used
                     all_match_ids = title_match_ids.union(message_match_ids)
-                    
+
                     # Execute the union query to get matching IDs
                     perf_before_exec = time.time()
-                    matching_ids_list = [row[0] for row in all_match_ids.params(search_text=search_text).all()]
+                    matching_ids_list = [row[0] for row in all_match_ids.params(
+                        search_text=search_text).all()]
                     perf_after_exec = time.time()
-                    log.debug(f"Union query execution took {(perf_after_exec - perf_before_exec) * 1000:.2f}ms, found {len(matching_ids_list)} matching chats")
-                    
+                    log.debug(
+                        f"Union query execution took {(perf_after_exec - perf_before_exec) * 1000:.2f}ms, found {len(matching_ids_list)} matching chats")
+
                     if matching_ids_list:
                         query = query.filter(Chat.id.in_(matching_ids_list))
                     else:
                         # No matches, return empty result early
                         perf_total = time.time()
-                        log.info(f"Total search took {(perf_total - perf_start) * 1000:.2f}ms, found 0 chats (no matches)")
+                        log.info(
+                            f"Total search took {(perf_total - perf_start) * 1000:.2f}ms, found 0 chats (no matches)")
                         return []
-                    
+
                     perf_after_union = time.time()
-                    log.debug(f"Full-text search setup took {(perf_after_union - perf_before_union) * 1000:.2f}ms")
+                    log.debug(
+                        f"Full-text search setup took {(perf_after_union - perf_before_union) * 1000:.2f}ms")
                 else:
                     # Fallback to ILIKE if full-text search columns don't exist yet
                     # This allows the code to work before the migration is run
@@ -793,7 +847,8 @@ class ChatTable:
                                     and_(
                                         ChatMessage.chat_id == Chat.id,
                                         ChatMessage.content_text.isnot(None),
-                                        ChatMessage.content_text.ilike(f"%{search_text}%")
+                                        ChatMessage.content_text.ilike(
+                                            f"%{search_text}%")
                                     )
                                 )
                             )
@@ -846,11 +901,12 @@ class ChatTable:
                 all_chats = query.with_entities(
                     Chat.id, Chat.title, Chat.updated_at, Chat.created_at
                 ).offset(skip).limit(limit).all()
-                
+
                 # Convert tuple results to ChatModel-like objects
                 perf_after_query = time.time()
-                log.debug(f"Main query execution took {(perf_after_query - perf_before_query) * 1000:.2f}ms")
-                
+                log.debug(
+                    f"Main query execution took {(perf_after_query - perf_before_query) * 1000:.2f}ms")
+
                 perf_before_validate = time.time()
                 # Create minimal ChatModel objects with only the fields we have
                 result = []
@@ -880,16 +936,19 @@ class ChatTable:
                 # For SQLite or non-fulltext, load full objects (legacy behavior)
                 all_chats = query.offset(skip).limit(limit).all()
                 perf_after_query = time.time()
-                log.debug(f"Main query execution took {(perf_after_query - perf_before_query) * 1000:.2f}ms")
-                
+                log.debug(
+                    f"Main query execution took {(perf_after_query - perf_before_query) * 1000:.2f}ms")
+
                 perf_before_validate = time.time()
                 result = [ChatModel.model_validate(chat) for chat in all_chats]
-            
+
             perf_after_validate = time.time()
-            log.debug(f"Model validation took {(perf_after_validate - perf_before_validate) * 1000:.2f}ms")
-            
+            log.debug(
+                f"Model validation took {(perf_after_validate - perf_before_validate) * 1000:.2f}ms")
+
             perf_total = time.time()
-            log.info(f"Total search took {(perf_total - perf_start) * 1000:.2f}ms, found {len(result)} chats")
+            log.info(
+                f"Total search took {(perf_total - perf_start) * 1000:.2f}ms, found {len(result)} chats")
 
             # Validate and return chats
             return result
@@ -912,7 +971,8 @@ class ChatTable:
             if folder_ids:
                 query = query.filter(Chat.folder_id.in_(folder_ids))
 
-            query = query.filter(or_(Chat.pinned == False, Chat.pinned == None))
+            query = query.filter(
+                or_(Chat.pinned == False, Chat.pinned == None))
             query = query.filter_by(archived=False)
             query = query.order_by(Chat.updated_at.desc())
 
@@ -951,7 +1011,8 @@ class ChatTable:
             query = db.query(Chat).filter(
                 Chat.folder_id.in_(folder_ids), Chat.user_id == user_id
             )
-            query = query.filter(or_(Chat.pinned == False, Chat.pinned == None))
+            query = query.filter(
+                or_(Chat.pinned == False, Chat.pinned == None))
             query = query.filter_by(archived=False)
             query = query.order_by(Chat.updated_at.desc())
 
@@ -1108,7 +1169,7 @@ class ChatTable:
                 # Delete all messages for this chat (and their attachments via CASCADE)
                 from open_webui.models.chat_messages import ChatMessage
                 db.query(ChatMessage).filter_by(chat_id=id).delete()
-                
+
                 # Delete the chat
                 db.query(Chat).filter_by(id=id).delete()
                 db.commit()
@@ -1123,7 +1184,7 @@ class ChatTable:
                 # Delete all messages for this chat (and their attachments via CASCADE)
                 from open_webui.models.chat_messages import ChatMessage
                 db.query(ChatMessage).filter_by(chat_id=id).delete()
-                
+
                 # Delete the chat
                 db.query(Chat).filter_by(id=id, user_id=user_id).delete()
                 db.commit()
@@ -1139,12 +1200,14 @@ class ChatTable:
 
                 # Get all chat IDs for this user before deleting
                 from open_webui.models.chat_messages import ChatMessage
-                chat_ids = [chat.id for chat in db.query(Chat).filter_by(user_id=user_id).all()]
-                
+                chat_ids = [chat.id for chat in db.query(
+                    Chat).filter_by(user_id=user_id).all()]
+
                 # Delete all messages for all chats belonging to this user
                 # (attachments will be deleted via CASCADE when messages are deleted)
                 if chat_ids:
-                    db.query(ChatMessage).filter(ChatMessage.chat_id.in_(chat_ids)).delete()
+                    db.query(ChatMessage).filter(
+                        ChatMessage.chat_id.in_(chat_ids)).delete()
 
                 # Delete the chats
                 db.query(Chat).filter_by(user_id=user_id).delete()
@@ -1161,15 +1224,18 @@ class ChatTable:
             with get_db() as db:
                 # Get all chat IDs for this user and folder before deleting
                 from open_webui.models.chat_messages import ChatMessage
-                chat_ids = [chat.id for chat in db.query(Chat).filter_by(user_id=user_id, folder_id=folder_id).all()]
-                
+                chat_ids = [chat.id for chat in db.query(Chat).filter_by(
+                    user_id=user_id, folder_id=folder_id).all()]
+
                 # Delete all messages for all chats in this folder
                 # (attachments will be deleted via CASCADE when messages are deleted)
                 if chat_ids:
-                    db.query(ChatMessage).filter(ChatMessage.chat_id.in_(chat_ids)).delete()
-                
+                    db.query(ChatMessage).filter(
+                        ChatMessage.chat_id.in_(chat_ids)).delete()
+
                 # Delete the chats
-                db.query(Chat).filter_by(user_id=user_id, folder_id=folder_id).delete()
+                db.query(Chat).filter_by(user_id=user_id,
+                                         folder_id=folder_id).delete()
                 db.commit()
 
                 return True
@@ -1180,19 +1246,23 @@ class ChatTable:
         try:
             with get_db() as db:
                 chats_by_user = db.query(Chat).filter_by(user_id=user_id).all()
-                shared_chat_ids = [f"shared-{chat.id}" for chat in chats_by_user]
+                shared_chat_ids = [
+                    f"shared-{chat.id}" for chat in chats_by_user]
 
                 # Get the actual shared chat IDs (not just the user_id pattern)
                 from open_webui.models.chat_messages import ChatMessage
-                shared_chats = db.query(Chat).filter(Chat.user_id.in_(shared_chat_ids)).all()
+                shared_chats = db.query(Chat).filter(
+                    Chat.user_id.in_(shared_chat_ids)).all()
                 shared_chat_actual_ids = [chat.id for chat in shared_chats]
-                
+
                 # Delete all messages for all shared chats (attachments will be deleted via CASCADE)
                 if shared_chat_actual_ids:
-                    db.query(ChatMessage).filter(ChatMessage.chat_id.in_(shared_chat_actual_ids)).delete()
-                
+                    db.query(ChatMessage).filter(
+                        ChatMessage.chat_id.in_(shared_chat_actual_ids)).delete()
+
                 # Delete the shared chats
-                db.query(Chat).filter(Chat.user_id.in_(shared_chat_ids)).delete()
+                db.query(Chat).filter(
+                    Chat.user_id.in_(shared_chat_ids)).delete()
                 db.commit()
 
                 return True
@@ -1206,23 +1276,24 @@ class ChatTable:
         Returns the new cloned chat.
         """
         from open_webui.models.chat_messages import ChatMessages, ChatMessage
-        
+
         # Get source chat
         source_chat = self.get_chat_by_id(source_chat_id)
         if not source_chat:
             return None
-        
+
         # Check if source chat has normalized messages
         with get_db() as db:
-            has_normalized = db.query(ChatMessage).filter_by(chat_id=source_chat_id).first() is not None
-        
+            has_normalized = db.query(ChatMessage).filter_by(
+                chat_id=source_chat_id).first() is not None
+
         # Create new chat entry
         new_chat_id = str(uuid.uuid4())
         ts = int(time.time())
-        
+
         # Determine title
         title = new_title if new_title else f"Clone of {source_chat.title}"
-        
+
         # Create new chat with updated metadata
         new_chat = ChatModel(
             **{
@@ -1243,37 +1314,38 @@ class ChatTable:
                 "summary": source_chat.summary,
             }
         )
-        
+
         # Add meta to track original chat
         if not new_chat.meta:
             new_chat.meta = {}
         new_chat.meta["originalChatId"] = source_chat_id
-        
+
         with get_db() as db:
             result = Chat(**new_chat.model_dump())
             db.add(result)
             db.flush()
-            
+
             # Clone messages if the source chat has normalized messages
             if has_normalized:
-                id_mapping = ChatMessages.clone_messages_to_chat(source_chat_id, new_chat_id)
-                
+                id_mapping = ChatMessages.clone_messages_to_chat(
+                    source_chat_id, new_chat_id)
+
                 # Update active_message_id and root_message_id to new message IDs
                 new_active_message_id = None
                 new_root_message_id = None
-                
+
                 if source_chat.active_message_id:
                     old_active_id = str(source_chat.active_message_id)
                     new_active_message_id = id_mapping.get(old_active_id)
-                
+
                 if source_chat.root_message_id:
                     old_root_id = str(source_chat.root_message_id)
                     new_root_message_id = id_mapping.get(old_root_id)
-                
+
                 # Update the chat with new message IDs
                 result.active_message_id = new_active_message_id
                 result.root_message_id = new_root_message_id
-                
+
                 # Also add branchPointMessageId to meta for legacy compatibility
                 if new_active_message_id:
                     result.meta = {
@@ -1296,10 +1368,10 @@ class ChatTable:
                             "branchPointMessageId": current_id,
                         }
                     result.chat = legacy_chat
-            
+
             db.commit()
             db.refresh(result)
-            
+
             return ChatModel.model_validate(result)
 
 

@@ -10,7 +10,8 @@
 		deleteAllChats,
 		getAllChats,
 		getAllUserChats,
-		getChatList
+		getChatList,
+		importChat
 	} from '$lib/apis/chats';
 	import { getImportOrigin, convertOpenAIChats } from '$lib/utils';
 	import { onMount, getContext } from 'svelte';
@@ -57,10 +58,25 @@
 		for (const chat of _chats) {
 			console.log(chat);
 
+			// Use importChat instead of createNewChat to preserve timestamps
 			if (chat.chat) {
-				await createNewChat(localStorage.token, chat.chat);
+				// Ensure timestamp is in the chat object if it exists at root level
+				if (chat.timestamp && !chat.chat.timestamp && !chat.chat.created_at) {
+					chat.chat.timestamp = chat.timestamp;
+				}
+				if (chat.created_at && !chat.chat.created_at && !chat.chat.timestamp) {
+					chat.chat.created_at = chat.created_at;
+				}
+				await importChat(
+					localStorage.token,
+					chat.chat,
+					chat.meta || {},
+					chat.pinned,
+					chat.folder_id
+				);
 			} else {
-				await createNewChat(localStorage.token, chat);
+				// If no nested chat object, use the root object as chat
+				await importChat(localStorage.token, chat, chat.meta || {}, chat.pinned, chat.folder_id);
 			}
 		}
 
@@ -162,6 +178,10 @@
 				</div>
 				<div class=" self-center text-sm font-medium">{$i18n.t('Export Chats')}</div>
 			</button>
+
+			<p class="text-gray-500 dark:text-gray-400 text-xs italic mt-2 mb-2">
+				You can also import chats by dragging and dropping them into the sidebar.
+			</p>
 		</div>
 
 		<hr class=" border-gray-100 dark:border-gray-850" />
@@ -190,7 +210,7 @@
 						/>
 					</svg>
 				</div>
-				<div class=" self-center text-sm font-medium">{$i18n.t('Archived Chats')}</div>
+				<div class=" self-center text-sm font-medium">{$i18n.t('Show Archived Chats')}</div>
 			</button>
 
 			{#if showArchiveConfirm}

@@ -568,9 +568,11 @@
 				for each generation. However, workspace models are <em>not</em> flattened to their base models.
 			</p>
 			<br />
-			<p>
+			<!-- (Irrelevant now that task model generations show up as metrics)<p>
 				<strong>Task model generations</strong> are included in the metrics.
 			</p>
+			<br /> -->
+			<p>All dates are in UTC timezone, so a date may span multiple local calendar days.</p>
 		</div>
 	</div>
 </div>

@@ -2325,7 +2325,7 @@
 				params: params,
 				// no history/messages in new chat payload
 				tags: [],
-				timestamp: Date.now()
+				timestamp: Math.floor(Date.now() / 1000) // Unix epoch in seconds
 			});
 
 			_chatId = chat.id;
@@ -2543,7 +2543,7 @@
 							system: $settings.system ?? undefined,
 							params: params,
 							history: history,
-							timestamp: Date.now()
+							timestamp: Math.floor(Date.now() / 1000) // Unix epoch in seconds
 						}
 					}}
 					{history}
