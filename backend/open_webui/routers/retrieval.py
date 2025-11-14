@@ -388,6 +388,13 @@ async def get_rag_config(request: Request, user=Depends(get_admin_user)):
             "WEB_SEARCH_CONCURRENT_REQUESTS": request.app.state.config.WEB_SEARCH_CONCURRENT_REQUESTS,
             "WEB_SEARCH_DOMAIN_FILTER_LIST": request.app.state.config.WEB_SEARCH_DOMAIN_FILTER_LIST,
             "BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL": request.app.state.config.BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL,
+            "WEB_SEARCH_EMBEDDING_ENGINE": request.app.state.config.WEB_SEARCH_EMBEDDING_ENGINE,
+            "WEB_SEARCH_EMBEDDING_MODEL": request.app.state.config.WEB_SEARCH_EMBEDDING_MODEL,
+            "WEB_SEARCH_EMBEDDING_BATCH_SIZE": request.app.state.config.WEB_SEARCH_EMBEDDING_BATCH_SIZE,
+            "WEB_SEARCH_OPENAI_API_BASE_URL": request.app.state.config.WEB_SEARCH_OPENAI_API_BASE_URL,
+            "WEB_SEARCH_OPENAI_API_KEY": request.app.state.config.WEB_SEARCH_OPENAI_API_KEY,
+            "WEB_SEARCH_OLLAMA_BASE_URL": request.app.state.config.WEB_SEARCH_OLLAMA_BASE_URL,
+            "WEB_SEARCH_OLLAMA_API_KEY": request.app.state.config.WEB_SEARCH_OLLAMA_API_KEY,
             "SEARXNG_QUERY_URL": request.app.state.config.SEARXNG_QUERY_URL,
             "GOOGLE_PSE_API_KEY": request.app.state.config.GOOGLE_PSE_API_KEY,
             "GOOGLE_PSE_ENGINE_ID": request.app.state.config.GOOGLE_PSE_ENGINE_ID,
@@ -433,6 +440,14 @@ class WebConfig(BaseModel):
     WEB_SEARCH_CONCURRENT_REQUESTS: Optional[int] = None
     WEB_SEARCH_DOMAIN_FILTER_LIST: Optional[List[str]] = []
     BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL: Optional[bool] = None
+    # Web search embedding settings
+    WEB_SEARCH_EMBEDDING_ENGINE: Optional[str] = None
+    WEB_SEARCH_EMBEDDING_MODEL: Optional[str] = None
+    WEB_SEARCH_EMBEDDING_BATCH_SIZE: Optional[int] = None
+    WEB_SEARCH_OPENAI_API_BASE_URL: Optional[str] = None
+    WEB_SEARCH_OPENAI_API_KEY: Optional[str] = None
+    WEB_SEARCH_OLLAMA_BASE_URL: Optional[str] = None
+    WEB_SEARCH_OLLAMA_API_KEY: Optional[str] = None
     SEARXNG_QUERY_URL: Optional[str] = None
     GOOGLE_PSE_API_KEY: Optional[str] = None
     GOOGLE_PSE_ENGINE_ID: Optional[str] = None
@@ -650,6 +665,20 @@ async def update_rag_config(
         request.app.state.config.BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL = (
             form_data.web.BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL
         )
+        if form_data.web.WEB_SEARCH_EMBEDDING_ENGINE is not None:
+            request.app.state.config.WEB_SEARCH_EMBEDDING_ENGINE = form_data.web.WEB_SEARCH_EMBEDDING_ENGINE
+        if form_data.web.WEB_SEARCH_EMBEDDING_MODEL is not None:
+            request.app.state.config.WEB_SEARCH_EMBEDDING_MODEL = form_data.web.WEB_SEARCH_EMBEDDING_MODEL
+        if form_data.web.WEB_SEARCH_EMBEDDING_BATCH_SIZE is not None:
+            request.app.state.config.WEB_SEARCH_EMBEDDING_BATCH_SIZE = form_data.web.WEB_SEARCH_EMBEDDING_BATCH_SIZE
+        if form_data.web.WEB_SEARCH_OPENAI_API_BASE_URL is not None:
+            request.app.state.config.WEB_SEARCH_OPENAI_API_BASE_URL = form_data.web.WEB_SEARCH_OPENAI_API_BASE_URL
+        if form_data.web.WEB_SEARCH_OPENAI_API_KEY is not None:
+            request.app.state.config.WEB_SEARCH_OPENAI_API_KEY = form_data.web.WEB_SEARCH_OPENAI_API_KEY
+        if form_data.web.WEB_SEARCH_OLLAMA_BASE_URL is not None:
+            request.app.state.config.WEB_SEARCH_OLLAMA_BASE_URL = form_data.web.WEB_SEARCH_OLLAMA_BASE_URL
+        if form_data.web.WEB_SEARCH_OLLAMA_API_KEY is not None:
+            request.app.state.config.WEB_SEARCH_OLLAMA_API_KEY = form_data.web.WEB_SEARCH_OLLAMA_API_KEY
         request.app.state.config.SEARXNG_QUERY_URL = form_data.web.SEARXNG_QUERY_URL
         request.app.state.config.GOOGLE_PSE_API_KEY = form_data.web.GOOGLE_PSE_API_KEY
         request.app.state.config.GOOGLE_PSE_ENGINE_ID = (
@@ -748,6 +777,13 @@ async def update_rag_config(
             "WEB_SEARCH_CONCURRENT_REQUESTS": request.app.state.config.WEB_SEARCH_CONCURRENT_REQUESTS,
             "WEB_SEARCH_DOMAIN_FILTER_LIST": request.app.state.config.WEB_SEARCH_DOMAIN_FILTER_LIST,
             "BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL": request.app.state.config.BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL,
+            "WEB_SEARCH_EMBEDDING_ENGINE": request.app.state.config.WEB_SEARCH_EMBEDDING_ENGINE,
+            "WEB_SEARCH_EMBEDDING_MODEL": request.app.state.config.WEB_SEARCH_EMBEDDING_MODEL,
+            "WEB_SEARCH_EMBEDDING_BATCH_SIZE": request.app.state.config.WEB_SEARCH_EMBEDDING_BATCH_SIZE,
+            "WEB_SEARCH_OPENAI_API_BASE_URL": request.app.state.config.WEB_SEARCH_OPENAI_API_BASE_URL,
+            "WEB_SEARCH_OPENAI_API_KEY": request.app.state.config.WEB_SEARCH_OPENAI_API_KEY,
+            "WEB_SEARCH_OLLAMA_BASE_URL": request.app.state.config.WEB_SEARCH_OLLAMA_BASE_URL,
+            "WEB_SEARCH_OLLAMA_API_KEY": request.app.state.config.WEB_SEARCH_OLLAMA_API_KEY,
             "SEARXNG_QUERY_URL": request.app.state.config.SEARXNG_QUERY_URL,
             "GOOGLE_PSE_API_KEY": request.app.state.config.GOOGLE_PSE_API_KEY,
             "GOOGLE_PSE_ENGINE_ID": request.app.state.config.GOOGLE_PSE_ENGINE_ID,
@@ -801,6 +837,7 @@ def save_docs_to_vector_db(
     split: bool = True,
     add: bool = False,
     user=None,
+    use_web_search_embedding: bool = False,
 ) -> bool:
     def _get_docs_info(docs: list[Document]) -> str:
         docs_info = set()
@@ -902,22 +939,64 @@ def save_docs_to_vector_db(
                 return True
 
         log.info(f"adding to collection {collection_name}")
-        embedding_function = get_embedding_function(
-            request.app.state.config.RAG_EMBEDDING_ENGINE,
-            request.app.state.config.RAG_EMBEDDING_MODEL,
-            request.app.state.ef,
-            (
-                request.app.state.config.RAG_OPENAI_API_BASE_URL
-                if request.app.state.config.RAG_EMBEDDING_ENGINE == "openai"
-                else request.app.state.config.RAG_OLLAMA_BASE_URL
-            ),
-            (
-                request.app.state.config.RAG_OPENAI_API_KEY
-                if request.app.state.config.RAG_EMBEDDING_ENGINE == "openai"
-                else request.app.state.config.RAG_OLLAMA_API_KEY
-            ),
-            request.app.state.config.RAG_EMBEDDING_BATCH_SIZE,
-        )
+        
+        # Use web search embedding config if specified and configured, otherwise use regular RAG config
+        # If WEB_SEARCH_EMBEDDING_ENGINE is empty string, it means "use documents setting" (fallback to RAG config)
+        # If it's set to a specific engine (including "sentence-transformers"), use that for web search
+        if use_web_search_embedding and request.app.state.config.WEB_SEARCH_EMBEDDING_ENGINE is not None and request.app.state.config.WEB_SEARCH_EMBEDDING_ENGINE != "":
+            # Use web search embedding config
+            embedding_engine = request.app.state.config.WEB_SEARCH_EMBEDDING_ENGINE
+            embedding_model = request.app.state.config.WEB_SEARCH_EMBEDDING_MODEL or request.app.state.config.RAG_EMBEDDING_MODEL
+            embedding_batch_size = request.app.state.config.WEB_SEARCH_EMBEDDING_BATCH_SIZE or request.app.state.config.RAG_EMBEDDING_BATCH_SIZE
+            
+            # Get embedding function for web search (ef) if needed (for sentence transformers)
+            web_search_ef = request.app.state.ef
+            if embedding_engine == "" or embedding_engine == "sentence-transformers":
+                web_search_ef = get_ef("", embedding_model, RAG_EMBEDDING_MODEL_AUTO_UPDATE)
+            
+            # Normalize sentence-transformers to empty string for get_embedding_function
+            normalized_engine = "" if embedding_engine == "sentence-transformers" else embedding_engine
+            embedding_function = get_embedding_function(
+                normalized_engine,
+                embedding_model,
+                web_search_ef,
+                (
+                    request.app.state.config.WEB_SEARCH_OPENAI_API_BASE_URL
+                    if normalized_engine == "openai"
+                    else request.app.state.config.WEB_SEARCH_OLLAMA_BASE_URL
+                ),
+                (
+                    request.app.state.config.WEB_SEARCH_OPENAI_API_KEY
+                    if normalized_engine == "openai"
+                    else request.app.state.config.WEB_SEARCH_OLLAMA_API_KEY
+                ),
+                embedding_batch_size,
+            )
+            
+            # Update metadata with web search embedding config
+            for metadata in metadatas:
+                embedding_config = json.loads(metadata.get("embedding_config", "{}"))
+                embedding_config["engine"] = embedding_engine
+                embedding_config["model"] = embedding_model
+                metadata["embedding_config"] = json.dumps(embedding_config)
+        else:
+            # Use regular RAG embedding config
+            embedding_function = get_embedding_function(
+                request.app.state.config.RAG_EMBEDDING_ENGINE,
+                request.app.state.config.RAG_EMBEDDING_MODEL,
+                request.app.state.ef,
+                (
+                    request.app.state.config.RAG_OPENAI_API_BASE_URL
+                    if request.app.state.config.RAG_EMBEDDING_ENGINE == "openai"
+                    else request.app.state.config.RAG_OLLAMA_BASE_URL
+                ),
+                (
+                    request.app.state.config.RAG_OPENAI_API_KEY
+                    if request.app.state.config.RAG_EMBEDDING_ENGINE == "openai"
+                    else request.app.state.config.RAG_OLLAMA_API_KEY
+                ),
+                request.app.state.config.RAG_EMBEDDING_BATCH_SIZE,
+            )
 
         embeddings = embedding_function(
             list(map(lambda x: x.replace("\n", " "), texts)),
@@ -1533,6 +1612,7 @@ async def process_web_search(
                         collection_name,
                         overwrite=True,
                         user=user,
+                        use_web_search_embedding=True,
                     )
 
             return {

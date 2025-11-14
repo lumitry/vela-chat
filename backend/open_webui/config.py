@@ -2080,6 +2080,52 @@ WEB_SEARCH_TRUST_ENV = PersistentConfig(
     os.getenv("WEB_SEARCH_TRUST_ENV", "False").lower() == "true",
 )
 
+# Web search embedding settings (override for web search queries)
+WEB_SEARCH_EMBEDDING_ENGINE = PersistentConfig(
+    "WEB_SEARCH_EMBEDDING_ENGINE",
+    "rag.web.search.embedding_engine",
+    os.environ.get("WEB_SEARCH_EMBEDDING_ENGINE", ""),
+)
+
+WEB_SEARCH_EMBEDDING_MODEL = PersistentConfig(
+    "WEB_SEARCH_EMBEDDING_MODEL",
+    "rag.web.search.embedding_model",
+    os.environ.get("WEB_SEARCH_EMBEDDING_MODEL", ""),
+)
+
+WEB_SEARCH_EMBEDDING_BATCH_SIZE = PersistentConfig(
+    "WEB_SEARCH_EMBEDDING_BATCH_SIZE",
+    "rag.web.search.embedding_batch_size",
+    int(
+        os.environ.get("WEB_SEARCH_EMBEDDING_BATCH_SIZE")
+        or os.environ.get("WEB_SEARCH_EMBEDDING_OPENAI_BATCH_SIZE", "1")
+    ),
+)
+
+WEB_SEARCH_OPENAI_API_BASE_URL = PersistentConfig(
+    "WEB_SEARCH_OPENAI_API_BASE_URL",
+    "rag.web.search.openai_api_base_url",
+    os.getenv("WEB_SEARCH_OPENAI_API_BASE_URL", OPENAI_API_BASE_URL),
+)
+
+WEB_SEARCH_OPENAI_API_KEY = PersistentConfig(
+    "WEB_SEARCH_OPENAI_API_KEY",
+    "rag.web.search.openai_api_key",
+    os.getenv("WEB_SEARCH_OPENAI_API_KEY", ""),
+)
+
+WEB_SEARCH_OLLAMA_BASE_URL = PersistentConfig(
+    "WEB_SEARCH_OLLAMA_BASE_URL",
+    "rag.web.search.ollama_base_url",
+    os.getenv("WEB_SEARCH_OLLAMA_BASE_URL", OLLAMA_BASE_URL),
+)
+
+WEB_SEARCH_OLLAMA_API_KEY = PersistentConfig(
+    "WEB_SEARCH_OLLAMA_API_KEY",
+    "rag.web.search.ollama_api_key",
+    os.getenv("WEB_SEARCH_OLLAMA_API_KEY", ""),
+)
+
 
 SEARXNG_QUERY_URL = PersistentConfig(
     "SEARXNG_QUERY_URL",
