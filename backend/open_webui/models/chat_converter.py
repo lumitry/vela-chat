@@ -32,8 +32,7 @@ def strip_collection_files(file_item: dict) -> dict:
         # Create a copy without files and data.file_ids
         stripped = {k: v for k, v in file_item.items() if k != "files"}
         if "data" in stripped and isinstance(stripped["data"], dict):
-            data_copy = {k: v for k,
-                         v in stripped["data"].items() if k != "file_ids"}
+            data_copy = {k: v for k, v in stripped["data"].items() if k != "file_ids"}
             if data_copy:
                 stripped["data"] = data_copy
             else:
@@ -60,17 +59,14 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
             return {}
 
         # Get all messages for this chat, ordered by creation time
-        messages_query = db.query(ChatMessage).filter_by(
-            chat_id=chat_id).order_by(ChatMessage.created_at.asc())
+        messages_query = db.query(ChatMessage).filter_by(chat_id=chat_id).order_by(ChatMessage.created_at.asc())
         all_messages = messages_query.all()
 
         # Get all attachments
         message_ids = [m.id for m in all_messages]
         attachments_map: Dict[str, List[Dict]] = {}
         if message_ids:
-            attachments = db.query(ChatMessageAttachment).filter(
-                ChatMessageAttachment.message_id.in_(message_ids)
-            ).all()
+            attachments = db.query(ChatMessageAttachment).filter(ChatMessageAttachment.message_id.in_(message_ids)).all()
             for att in attachments:
                 msg_id_str = str(att.message_id) if att.message_id else None
                 if msg_id_str:
@@ -154,8 +150,7 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
                             file_record = Files.get_file_by_id(file_id)
                             if file_record:
                                 # Start with file record data
-                                file_meta = dict(
-                                    file_record.meta) if file_record.meta else {}
+                                file_meta = dict(file_record.meta) if file_record.meta else {}
 
                                 # Merge attachment metadata (which may have collection info, etc.)
                                 if att_meta:
@@ -197,8 +192,7 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
                                     file_obj["status"] = "processed"  # Default
 
                                 # Add collection info if present
-                                collection_name = att_meta.get(
-                                    "collection_name") or file_meta.get("collection_name")
+                                collection_name = att_meta.get("collection_name") or file_meta.get("collection_name")
                                 if collection_name:
                                     # Ensure collection_name is in meta
                                     if "collection_name" not in file_obj["meta"]:
@@ -211,8 +205,7 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
                                         try:
                                             from open_webui.models.knowledge import Knowledge
                                             with get_db() as db:
-                                                knowledge = db.query(Knowledge).filter_by(
-                                                    id=collection_name).first()
+                                                knowledge = db.query(Knowledge).filter_by(id=collection_name).first()
                                                 if knowledge:
                                                     file_obj["collection"] = {
                                                         "name": knowledge.name or "",
@@ -250,8 +243,7 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
                                 if not embed_files_as_base64:
                                     file_obj["url"] = f"/api/v1/files/{file_id}/content"
                         except Exception as e:
-                            log.warning(
-                                f"normalized_to_legacy_format: Failed to get file record {file_id}: {e}, using attachment metadata")
+                            log.warning(f"normalized_to_legacy_format: Failed to get file record {file_id}: {e}, using attachment metadata")
                             # Fallback: reconstruct from attachment metadata
                             file_obj = {
                                 "id": file_id,
@@ -286,8 +278,7 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
                                 file_obj[key] = att_meta[key]
                         # Copy data but exclude file_ids
                         if "data" in att_meta and isinstance(att_meta["data"], dict):
-                            data_copy = {
-                                k: v for k, v in att_meta["data"].items() if k != "file_ids"}
+                            data_copy = {k: v for k, v in att_meta["data"].items() if k != "file_ids"}
                             if data_copy:  # Only add data if there are other fields besides file_ids
                                 file_obj["data"] = data_copy
                     elif att_type == "web_search" and att_meta:
@@ -322,8 +313,7 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
                                 if os.path.isfile(file_path):
                                     with open(file_path, "rb") as f:
                                         file_content = f.read()
-                                    base64_data = base64.b64encode(
-                                        file_content).decode("utf-8")
+                                    base64_data = base64.b64encode(file_content).decode("utf-8")
 
                                     # Use data URL format for compatibility with old exports
                                     # Format: data:{mime_type};base64,{base64_data}
@@ -337,18 +327,15 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
                                 else:
                                     # File doesn't exist on disk, use file URL as fallback
                                     file_obj["url"] = f"/api/v1/files/{file_id}/content"
-                                    log.warning(
-                                        f"normalized_to_legacy_format: File {file_id} not found at path {file_path}, using file URL")
+                                    log.warning(f"normalized_to_legacy_format: File {file_id} not found at path {file_path}, using file URL")
                             else:
                                 # File record not found, use file URL as fallback
                                 file_obj["url"] = f"/api/v1/files/{file_id}/content"
-                                log.warning(
-                                    f"normalized_to_legacy_format: File record {file_id} not found, using file URL")
+                                log.warning(f"normalized_to_legacy_format: File record {file_id} not found, using file URL")
                         except Exception as e:
                             # On error, use file URL as fallback
                             file_obj["url"] = f"/api/v1/files/{file_id}/content"
-                            log.warning(
-                                f"normalized_to_legacy_format: Failed to embed file {file_id} as base64: {e}, using file URL")
+                            log.warning(f"normalized_to_legacy_format: Failed to embed file {file_id} as base64: {e}, using file URL")
                     elif file_id and not embed_files_as_base64 and isinstance(file_obj, dict) and "url" not in file_obj:
                         # For API responses, use file URL (don't embed base64)
                         file_obj["url"] = f"/api/v1/files/{file_id}/content"
@@ -401,8 +388,7 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
                             dedup.append(f)
                         else:
                             # Key already exists - check if we should replace with a more complete version
-                            existing_idx = next((i for i, existing in enumerate(dedup) if (existing.get(
-                                "type"), existing.get("id") or existing.get("collection_name")) == key), None)
+                            existing_idx = next((i for i, existing in enumerate(dedup) if (existing.get("type"), existing.get("id") or existing.get("collection_name")) == key), None)
                             if existing_idx is not None:
                                 existing = dedup[existing_idx]
                                 # Prefer the one with an id field (more complete)
@@ -425,8 +411,7 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
             msg_id = str(msg.id) if msg.id else None
             msg_parent_id = str(msg.parent_id) if msg.parent_id else None
             msg_role = str(msg.role) if msg.role else ""
-            msg_content_text = str(msg.content_json.get("text")) if (msg.content_json and isinstance(
-                msg.content_json, dict) and "text" in msg.content_json) else (str(msg.content_text) if msg.content_text else "")
+            msg_content_text = str(msg.content_json.get("text")) if (msg.content_json and isinstance(msg.content_json, dict) and "text" in msg.content_json) else (str(msg.content_text) if msg.content_text else "")
             msg_model_id = str(msg.model_id) if msg.model_id else None
             msg_created_at = int(msg.created_at) if msg.created_at else 0
 
@@ -494,8 +479,7 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
                             if isinstance(source, dict) and "source" in source:
                                 source_copy = dict(source)
                                 if isinstance(source_copy["source"], dict) and source_copy["source"].get("type") == "collection":
-                                    source_copy["source"] = strip_collection_files(
-                                        source_copy["source"])
+                                    source_copy["source"] = strip_collection_files(source_copy["source"])
                                 stripped_sources.append(source_copy)
                             else:
                                 stripped_sources.append(source)
@@ -533,8 +517,7 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
 
         # Get models from first user message's meta (where it should be stored)
         # Do NOT read from chat.params - models should be at chat level, not in params
-        first_user_msg = next(
-            (m for m in all_messages if m.role == "user"), None)
+        first_user_msg = next((m for m in all_messages if m.role == "user"), None)
         if first_user_msg and first_user_msg.meta and "models" in first_user_msg.meta:
             chat_content["models"] = first_user_msg.meta["models"]
         else:
@@ -561,18 +544,15 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
             chat_content["files"] = all_files
 
         # Build history
-        current_id = str(
-            chat.active_message_id) if chat.active_message_id else None
+        current_id = str(chat.active_message_id) if chat.active_message_id else None
         if not current_id and all_messages:
             # Find the deepest leaf message
             # Build a parent_id set for quick lookup
-            parent_ids = {str(c.parent_id)
-                          for c in all_messages if c.parent_id}
+            parent_ids = {str(c.parent_id) for c in all_messages if c.parent_id}
             leaves = [m for m in all_messages if str(m.id) not in parent_ids]
             if leaves:
                 # Sort by timestamp descending and take the most recent
-                leaves.sort(key=lambda m: int(m.created_at)
-                            if m.created_at else 0, reverse=True)
+                leaves.sort(key=lambda m: int(m.created_at) if m.created_at else 0, reverse=True)
                 current_id = str(leaves[0].id) if leaves[0].id else None
 
         # Convert OrderedDict to regular dict while preserving order (Python 3.7+ preserves insertion order)
@@ -603,8 +583,7 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
 
             for msg in branch:
                 msg_id_str = str(msg.id) if msg.id else None
-                msg_dict = messages_dict.get(
-                    msg_id_str, {}) if msg_id_str else {}
+                msg_dict = messages_dict.get(msg_id_str, {}) if msg_id_str else {}
 
                 # Build message entry for messages array - should match history.messages structure
                 msg_entry = {
@@ -677,8 +656,7 @@ def legacy_to_normalized_format(chat_id: str, legacy_chat: Dict, regenerate_ids:
     if "chat" in legacy_chat and isinstance(legacy_chat["chat"], dict):
         legacy_chat = legacy_chat["chat"]
 
-    log.debug(
-        f"legacy_to_normalized_format: Processing chat {chat_id}, legacy_chat keys: {list(legacy_chat.keys()) if isinstance(legacy_chat, dict) else 'not a dict'}")
+    log.debug(f"legacy_to_normalized_format: Processing chat {chat_id}, legacy_chat keys: {list(legacy_chat.keys()) if isinstance(legacy_chat, dict) else 'not a dict'}")
 
     # Legacy format includes BOTH history.messages (dict) AND messages (flat list)
     # The history.messages dict contains ALL messages (including siblings)
@@ -688,18 +666,15 @@ def legacy_to_normalized_format(chat_id: str, legacy_chat: Dict, regenerate_ids:
     messages = history.get("messages", {})
     current_id = history.get("currentId")
 
-    log.debug(
-        f"legacy_to_normalized_format: history keys: {list(history.keys()) if isinstance(history, dict) else 'not a dict'}")
-    log.debug(
-        f"legacy_to_normalized_format: messages type: {type(messages)}, length: {len(messages) if isinstance(messages, (dict, list)) else 'N/A'}")
+    log.debug(f"legacy_to_normalized_format: history keys: {list(history.keys()) if isinstance(history, dict) else 'not a dict'}")
+    log.debug(f"legacy_to_normalized_format: messages type: {type(messages)}, length: {len(messages) if isinstance(messages, (dict, list)) else 'N/A'}")
     log.debug(f"legacy_to_normalized_format: current_id: {current_id}")
 
     # If history.messages is empty or not a dict, check if there's a flat messages list
     # This handles edge cases where history.messages might be missing but messages list exists
     if not messages or not isinstance(messages, dict):
         if "messages" in legacy_chat and isinstance(legacy_chat["messages"], list) and len(legacy_chat["messages"]) > 0:
-            log.debug(
-                f"legacy_to_normalized_format: Converting messages list to dict format (found {len(legacy_chat['messages'])} messages in list)")
+            log.debug(f"legacy_to_normalized_format: Converting messages list to dict format (found {len(legacy_chat['messages'])} messages in list)")
             # Convert flat messages list to history.messages dict format
             messages = {}
             for msg in legacy_chat["messages"]:
@@ -710,11 +685,9 @@ def legacy_to_normalized_format(chat_id: str, legacy_chat: Dict, regenerate_ids:
                 last_msg = legacy_chat["messages"][-1]
                 if isinstance(last_msg, dict) and "id" in last_msg:
                     current_id = str(last_msg["id"])
-                    log.debug(
-                        f"legacy_to_normalized_format: Set current_id from messages list: {current_id}")
+                    log.debug(f"legacy_to_normalized_format: Set current_id from messages list: {current_id}")
         else:
-            log.warning(
-                f"legacy_to_normalized_format: No messages found. history.messages: {type(messages)}, messages list exists: {'messages' in legacy_chat if isinstance(legacy_chat, dict) else False}")
+            log.warning(f"legacy_to_normalized_format: No messages found. history.messages: {type(messages)}, messages list exists: {'messages' in legacy_chat if isinstance(legacy_chat, dict) else False}")
 
     if not messages or not isinstance(messages, dict) or len(messages) == 0:
         log.error(f"legacy_to_normalized_format: No messages found in legacy_chat for chat {chat_id}. "
@@ -735,8 +708,7 @@ def legacy_to_normalized_format(chat_id: str, legacy_chat: Dict, regenerate_ids:
             if cur_str not in id_map:
                 id_map[cur_str] = str(uuid.uuid4())
 
-    log.debug(
-        f"legacy_to_normalized_format: Processing {len(messages)} messages, current_id: {current_id}")
+    log.debug(f"legacy_to_normalized_format: Processing {len(messages)} messages, current_id: {current_id}")
 
     # Sort messages to ensure parents are created before children
     # Process messages without parents first, then messages whose parents have been processed
@@ -790,32 +762,26 @@ def legacy_to_normalized_format(chat_id: str, legacy_chat: Dict, regenerate_ids:
             original_id_str, original_id_str) if original_id_str else None
 
         if not msg_id_str:
-            log.warning(
-                f"legacy_to_normalized_format: Skipping message with invalid ID: {msg_id}")
+            log.warning(f"legacy_to_normalized_format: Skipping message with invalid ID: {msg_id}")
             error_count += 1
             continue
 
         if not isinstance(msg_data, dict):
-            log.warning(
-                f"legacy_to_normalized_format: Skipping message {msg_id_str} - msg_data is not a dict: {type(msg_data)}")
+            log.warning(f"legacy_to_normalized_format: Skipping message {msg_id_str} - msg_data is not a dict: {type(msg_data)}")
             error_count += 1
             continue
 
         # Check if message exists
-        existing = None if regenerate_ids else ChatMessages.get_message_by_id(
-            msg_id_str)
+        existing = None if regenerate_ids else ChatMessages.get_message_by_id(msg_id_str)
 
-        log.debug(
-            f"legacy_to_normalized_format: Processing message {msg_id_str}, role={msg_data.get('role')}, existing={existing is not None}, content_length={len(str(msg_data.get('content', '') or ''))}")
+        log.debug(f"legacy_to_normalized_format: Processing message {msg_id_str}, role={msg_data.get('role')}, existing={existing is not None}, content_length={len(str(msg_data.get('content', '') or ''))}")
 
         # Extract attachments/files and handle base64 embedded files
         attachments = []
         files = msg_data.get("files", [])
-        log.debug(
-            f"legacy_to_normalized_format: Processing {len(files)} file attachments for message {msg_id_str}")
+        log.debug(f"legacy_to_normalized_format: Processing {len(files)} file attachments for message {msg_id_str}")
         for idx, file_item in enumerate(files):
-            log.debug(
-                f"legacy_to_normalized_format: Processing file attachment {idx+1}/{len(files)}: type={file_item.get('type')}, has_url={'url' in file_item}, has_base64={'base64' in file_item}")
+            log.debug(f"legacy_to_normalized_format: Processing file attachment {idx+1}/{len(files)}: type={file_item.get('type')}, has_url={'url' in file_item}, has_base64={'base64' in file_item}")
             file_type = file_item.get("type", "file")
 
             # Build attachment dict with full metadata preservation
@@ -852,16 +818,14 @@ def legacy_to_normalized_format(chat_id: str, legacy_chat: Dict, regenerate_ids:
             if file_type == "collection":
                 att_dict["url"] = None  # Collections don't have URLs
                 attachments.append(att_dict)
-                log.debug(
-                    f"legacy_to_normalized_format: Added collection attachment: {file_item.get('name', file_item.get('id', 'unknown'))}")
+                log.debug(f"legacy_to_normalized_format: Added collection attachment: {file_item.get('name', file_item.get('id', 'unknown'))}")
                 continue
 
             # Handle web_search files - skip file_id processing
             if file_type == "web_search":
                 att_dict["url"] = None  # Web search doesn't have file URLs
                 attachments.append(att_dict)
-                log.debug(
-                    f"legacy_to_normalized_format: Added web_search attachment: {file_item.get('name', 'unknown')}")
+                log.debug(f"legacy_to_normalized_format: Added web_search attachment: {file_item.get('name', 'unknown')}")
                 continue
 
             # Don't include URL in att_dict initially - we'll add file_id after processing
@@ -871,98 +835,78 @@ def legacy_to_normalized_format(chat_id: str, legacy_chat: Dict, regenerate_ids:
             base64_data = None
             mime_type = file_item.get("mime_type")
 
-            log.debug(
-                f"legacy_to_normalized_format: Processing file attachment, url type: {type(url)}, url starts with data: {url.startswith('data:') if url else False}, has base64 field: {'base64' in file_item}")
+            log.debug(f"legacy_to_normalized_format: Processing file attachment, url type: {type(url)}, url starts with data: {url.startswith('data:') if url else False}, has base64 field: {'base64' in file_item}")
 
             # Check for data URL format
             if url and url.startswith("data:"):
                 try:
-                    log.debug(
-                        f"legacy_to_normalized_format: Found data URL, length: {len(url)}, preview: {url[:100]}...")
+                    log.debug(f"legacy_to_normalized_format: Found data URL, length: {len(url)}, preview: {url[:100]}...")
                     # Parse data URL: data:{mime_type};base64,{data}
                     parts = url.split(",", 1)
                     if len(parts) == 2:
                         header = parts[0]
                         base64_data = parts[1]
-                        log.debug(
-                            f"legacy_to_normalized_format: Extracted base64 data, length: {len(base64_data)}, header: {header}")
+                        log.debug(f"legacy_to_normalized_format: Extracted base64 data, length: {len(base64_data)}, header: {header}")
                         # Extract mime type from header
                         if ";" in header:
-                            mime_type = header.split(";")[0].split(
-                                ":")[1] if ":" in header else None
-                            log.debug(
-                                f"legacy_to_normalized_format: Extracted mime_type from header: {mime_type}")
+                            mime_type = header.split(";")[0].split(":")[1] if ":" in header else None
+                            log.debug(f"legacy_to_normalized_format: Extracted mime_type from header: {mime_type}")
                         else:
                             # Try to extract mime type without semicolon
                             if ":" in header:
                                 mime_type = header.split(":")[1]
-                                log.debug(
-                                    f"legacy_to_normalized_format: Extracted mime_type from header (no semicolon): {mime_type}")
+                                log.debug(f"legacy_to_normalized_format: Extracted mime_type from header (no semicolon): {mime_type}")
                     else:
-                        log.warning(
-                            f"legacy_to_normalized_format: Data URL doesn't have expected format (no comma), parts: {len(parts)}")
+                        log.warning(f"legacy_to_normalized_format: Data URL doesn't have expected format (no comma), parts: {len(parts)}")
                 except Exception as e:
-                    log.warning(
-                        f"legacy_to_normalized_format: Failed to parse data URL: {e}", exc_info=True)
+                    log.warning(f"legacy_to_normalized_format: Failed to parse data URL: {e}", exc_info=True)
                     url = None
 
             # Fallback to separate base64 field (for backwards compatibility)
             if not base64_data and "base64" in file_item:
                 base64_data = file_item["base64"]
-                log.debug(
-                    f"legacy_to_normalized_format: Using separate base64 field, length: {len(base64_data) if base64_data else 0}")
+                log.debug(f"legacy_to_normalized_format: Using separate base64 field, length: {len(base64_data) if base64_data else 0}")
 
             # Process base64 data if we have it
             if base64_data:
-                log.debug(
-                    f"legacy_to_normalized_format: Processing base64 data, length: {len(base64_data)}, mime_type: {mime_type}")
+                log.debug(f"legacy_to_normalized_format: Processing base64 data, length: {len(base64_data)}, mime_type: {mime_type}")
                 try:
-                    log.debug(
-                        f"legacy_to_normalized_format: Decoding base64 data...")
+                    log.debug(f"legacy_to_normalized_format: Decoding base64 data...")
                     file_content = base64.b64decode(base64_data)
-                    log.debug(
-                        f"legacy_to_normalized_format: Decoded file content, size: {len(file_content)} bytes")
+                    log.debug(f"legacy_to_normalized_format: Decoded file content, size: {len(file_content)} bytes")
                     file_hash = file_item.get("hash")
 
                     # Calculate hash if not provided
                     if not file_hash:
-                        log.debug(
-                            f"legacy_to_normalized_format: Calculating hash for file...")
+                        log.debug(f"legacy_to_normalized_format: Calculating hash for file...")
                         file_hash = hashlib.sha256(file_content).hexdigest()
-                        log.debug(
-                            f"legacy_to_normalized_format: Calculated hash: {file_hash[:16]}...")
+                        log.debug(f"legacy_to_normalized_format: Calculated hash: {file_hash[:16]}...")
 
                     # Check if file already exists by hash (deduplication)
                     file_id = None
-                    log.debug(
-                        f"legacy_to_normalized_format: Checking for existing file with hash {file_hash[:16]}...")
+                    log.debug(f"legacy_to_normalized_format: Checking for existing file with hash {file_hash[:16]}...")
                     with get_db() as db:
                         from open_webui.models.files import File
                         existing_file = db.query(File).filter_by(
                             hash=file_hash).first()
                         if existing_file:
                             file_id = existing_file.id
-                            log.debug(
-                                f"legacy_to_normalized_format: Found existing file by hash {file_hash[:8]}... -> {file_id}")
+                            log.debug(f"legacy_to_normalized_format: Found existing file by hash {file_hash[:8]}... -> {file_id}")
                         else:
-                            log.debug(
-                                f"legacy_to_normalized_format: No existing file found with hash {file_hash[:16]}...")
+                            log.debug(f"legacy_to_normalized_format: No existing file found with hash {file_hash[:16]}...")
 
                     # Create new file if not found
                     if not file_id:
-                        log.debug(
-                            f"legacy_to_normalized_format: Creating new file record...")
+                        log.debug(f"legacy_to_normalized_format: Creating new file record...")
                         file_id = str(uuid.uuid4())
-                        filename = file_item.get(
-                            "filename", f"imported_{file_id}")
+                        filename = file_item.get("filename", f"imported_{file_id}")
                         # Generate storage filename
                         storage_filename = f"{file_id}_{filename}"
 
                         # Upload file to storage
                         from io import BytesIO
                         file_io = BytesIO(file_content)
-                        contents, file_path = Storage.upload_file(
-                            file_io, storage_filename)
+                        contents, file_path = Storage.upload_file(file_io, storage_filename)
 
                         # Create file record
                         file_form = FileForm(
@@ -977,40 +921,30 @@ def legacy_to_normalized_format(chat_id: str, legacy_chat: Dict, regenerate_ids:
                             }
                         )
                         # Get user_id from chat
-                        log.debug(
-                            f"legacy_to_normalized_format: Getting chat {chat_id} to find user_id...")
+                        log.debug(f"legacy_to_normalized_format: Getting chat {chat_id} to find user_id...")
                         chat = Chats.get_chat_by_id(chat_id)
                         user_id = chat.user_id if chat else None
-                        log.debug(
-                            f"legacy_to_normalized_format: Chat found: {chat is not None}, user_id: {user_id}")
+                        log.debug(f"legacy_to_normalized_format: Chat found: {chat is not None}, user_id: {user_id}")
                         if user_id:
-                            log.debug(
-                                f"legacy_to_normalized_format: Inserting file record for user {user_id}...")
-                            file_record = Files.insert_new_file(
-                                user_id, file_form)
+                            log.debug(f"legacy_to_normalized_format: Inserting file record for user {user_id}...")
+                            file_record = Files.insert_new_file(user_id, file_form)
                             if file_record:
                                 file_id = file_record.id
-                                log.info(
-                                    f"legacy_to_normalized_format: Successfully created new file {file_id} from base64 (hash: {file_hash[:8]}..., size: {len(file_content)} bytes)")
+                                log.info(f"legacy_to_normalized_format: Successfully created new file {file_id} from base64 (hash: {file_hash[:8]}..., size: {len(file_content)} bytes)")
                             else:
-                                log.error(
-                                    f"legacy_to_normalized_format: Files.insert_new_file returned None for base64 attachment")
+                                log.error(f"legacy_to_normalized_format: Files.insert_new_file returned None for base64 attachment")
                                 file_id = None
                         else:
-                            log.warning(
-                                f"legacy_to_normalized_format: Cannot create file - no user_id available for chat {chat_id}")
+                            log.warning(f"legacy_to_normalized_format: Cannot create file - no user_id available for chat {chat_id}")
                             file_id = None
 
                     if file_id:
                         att_dict["file_id"] = file_id
-                        log.debug(
-                            f"legacy_to_normalized_format: Set attachment file_id to {file_id}")
+                        log.debug(f"legacy_to_normalized_format: Set attachment file_id to {file_id}")
                     else:
-                        log.warning(
-                            f"legacy_to_normalized_format: No file_id available for attachment after processing base64")
+                        log.warning(f"legacy_to_normalized_format: No file_id available for attachment after processing base64")
                 except Exception as e:
-                    log.error(
-                        f"legacy_to_normalized_format: Failed to process base64 file: {e}", exc_info=True)
+                    log.error(f"legacy_to_normalized_format: Failed to process base64 file: {e}", exc_info=True)
             # Extract file_id from URL if present (non-data URLs)
             elif url and "/files/" in url and not url.startswith("data:"):
                 # URL format: /api/v1/files/{file_id}/content or http://host/api/v1/files/{file_id}/content
@@ -1022,8 +956,7 @@ def legacy_to_normalized_format(chat_id: str, legacy_chat: Dict, regenerate_ids:
                 att_dict["file_id"] = file_item["file_id"]
 
             attachments.append(att_dict)
-            log.debug(
-                f"legacy_to_normalized_format: Added attachment: type={att_dict.get('type')}, file_id={att_dict.get('file_id')}, has_url={'url' in att_dict}")
+            log.debug(f"legacy_to_normalized_format: Added attachment: type={att_dict.get('type')}, file_id={att_dict.get('file_id')}, has_url={'url' in att_dict}")
 
         # Build meta dict - only update if there's new data
         meta_update = {}
@@ -1063,8 +996,7 @@ def legacy_to_normalized_format(chat_id: str, legacy_chat: Dict, regenerate_ids:
             parent_id = msg_data.get("parentId")
             if parent_id is not None:
                 parent_old_str = str(parent_id)
-                parent_id = id_map.get(
-                    parent_old_str, parent_old_str) if regenerate_ids else parent_old_str
+                parent_id = id_map.get(parent_old_str, parent_old_str) if regenerate_ids else parent_old_str
 
             # Get content - check if content was provided in the update
             content_text = msg_data.get("content")
@@ -1098,16 +1030,13 @@ def legacy_to_normalized_format(chat_id: str, legacy_chat: Dict, regenerate_ids:
                 )
 
                 if result is None:
-                    log.error(
-                        f"legacy_to_normalized_format: Failed to update message {msg_id_str} - update_message returned None")
+                    log.error(f"legacy_to_normalized_format: Failed to update message {msg_id_str} - update_message returned None")
                     error_count += 1
                 else:
-                    log.debug(
-                        f"legacy_to_normalized_format: Successfully updated message {msg_id_str}, content_provided={content_provided}, content_length={len(content_text or '') if content_provided else 0}")
+                    log.debug(f"legacy_to_normalized_format: Successfully updated message {msg_id_str}, content_provided={content_provided}, content_length={len(content_text or '') if content_provided else 0}")
                     processed_count += 1
             except Exception as e:
-                log.error(
-                    f"legacy_to_normalized_format: Exception updating message {msg_id_str}: {str(e)}", exc_info=True)
+                log.error(f"legacy_to_normalized_format: Exception updating message {msg_id_str}: {str(e)}", exc_info=True)
                 error_count += 1
         else:
             # Create new message (e.g., during import or "Save as Copy")
@@ -1115,8 +1044,7 @@ def legacy_to_normalized_format(chat_id: str, legacy_chat: Dict, regenerate_ids:
             parent_id = msg_data.get("parentId")
             if parent_id is not None:
                 parent_old_str = str(parent_id)
-                parent_id = id_map.get(
-                    parent_old_str, parent_old_str) if regenerate_ids else parent_old_str
+                parent_id = id_map.get(parent_old_str, parent_old_str) if regenerate_ids else parent_old_str
 
             # msg_id_str already set to regenerated or original id
 
@@ -1129,8 +1057,7 @@ def legacy_to_normalized_format(chat_id: str, legacy_chat: Dict, regenerate_ids:
                 status_for_insert["statusHistory"] = msg_data["statusHistory"]
             elif "statusHistory" in msg_data:
                 # statusHistory provided but no status dict - create one
-                status_for_insert = {
-                    "statusHistory": msg_data["statusHistory"]}
+                status_for_insert = {"statusHistory": msg_data["statusHistory"]}
 
             # Extract timestamp from message data for import (preserve original creation time)
             # IMPORTANT: Detect and convert milliseconds to seconds (timestamps > year 2100 are likely milliseconds)
@@ -1141,22 +1068,18 @@ def legacy_to_normalized_format(chat_id: str, legacy_chat: Dict, regenerate_ids:
                     # Convert milliseconds to seconds if timestamp is too large (year 2100 = 4102444800)
                     if msg_created_at > 4102444800:
                         msg_created_at = msg_created_at // 1000
-                        log.debug(
-                            f"legacy_to_normalized_format: Converted message timestamp from milliseconds to seconds for {msg_id_str}")
+                        log.debug(f"legacy_to_normalized_format: Converted message timestamp from milliseconds to seconds for {msg_id_str}")
                 except (ValueError, TypeError):
-                    log.warning(
-                        f"legacy_to_normalized_format: Invalid timestamp value for message {msg_id_str}, using current time")
+                    log.warning(f"legacy_to_normalized_format: Invalid timestamp value for message {msg_id_str}, using current time")
             elif "created_at" in msg_data and msg_data["created_at"]:
                 try:
                     msg_created_at = int(msg_data["created_at"])
                     # Convert milliseconds to seconds if timestamp is too large (year 2100 = 4102444800)
                     if msg_created_at > 4102444800:
                         msg_created_at = msg_created_at // 1000
-                        log.debug(
-                            f"legacy_to_normalized_format: Converted message created_at from milliseconds to seconds for {msg_id_str}")
+                        log.debug(f"legacy_to_normalized_format: Converted message created_at from milliseconds to seconds for {msg_id_str}")
                 except (ValueError, TypeError):
-                    log.warning(
-                        f"legacy_to_normalized_format: Invalid created_at value for message {msg_id_str}, using current time")
+                    log.warning(f"legacy_to_normalized_format: Invalid created_at value for message {msg_id_str}, using current time")
 
             # Create the message - this handles both user and assistant messages during import
             try:
@@ -1182,12 +1105,10 @@ def legacy_to_normalized_format(chat_id: str, legacy_chat: Dict, regenerate_ids:
                 if status_for_insert:
                     ChatMessages.update_message(
                         msg_id_str, status=status_for_insert)
-                log.debug(
-                    f"legacy_to_normalized_format: Successfully created message {msg_id_str}, role={msg_data.get('role')}")
+                log.debug(f"legacy_to_normalized_format: Successfully created message {msg_id_str}, role={msg_data.get('role')}")
                 processed_count += 1
             except Exception as e:
-                log.error(
-                    f"legacy_to_normalized_format: Exception creating message {msg_id_str}: {str(e)}", exc_info=True)
+                log.error(f"legacy_to_normalized_format: Exception creating message {msg_id_str}: {str(e)}", exc_info=True)
                 error_count += 1
 
             # For "Save as Copy" scenarios, ensure cost is set to 0 for the duplicated message
@@ -1210,15 +1131,13 @@ def legacy_to_normalized_format(chat_id: str, legacy_chat: Dict, regenerate_ids:
                         # Extract and store tokens from usage (but keep cost at 0)
                         if msg_data.get("usage"):
                             from open_webui.models.chat_messages import extract_tokens_from_usage
-                            input_tokens, output_tokens, reasoning_tokens = extract_tokens_from_usage(
-                                msg_data.get("usage"))
+                            input_tokens, output_tokens, reasoning_tokens = extract_tokens_from_usage(msg_data.get("usage"))
                             new_message.input_tokens = input_tokens
                             new_message.output_tokens = output_tokens
                             new_message.reasoning_tokens = reasoning_tokens
 
                         db.commit()
-                        log.debug(
-                            f"legacy_to_normalized_format: Set cost to 0 for copied message {msg_id_str}")
+                        log.debug(f"legacy_to_normalized_format: Set cost to 0 for copied message {msg_id_str}")
 
     # Update chat's active_message_id
     # Convert to string to ensure consistent format
@@ -1228,16 +1147,12 @@ def legacy_to_normalized_format(chat_id: str, legacy_chat: Dict, regenerate_ids:
             current_id_str = id_map.get(current_id_str, current_id_str)
         if current_id_str:
             try:
-                Chats.update_chat_active_and_root_message_ids(
-                    chat_id, active_message_id=current_id_str)
-                log.debug(
-                    f"legacy_to_normalized_format: Set active_message_id to {current_id_str}")
+                Chats.update_chat_active_and_root_message_ids(chat_id, active_message_id=current_id_str)
+                log.debug(f"legacy_to_normalized_format: Set active_message_id to {current_id_str}")
             except Exception as e:
-                log.error(
-                    f"legacy_to_normalized_format: Exception setting active_message_id: {str(e)}", exc_info=True)
+                log.error(f"legacy_to_normalized_format: Exception setting active_message_id: {str(e)}", exc_info=True)
 
-    log.info(
-        f"legacy_to_normalized_format: Completed import for chat {chat_id}. Processed: {processed_count}, Errors: {error_count}, Total messages: {len(messages)}")
+    log.info(f"legacy_to_normalized_format: Completed import for chat {chat_id}. Processed: {processed_count}, Errors: {error_count}, Total messages: {len(messages)}")
 
     # Preserve chat-level files in the chat blob (frontend's canonical source)
     # This is critical for RAG to work correctly - the frontend sends chat.files and expects it to be preserved
@@ -1249,8 +1164,7 @@ def legacy_to_normalized_format(chat_id: str, legacy_chat: Dict, regenerate_ids:
             # Strip collections to remove files array and data.file_ids
             stripped_files = [strip_collection_files(f) for f in files_list]
             chat_blob_update["files"] = stripped_files
-            log.debug(
-                f"legacy_to_normalized_format: Preserving {len(stripped_files)} chat-level files in chat blob (collections stripped)")
+            log.debug(f"legacy_to_normalized_format: Preserving {len(stripped_files)} chat-level files in chat blob (collections stripped)")
         else:
             chat_blob_update["files"] = files_list
 
@@ -1258,8 +1172,7 @@ def legacy_to_normalized_format(chat_id: str, legacy_chat: Dict, regenerate_ids:
     # NOTE: We use update_chat_by_id which now preserves the title if not in the dict
     if "params" in legacy_chat:
         # Ensure params doesn't contain models (clean it up if it does)
-        params_clean = legacy_chat["params"].copy() if isinstance(
-            legacy_chat["params"], dict) else {}
+        params_clean = legacy_chat["params"].copy() if isinstance(legacy_chat["params"], dict) else {}
         if "models" in params_clean:
             del params_clean["models"]
         chat_blob_update["params"] = params_clean
@@ -1275,8 +1188,7 @@ def legacy_to_normalized_format(chat_id: str, legacy_chat: Dict, regenerate_ids:
                 updated_chat = {**existing_chat, **chat_blob_update}
                 chat_item.chat = updated_chat
                 db.commit()
-                log.debug(
-                    f"legacy_to_normalized_format: Updated chat blob with files and/or params")
+                log.debug(f"legacy_to_normalized_format: Updated chat blob with files and/or params")
 
     # Update models: store in first user message's meta (not in params)
     if "models" in legacy_chat:
@@ -1291,5 +1203,4 @@ def legacy_to_normalized_format(chat_id: str, legacy_chat: Dict, regenerate_ids:
             if first_user_msg:
                 existing_meta = first_user_msg.meta if first_user_msg.meta else {}
                 existing_meta["models"] = legacy_chat["models"]
-                ChatMessages.update_message(
-                    first_user_msg.id, meta=existing_meta)
+                ChatMessages.update_message(first_user_msg.id, meta=existing_meta)
