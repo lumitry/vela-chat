@@ -21,11 +21,14 @@
 		type SubmenuCommand,
 		type SubmenuItem
 	} from '$lib/utils/commandPalette/types';
-	import { getChatListBySearchText } from '$lib/apis/chats';
+	import { getChatListBySearchText, createNewChat, createChatMessage } from '$lib/apis/chats';
 	import { preloadIcons } from '$lib/utils/commandPalette/iconCache';
 	import ChatBubble from '$lib/components/icons/ChatBubble.svelte';
 	import { toast } from 'svelte-sonner';
 	import { updateChatById, getChatList, getPinnedChatList } from '$lib/apis/chats';
+	import { settings, models as modelsStore, socket } from '$lib/stores';
+	import { WEBUI_API_BASE_URL, WEBUI_BASE_URL } from '$lib/constants';
+	import { v4 as uuidv4 } from 'uuid';
 	import {
 		chatCache,
 		chatTitle as chatTitleStore,
@@ -77,8 +80,10 @@
 
 	let chatSearchMode = false;
 	let newChatMode = false; // $ prefix mode
+	let backgroundChatMode = false; // # prefix mode
 	let chatSearchQuery = '';
 	let newChatQuery = '';
+	let backgroundChatQuery = '';
 	let chatSearchResults: ChatSearchResultItem[] = [];
 	let chatSearchItems: ChatSearchListItem[] = [];
 	let chatSearchLoading = false;
@@ -220,12 +225,16 @@
 				const trimmed = query.trimStart();
 				chatSearchMode = trimmed.startsWith('>');
 				newChatMode = trimmed.startsWith('$');
+				backgroundChatMode = trimmed.startsWith('#');
 				if (chatSearchMode) {
 					chatSearchQuery = trimmed.slice(1).trim();
 					triggerChatSearch();
 				} else if (newChatMode) {
 					newChatQuery = trimmed.slice(1).trim();
 					updateNewChatItems();
+				} else if (backgroundChatMode) {
+					backgroundChatQuery = trimmed.slice(1).trim();
+					updateBackgroundChatItems();
 				} else {
 					updateResults();
 				}
@@ -257,6 +266,9 @@
 				setSelectionFromChatSearch();
 			} else if (newChatMode) {
 				chatSearchItems = buildNewChatItems(newChatQuery, context);
+				setSelectionFromChatSearch();
+			} else if (backgroundChatMode) {
+				chatSearchItems = buildBackgroundChatItems(backgroundChatQuery, context);
 				setSelectionFromChatSearch();
 			} else {
 				updateResults();
@@ -315,8 +327,10 @@
 	function resetChatSearchState() {
 		chatSearchMode = false;
 		newChatMode = false;
+		backgroundChatMode = false;
 		chatSearchQuery = '';
 		newChatQuery = '';
+		backgroundChatQuery = '';
 		chatSearchResults = [];
 		chatSearchItems = [];
 		chatSearchLoading = false;
@@ -341,6 +355,24 @@
 	function buildNewChatItems(rawQuery: string, context: CommandContext): ChatSearchListItem[] {
 		const trimmed = rawQuery.trim();
 		const actions = buildChatFallbackActions(trimmed, context);
+		return actions.map((action) => ({
+			kind: 'action',
+			data: action
+		}));
+	}
+
+	function updateBackgroundChatItems() {
+		const context = get(commandContextStore);
+		chatSearchItems = buildBackgroundChatItems(backgroundChatQuery, context);
+		setSelectionFromChatSearch();
+	}
+
+	function buildBackgroundChatItems(
+		rawQuery: string,
+		context: CommandContext
+	): ChatSearchListItem[] {
+		const trimmed = rawQuery.trim();
+		const actions = buildBackgroundChatActions(trimmed, context);
 		return actions.map((action) => ({
 			kind: 'action',
 			data: action
@@ -495,12 +527,19 @@
 		const trimmed = value.trimStart();
 		const shouldChatSearch = trimmed.startsWith('>');
 		const shouldNewChat = trimmed.startsWith('$');
+		const shouldBackgroundChat = trimmed.startsWith('#');
 
-		if (shouldChatSearch !== chatSearchMode || shouldNewChat !== newChatMode) {
+		if (
+			shouldChatSearch !== chatSearchMode ||
+			shouldNewChat !== newChatMode ||
+			shouldBackgroundChat !== backgroundChatMode
+		) {
 			chatSearchMode = shouldChatSearch;
 			newChatMode = shouldNewChat;
+			backgroundChatMode = shouldBackgroundChat;
 			chatSearchQuery = '';
 			newChatQuery = '';
+			backgroundChatQuery = '';
 			chatSearchResults = [];
 			chatSearchItems = [];
 			chatSearchError = null;
@@ -513,6 +552,9 @@
 		} else if (newChatMode) {
 			newChatQuery = trimmed.slice(1).trim();
 			updateNewChatItems();
+		} else if (backgroundChatMode) {
+			backgroundChatQuery = trimmed.slice(1).trim();
+			updateBackgroundChatItems();
 		} else {
 			updateResults();
 		}
@@ -594,8 +636,8 @@
 			return;
 		}
 
-		// Handle new chat mode ($ prefix)
-		if (newChatMode) {
+		// Handle new chat mode ($ prefix) and background chat mode (# prefix)
+		if (newChatMode || backgroundChatMode) {
 			handleChatSearchKeyDown(event);
 			return;
 		}
@@ -896,6 +938,14 @@
 			}
 		});
 
+		actions.push({
+			id: 'chat-search:background-chat',
+			label: `Send "${trimmed}" in background chat`,
+			execute: async () => {
+				await startBackgroundChat({ query: trimmed });
+			}
+		});
+
 		if (context.config?.features?.enable_web_search) {
 			actions.push({
 				id: 'chat-search:new-chat-web',
@@ -927,6 +977,46 @@
 		return actions;
 	}
 
+	function buildBackgroundChatActions(
+		rawQuery: string,
+		context: CommandContext
+	): ChatSearchFallbackAction[] {
+		const actions: ChatSearchFallbackAction[] = [];
+		const trimmed = rawQuery.trim();
+
+		if (!trimmed) {
+			return actions;
+		}
+
+		actions.push({
+			id: 'background-chat:normal',
+			label: `Send "${trimmed}" in new background chat`,
+			execute: async () => {
+				await startBackgroundChat({ query: trimmed });
+			}
+		});
+
+		if (context.config?.features?.enable_web_search) {
+			actions.push({
+				id: 'background-chat:web',
+				label: 'Send in new background chat with web search enabled',
+				execute: async () => {
+					await startBackgroundChat({ query: trimmed, webSearch: true });
+				}
+			});
+		}
+
+		actions.push({
+			id: 'background-chat:knowledge',
+			label: 'Send in new background chat with knowledge base…',
+			execute: async () => {
+				await openKnowledgeBaseSubmenuForBackground(trimmed);
+			}
+		});
+
+		return actions;
+	}
+
 	async function startNewChat(options: {
 		query?: string;
 		webSearch?: boolean;
@@ -952,6 +1042,227 @@
 		const url = params.toString() ? `/?${params.toString()}` : '/';
 		await goto(url);
 		closePalette();
+	}
+
+	async function startBackgroundChat(options: {
+		query?: string;
+		webSearch?: boolean;
+		knowledgeBaseId?: string;
+		knowledgeBaseName?: string;
+	}) {
+		try {
+			// Get default model
+			const $settingsValue = get(settings);
+			const $modelsValue = get(modelsStore);
+			let selectedModels: string[] = [];
+
+			if ($settingsValue?.models && $settingsValue.models.length > 0) {
+				selectedModels = $settingsValue.models;
+			} else if ($modelsValue && $modelsValue.length > 0) {
+				selectedModels = [$modelsValue[0].id];
+			} else {
+				toast.error('No models available');
+				return;
+			}
+
+			// Filter to only include models that exist
+			selectedModels = selectedModels.filter((modelId) =>
+				$modelsValue.map((m: any) => m.id).includes(modelId)
+			);
+
+			if (selectedModels.length === 0) {
+				toast.error('No valid models available');
+				return;
+			}
+
+			// Prepare chat params
+			const params: Record<string, any> = {};
+			if (options.webSearch) {
+				params.web_search = true;
+			}
+
+			// Create the chat
+			const chat = await createNewChat(localStorage.token, {
+				title: 'New Chat',
+				models: selectedModels,
+				system: $settingsValue?.system ?? undefined,
+				params: params,
+				tags: [],
+				timestamp: Math.floor(Date.now() / 1000)
+			});
+
+			if (!chat || !chat.id) {
+				toast.error('Failed to create chat');
+				return;
+			}
+
+			// Prepare files for knowledge base
+			let files: any[] = [];
+			if (options.knowledgeBaseId) {
+				files = [
+					{
+						type: 'collection',
+						id: options.knowledgeBaseId,
+						name: options.knowledgeBaseName || 'Knowledge Base',
+						collection_name: options.knowledgeBaseId,
+						status: 'processed'
+					}
+				];
+			}
+
+			// Create the user message
+			let userMessageId: string | null = null;
+			if (options.query) {
+				const userMessage = await createChatMessage(localStorage.token, chat.id, {
+					role: 'user',
+					content_text: options.query,
+					attachments: files.length > 0 ? files : null
+				});
+				userMessageId = userMessage?.id || null;
+
+				if (!userMessageId) {
+					toast.error('Failed to create user message');
+					return;
+				}
+
+				// Create assistant message first (empty content, will be filled by completion)
+				const responseMessageId = uuidv4();
+				const assistantMessage = await createChatMessage(localStorage.token, chat.id, {
+					role: 'assistant',
+					content_text: '',
+					parent_id: userMessageId,
+					model_id: selectedModels[0]
+				});
+
+				// Update chat with web search and knowledge base settings
+				if (options.webSearch || options.knowledgeBaseId) {
+					const updateData: any = {};
+					if (options.webSearch) {
+						updateData.params = { ...params, web_search: true };
+					}
+					if (options.knowledgeBaseId && files.length > 0) {
+						updateData.files = files;
+					}
+					if (Object.keys(updateData).length > 0) {
+						await updateChatById(localStorage.token, chat.id, updateData);
+					}
+				}
+
+				// Trigger chat completion in the background
+				// Pass the assistant message ID so backend knows which message to update
+				const $settingsValue = get(settings);
+				const $socket = get(socket);
+				const completionPayload = {
+					model: selectedModels[0],
+					messages: [
+						{
+							role: 'user',
+							content: options.query,
+							id: userMessageId // Include message ID so backend can track it
+						}
+					],
+					stream: false,
+					chat_id: chat.id,
+					usage: {
+						include: true
+					},
+					id: assistantMessage?.id || responseMessageId, // Assistant message ID to update
+					session_id: $socket?.id || null, // Include session_id for task triggering
+					...(options.webSearch && { features: { web_search: true } }),
+					...(files.length > 0 && { files: files }),
+					// Include background tasks for title and tag generation
+					background_tasks: {
+						title_generation: ($settingsValue as any)?.title?.auto ?? true,
+						tags_generation: ($settingsValue as any)?.autoTags ?? true
+					}
+				};
+
+				// Call chat completion endpoint in background (fire and forget)
+				fetch(`${WEBUI_BASE_URL}/api/chat/completions`, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						Authorization: `Bearer ${localStorage.token}`
+					},
+					body: JSON.stringify(completionPayload)
+				})
+					.then(async (response) => {
+						if (!response.ok) {
+							const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
+							console.error('Background chat completion error:', error);
+							return;
+						}
+						// Extract content from completion response
+						const completionData = await response.json().catch(() => null);
+						if (completionData) {
+							// Extract content from response (non-streaming format)
+							const content = completionData.choices?.[0]?.message?.content || '';
+							const usage = completionData.usage || null;
+
+							if (content && userMessageId) {
+								// Update the assistant message with the content
+								const assistantMsgId = assistantMessage?.id || responseMessageId;
+
+								// Update message content by updating the chat with full history
+								// Build a minimal history structure with the message content
+								const history: any = {
+									currentId: assistantMsgId,
+									messages: {}
+								};
+
+								history.messages[userMessageId] = {
+									id: userMessageId,
+									role: 'user',
+									content: options.query,
+									parentId: null,
+									childrenIds: [assistantMsgId],
+									timestamp: Math.floor(Date.now() / 1000)
+								};
+
+								history.messages[assistantMsgId] = {
+									id: assistantMsgId,
+									role: 'assistant',
+									content: content,
+									parentId: userMessageId,
+									childrenIds: [],
+									model: selectedModels[0],
+									timestamp: Math.floor(Date.now() / 1000),
+									done: true,
+									...(usage && { usage })
+								};
+
+								await updateChatById(localStorage.token, chat.id, {
+									history: history
+								}).catch((err) => {
+									console.error('Failed to update chat with message content:', err);
+								});
+
+								// Tasks (title generation, tag generation) are automatically triggered
+								// by the backend via background_tasks in the completion payload.
+								// Refresh chat list after a delay to show updated title/tags
+								setTimeout(async () => {
+									currentChatPage.set(1);
+									chats.set(await getChatList(localStorage.token, get(currentChatPage)));
+								}, 2000);
+							}
+						}
+					})
+					.catch((error) => {
+						console.error('Background chat completion error:', error);
+						// Don't show error to user - they can open the chat to see the message
+					});
+			}
+
+			// Refresh chat list
+			currentChatPage.set(1);
+			await chats.set(await getChatList(localStorage.token, get(currentChatPage)));
+
+			toast.success('Background chat created');
+			closePalette();
+		} catch (error) {
+			console.error('Failed to create background chat:', error);
+			toast.error('Failed to create background chat');
+		}
 	}
 
 	async function openKnowledgeBaseSubmenu(searchText: string) {
@@ -1018,6 +1329,70 @@
 		await pushSubmenu(submenu);
 	}
 
+	async function openKnowledgeBaseSubmenuForBackground(searchText: string) {
+		// Store the query text for later use
+		pendingKnowledgeBaseQuery = searchText;
+
+		const submenu: SubmenuCommand = {
+			id: 'background-chat:knowledge-base',
+			type: 'submenu',
+			label: 'Attach Knowledge Base',
+			keywords: ['knowledge', 'base'],
+			getSubmenuItems: async (query: string, context?: CommandContext): Promise<SubmenuItem[]> => {
+				const { get } = await import('svelte/store');
+				const stores = await import('$lib/stores');
+				const knowledgeStore = stores.knowledge;
+				const { getKnowledgeBases } = await import('$lib/apis/knowledge');
+
+				// Fetch knowledge bases
+				let knowledgeBases: Array<{ id: string; name: string; description?: string }> = [];
+				try {
+					let current = get(knowledgeStore);
+					if (!current || current.length === 0) {
+						const fetched = await getKnowledgeBases(localStorage.token);
+						knowledgeStore.set(fetched ?? []);
+						current = fetched ?? [];
+					}
+
+					knowledgeBases = (current ?? []).map((kb: any) => ({
+						id: kb.id,
+						name: kb.name,
+						description: kb.description
+					}));
+				} catch (error) {
+					console.error('Failed to load knowledge bases:', error);
+					return [];
+				}
+
+				// Filter by query
+				const lowerQuery = query.toLowerCase();
+				const filtered = knowledgeBases.filter((kb) => {
+					if (!query) return true;
+					const text = `${kb.name} ${kb.description ?? ''}`.toLowerCase();
+					return text.includes(lowerQuery);
+				});
+
+				// Convert to SubmenuItems
+				return filtered.map((kb) => ({
+					id: `bg-kb:${kb.id}`,
+					label: kb.name,
+					description: kb.description,
+					execute: async () => {
+						// Use the stored query text
+						const queryText = pendingKnowledgeBaseQuery;
+						await startBackgroundChat({
+							query: queryText,
+							knowledgeBaseId: kb.id,
+							knowledgeBaseName: kb.name
+						});
+					}
+				}));
+			}
+		};
+
+		await pushSubmenu(submenu);
+	}
+
 	function handleChatSearchItemClick(item: ChatSearchListItem) {
 		activateChatSearchItem(item);
 	}
@@ -1060,6 +1435,9 @@
 		if (newChatMode) {
 			return 'Type your message...';
 		}
+		if (backgroundChatMode) {
+			return 'Type your message (background chat)...';
+		}
 		return 'Search commands...';
 	})();
 </script>
@@ -1088,7 +1466,7 @@
 					autofocus
 					tabindex="0"
 				/>
-				{#if !renameMode && !activeSubmenu && !chatSearchMode && !newChatMode}
+				{#if !renameMode && !activeSubmenu && !chatSearchMode && !newChatMode && !backgroundChatMode}
 					<div class="mt-2 flex gap-4 text-xs text-gray-400 dark:text-gray-500">
 						<span
 							>Press <kbd
@@ -1101,6 +1479,12 @@
 								class="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700"
 								>$</kbd
 							> to start new chat</span
+						>
+						<span
+							>Press <kbd
+								class="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700"
+								>#</kbd
+							> for background chat</span
 						>
 					</div>
 				{/if}
@@ -1154,7 +1538,7 @@
 						/>
 					{/key}
 				{/if}
-			{:else if chatSearchMode || newChatMode}
+			{:else if chatSearchMode || newChatMode || backgroundChatMode}
 				<div class="max-h-96 overflow-y-auto px-2 py-3">
 					{#if chatSearchMode && chatSearchLoading}
 						<div class="px-3 py-6 text-sm text-gray-500 dark:text-gray-400">Searching chats…</div>
