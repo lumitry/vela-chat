@@ -96,49 +96,19 @@
 	});
 
 	function isSvelteComponentConstructor(value: unknown): value is ComponentType {
-		// Check if it's a function - Svelte components are functions
-		if (typeof value !== 'function') return false;
-
-		// For dynamically imported components, the prototype check might fail
-		// So we check if it's a function and has the expected structure
-		// Svelte components are constructors, so they should be callable with 'new'
-		try {
-			// Check if it has a prototype (constructor functions do)
-			// or if it's a valid component (some wrapped components might not have prototype)
-			return true;
-		} catch {
-			return false;
-		}
+		return typeof value === 'function';
 	}
 
 	function extractSubmenuComponent(value: unknown): ComponentType | null {
 		if (!value) return null;
 
-		// If it's directly a function, try to use it
 		if (typeof value === 'function') {
 			return value as ComponentType;
 		}
 
-		// If it's an object, check for default export
 		if (typeof value === 'object' && value !== null) {
 			const obj = value as Record<string, unknown>;
-
-			// Try multiple ways to access the default export
-			// 1. Direct property access
 			if (obj.default && typeof obj.default === 'function') {
-				return obj.default as ComponentType;
-			}
-
-			// 2. Check if it's in the prototype chain
-			if ('default' in obj && typeof obj.default === 'function') {
-				return obj.default as ComponentType;
-			}
-
-			// 3. Try Object.hasOwnProperty if available
-			if (
-				Object.prototype.hasOwnProperty.call(obj, 'default') &&
-				typeof obj.default === 'function'
-			) {
 				return obj.default as ComponentType;
 			}
 		}
@@ -162,9 +132,6 @@
 				const mod = await source;
 				const component = extractSubmenuComponent(mod);
 				if (!component) {
-					console.error('Failed to extract component from module:', mod);
-					console.error('Module keys:', Object.keys(mod as object));
-					console.error('Module default type:', typeof (mod as Record<string, unknown>)?.default);
 					throw new Error('Submenu loader did not return a Svelte component');
 				}
 				return component;
@@ -188,8 +155,6 @@
 				const mod = await (source as () => unknown)();
 				const component = extractSubmenuComponent(mod);
 				if (!component) {
-					console.error('Failed to extract component from loader result:', mod);
-					console.error('Loader result keys:', Object.keys(mod as object));
 					throw new Error('Submenu loader did not return a Svelte component');
 				}
 				return component;
@@ -206,7 +171,6 @@
 
 		const component = extractSubmenuComponent(source);
 		if (!component) {
-			console.error('Failed to extract component from source:', source);
 			throw new Error('Invalid submenu component');
 		}
 
@@ -1265,8 +1229,34 @@
 		}
 	}
 
+	async function loadKnowledgeBases(): Promise<
+		Array<{ id: string; name: string; description?: string }>
+	> {
+		const { get } = await import('svelte/store');
+		const stores = await import('$lib/stores');
+		const knowledgeStore = stores.knowledge;
+		const { getKnowledgeBases } = await import('$lib/apis/knowledge');
+
+		try {
+			let current = get(knowledgeStore);
+			if (!current || current.length === 0) {
+				const fetched = await getKnowledgeBases(localStorage.token);
+				knowledgeStore.set(fetched ?? []);
+				current = fetched ?? [];
+			}
+
+			return (current ?? []).map((kb: any) => ({
+				id: kb.id,
+				name: kb.name,
+				description: kb.description
+			}));
+		} catch (error) {
+			console.error('Failed to load knowledge bases:', error);
+			return [];
+		}
+	}
+
 	async function openKnowledgeBaseSubmenu(searchText: string) {
-		// Store the query text for later use
 		pendingKnowledgeBaseQuery = searchText;
 
 		const submenu: SubmenuCommand = {
@@ -1275,32 +1265,8 @@
 			label: 'Attach Knowledge Base',
 			keywords: ['knowledge', 'base'],
 			getSubmenuItems: async (query: string, context?: CommandContext): Promise<SubmenuItem[]> => {
-				const { get } = await import('svelte/store');
-				const stores = await import('$lib/stores');
-				const knowledgeStore = stores.knowledge;
-				const { getKnowledgeBases } = await import('$lib/apis/knowledge');
+				const knowledgeBases = await loadKnowledgeBases();
 
-				// Fetch knowledge bases
-				let knowledgeBases: Array<{ id: string; name: string; description?: string }> = [];
-				try {
-					let current = get(knowledgeStore);
-					if (!current || current.length === 0) {
-						const fetched = await getKnowledgeBases(localStorage.token);
-						knowledgeStore.set(fetched ?? []);
-						current = fetched ?? [];
-					}
-
-					knowledgeBases = (current ?? []).map((kb: any) => ({
-						id: kb.id,
-						name: kb.name,
-						description: kb.description
-					}));
-				} catch (error) {
-					console.error('Failed to load knowledge bases:', error);
-					return [];
-				}
-
-				// Filter by query
 				const lowerQuery = query.toLowerCase();
 				const filtered = knowledgeBases.filter((kb) => {
 					if (!query) return true;
@@ -1308,16 +1274,13 @@
 					return text.includes(lowerQuery);
 				});
 
-				// Convert to SubmenuItems
 				return filtered.map((kb) => ({
 					id: `kb:${kb.id}`,
 					label: kb.name,
 					description: kb.description,
 					execute: async () => {
-						// Use the stored query text
-						const queryText = pendingKnowledgeBaseQuery;
 						await startNewChat({
-							query: queryText,
+							query: pendingKnowledgeBaseQuery,
 							knowledgeBaseId: kb.id,
 							knowledgeBaseName: kb.name
 						});
@@ -1330,7 +1293,6 @@
 	}
 
 	async function openKnowledgeBaseSubmenuForBackground(searchText: string) {
-		// Store the query text for later use
 		pendingKnowledgeBaseQuery = searchText;
 
 		const submenu: SubmenuCommand = {
@@ -1339,32 +1301,8 @@
 			label: 'Attach Knowledge Base',
 			keywords: ['knowledge', 'base'],
 			getSubmenuItems: async (query: string, context?: CommandContext): Promise<SubmenuItem[]> => {
-				const { get } = await import('svelte/store');
-				const stores = await import('$lib/stores');
-				const knowledgeStore = stores.knowledge;
-				const { getKnowledgeBases } = await import('$lib/apis/knowledge');
+				const knowledgeBases = await loadKnowledgeBases();
 
-				// Fetch knowledge bases
-				let knowledgeBases: Array<{ id: string; name: string; description?: string }> = [];
-				try {
-					let current = get(knowledgeStore);
-					if (!current || current.length === 0) {
-						const fetched = await getKnowledgeBases(localStorage.token);
-						knowledgeStore.set(fetched ?? []);
-						current = fetched ?? [];
-					}
-
-					knowledgeBases = (current ?? []).map((kb: any) => ({
-						id: kb.id,
-						name: kb.name,
-						description: kb.description
-					}));
-				} catch (error) {
-					console.error('Failed to load knowledge bases:', error);
-					return [];
-				}
-
-				// Filter by query
 				const lowerQuery = query.toLowerCase();
 				const filtered = knowledgeBases.filter((kb) => {
 					if (!query) return true;
@@ -1372,16 +1310,13 @@
 					return text.includes(lowerQuery);
 				});
 
-				// Convert to SubmenuItems
 				return filtered.map((kb) => ({
 					id: `bg-kb:${kb.id}`,
 					label: kb.name,
 					description: kb.description,
 					execute: async () => {
-						// Use the stored query text
-						const queryText = pendingKnowledgeBaseQuery;
 						await startBackgroundChat({
-							query: queryText,
+							query: pendingKnowledgeBaseQuery,
 							knowledgeBaseId: kb.id,
 							knowledgeBaseName: kb.name
 						});
