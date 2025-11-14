@@ -5,6 +5,7 @@ export type MetricsParams = {
 	model_type?: 'local' | 'external' | 'both';
 	start_date?: string;
 	end_date?: string;
+	include_embeddings?: boolean;
 };
 
 type ModelMetrics = {
@@ -77,6 +78,19 @@ type TaskGenerationTypesDaily = {
 	task_count: number;
 };
 
+type IndexGrowthDaily = {
+	date: string;
+	vector_count: number;
+};
+
+type EmbeddingVisualization = {
+	x: number[];
+	y: number[];
+	z: number[];
+	labels: string[];
+	collection_names: string[];
+};
+
 const buildQueryString = (params: MetricsParams): string => {
 	const searchParams = new URLSearchParams();
 	if (params.limit !== undefined) {
@@ -90,6 +104,9 @@ const buildQueryString = (params: MetricsParams): string => {
 	}
 	if (params.end_date) {
 		searchParams.append('end_date', params.end_date);
+	}
+	if (params.include_embeddings !== undefined) {
+		searchParams.append('include_embeddings', params.include_embeddings.toString());
 	}
 	return searchParams.toString();
 };
@@ -202,3 +219,35 @@ export const getTaskGenerationTypesDaily = async (
 	return fetchMetrics<TaskGenerationTypesDaily[]>(token, 'tasks/types/daily', params);
 };
 
+export const getIndexGrowthDaily = async (
+	token: string,
+	params?: MetricsParams
+): Promise<IndexGrowthDaily[]> => {
+	return fetchMetrics<IndexGrowthDaily[]>(token, 'index/growth/daily', params);
+};
+
+export const getEmbeddingsVisualization = async (
+	token: string
+): Promise<EmbeddingVisualization> => {
+	const url = `${WEBUI_API_BASE_URL}/metrics/embeddings/visualize`;
+
+	const res = await fetch(url, {
+		method: 'GET',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json',
+			authorization: `Bearer ${token}`
+		}
+	})
+		.then(async (res) => {
+			if (!res.ok) throw await res.json();
+			return res.json();
+		})
+		.catch((err) => {
+			const error = err.detail || err.message || 'Unknown error';
+			console.error('Embeddings visualization API error:', err);
+			throw error;
+		});
+
+	return res;
+};

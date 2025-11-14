@@ -3,6 +3,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, List
 from decimal import Decimal
+import numpy as np
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
@@ -14,10 +15,13 @@ from open_webui.models.chat_messages import ChatMessage, MetricsDailyRollup
 from open_webui.models.tasks import TaskMetricsDailyRollup
 from open_webui.models.embeddings import EmbeddingMetricsDailyRollup
 from open_webui.models.chats import Chat
+from open_webui.models.knowledge import Knowledges
 from open_webui.utils.auth import get_verified_user
 from open_webui.utils.models import get_all_models
 from open_webui.env import SRC_LOG_LEVELS
 from open_webui.models.users import UserModel
+from open_webui.retrieval.vector.connector import VECTOR_DB_CLIENT
+from open_webui.config import VECTOR_DB
 
 log = logging.getLogger(__name__)
 log.setLevel(SRC_LOG_LEVELS["MODELS"])
@@ -107,6 +111,14 @@ class TaskGenerationTypesDailyResponse(BaseModel):
 class IndexGrowthDailyResponse(BaseModel):
     date: str
     vector_count: int  # Cumulative count of vectors up to this date
+
+
+class EmbeddingVisualizationResponse(BaseModel):
+    x: List[float]
+    y: List[float]
+    z: List[float]
+    labels: List[str]  # Document names/file names
+    collection_names: List[str]  # Which collection each point belongs to
 
 
 # Helper function to get model ownership map
@@ -1420,4 +1432,196 @@ async def get_index_growth_daily(
     except Exception as e:
         log.exception(e)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.get("/embeddings/visualize", response_model=EmbeddingVisualizationResponse)
+async def get_embeddings_visualization(
+    request: Request,
+    user: UserModel = Depends(get_verified_user),
+):
+    """Get embeddings visualization data (3D t-SNE projection)
+    
+    Fetches all embeddings from user's knowledge bases, runs t-SNE to reduce to 3D,
+    and returns coordinates for 3D visualization.
+    
+    Note: Currently only supports ChromaDB. Other vector DBs may need additional implementation.
+    """
+    endpoint_start = time.time()
+    try:
+        # Check if sklearn is available
+        try:
+            from sklearn.manifold import TSNE
+        except ImportError:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="scikit-learn is required for embeddings visualization. Please install it: pip install scikit-learn"
+            )
+        
+        # Check if we're using ChromaDB (for now, this is the only supported DB)
+        if VECTOR_DB != "chroma":
+            raise HTTPException(
+                status_code=status.HTTP_501_NOT_IMPLEMENTED,
+                detail=f"Embeddings visualization is currently only supported for ChromaDB. Current vector DB: {VECTOR_DB}"
+            )
+        
+        log.info(f"Starting embeddings visualization for user {user.id}")
+        
+        # Get all knowledge bases for the user
+        knowledge_bases = Knowledges.get_knowledge_bases_by_user_id(user.id, "read")
+        collection_names = [kb.id for kb in knowledge_bases if kb.id]
+        
+        if not collection_names:
+            # Return empty response if no collections
+            return EmbeddingVisualizationResponse(
+                x=[],
+                y=[],
+                z=[],
+                labels=[],
+                collection_names=[]
+            )
+        
+        log.info(f"Found {len(collection_names)} collections for user {user.id}")
+        
+        # Fetch all embeddings from collections
+        all_embeddings = []
+        all_labels = []
+        all_collection_names = []
+        
+        # Use ChromaDB client directly to get embeddings
+        if hasattr(VECTOR_DB_CLIENT, 'client'):
+            chroma_client = VECTOR_DB_CLIENT.client
+            
+            # Get all actual collections from ChromaDB
+            try:
+                actual_collections = chroma_client.list_collections()
+                actual_collection_names = [col.name for col in actual_collections] if actual_collections else []
+                log.debug(f"ChromaDB has {len(actual_collection_names)} actual collections: {actual_collection_names}")
+            except Exception as e:
+                log.warning(f"Error listing ChromaDB collections: {e}")
+                actual_collection_names = []
+            
+            for collection_name in collection_names:
+                try:
+                    # Check both has_collection and if it's in the actual list
+                    if collection_name not in actual_collection_names:
+                        log.debug(f"Collection {collection_name} does not exist in ChromaDB, skipping")
+                        continue
+                    
+                    if not VECTOR_DB_CLIENT.has_collection(collection_name):
+                        log.debug(f"Collection {collection_name} failed has_collection check, but exists in list, trying anyway...")
+                    
+                    collection = chroma_client.get_collection(name=collection_name)
+                    # Get all items with embeddings included
+                    # ChromaDB's get() method accepts include parameter as a list
+                    result = collection.get(include=['embeddings', 'documents', 'metadatas'])  # type: ignore
+                    
+                    # Check if result exists and has embeddings (handle numpy arrays properly)
+                    if result and 'embeddings' in result:
+                        embeddings = result['embeddings']
+                        # Check if embeddings exists and has items (avoid numpy boolean ambiguity)
+                        # Must check is not None first, then length, to avoid evaluating numpy array as boolean
+                        if embeddings is not None:
+                            try:
+                                embedding_count = len(embeddings)
+                            except (TypeError, AttributeError):
+                                embedding_count = 0
+                            
+                            if embedding_count > 0:
+                                ids = result.get('ids', [])
+                                metadatas = result.get('metadatas') or []
+                                documents = result.get('documents', [])
+                                
+                                log.debug(f"Collection {collection_name}: {embedding_count} embeddings")
+                                
+                                # Handle both numpy arrays and lists
+                                # If it's a numpy array, convert to list of lists
+                                if isinstance(embeddings, np.ndarray):
+                                    embeddings_list = embeddings.tolist()
+                                elif isinstance(embeddings, list):
+                                    embeddings_list = embeddings
+                                else:
+                                    embeddings_list = []
+                                
+                                for idx, embedding in enumerate(embeddings_list):
+                                    # Check if embedding exists and is not None/empty
+                                    if embedding is not None and isinstance(embedding, (list, np.ndarray)) and len(embedding) > 0:
+                                        # Convert to list if it's a numpy array
+                                        if isinstance(embedding, np.ndarray):
+                                            embedding = embedding.tolist()
+                                        all_embeddings.append(embedding)
+                                        
+                                        # Get label from metadata (file name) or document ID
+                                        metadata = metadatas[idx] if metadatas and idx < len(metadatas) else {}
+                                        label = ''
+                                        if isinstance(metadata, dict):
+                                            label = metadata.get('name', '') or metadata.get('file_id', '')
+                                        if not label and ids and idx < len(ids):
+                                            label = ids[idx]
+                                        if not label:
+                                            label = f"doc_{idx}"
+                                        all_labels.append(str(label))
+                                        all_collection_names.append(collection_name)
+                    
+                except Exception as e:
+                    log.warning(f"Error fetching embeddings from collection {collection_name}: {e}", exc_info=True)
+                    continue
+        
+        if not all_embeddings:
+            log.warning(f"No embeddings found for user {user.id}")
+            return EmbeddingVisualizationResponse(
+                x=[],
+                y=[],
+                z=[],
+                labels=[],
+                collection_names=[]
+            )
+        
+        log.info(f"Total embeddings to process: {len(all_embeddings)}")
+        
+        # Convert to numpy array for t-SNE
+        embeddings_array = np.array(all_embeddings)
+        
+        # Run t-SNE to reduce to 3D
+        log.info(f"Running t-SNE on {len(embeddings_array)} embeddings (dimension: {embeddings_array.shape[1]})...")
+        tsne_start = time.time()
+        
+        # Use a reasonable perplexity based on sample size
+        perplexity = min(30, max(5, len(embeddings_array) - 1))
+        
+        tsne = TSNE(
+            n_components=3,
+            random_state=42,
+            perplexity=perplexity,
+            max_iter=1000,
+            verbose=1 if log.level <= logging.DEBUG else 0
+        )
+        projections = tsne.fit_transform(embeddings_array)
+        
+        tsne_time = time.time() - tsne_start
+        log.info(f"t-SNE completed in {tsne_time:.2f}s")
+        
+        # Extract x, y, z coordinates
+        x_coords = projections[:, 0].tolist()
+        y_coords = projections[:, 1].tolist()
+        z_coords = projections[:, 2].tolist()
+        
+        total_time = (time.time() - endpoint_start) * 1000
+        log.info(f"[PERF] /embeddings/visualize: total time {total_time:.2f}ms (t-SNE: {tsne_time*1000:.2f}ms)")
+        
+        return EmbeddingVisualizationResponse(
+            x=x_coords,
+            y=y_coords,
+            z=z_coords,
+            labels=all_labels,
+            collection_names=all_collection_names
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.exception(e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating embeddings visualization: {str(e)}"
+        )
 

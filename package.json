@@ -101,6 +101,7 @@
 		"mermaid": "^11.6.0",
 		"paneforge": "^0.0.6",
 		"panzoom": "^9.4.3",
+		"plotly.js-dist-min": "^3.2.0",
 		"prosemirror-commands": "^1.6.0",
 		"prosemirror-example-setup": "^1.2.3",
 		"prosemirror-history": "^1.4.1",

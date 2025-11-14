@@ -16,6 +16,7 @@
 		getModelPopularity,
 		getCostPerTokenDaily,
 		getTaskGenerationTypesDaily,
+		getIndexGrowthDaily,
 		type MetricsParams
 	} from '$lib/apis/metrics';
 
@@ -30,6 +31,8 @@
 	import ModelPopularityChart from '$lib/components/workspace/Metrics/ModelPopularityChart.svelte';
 	import CostPerTokenChart from '$lib/components/workspace/Metrics/CostPerTokenChart.svelte';
 	import TaskGenerationTypesChart from '$lib/components/workspace/Metrics/TaskGenerationTypesChart.svelte';
+	import IndexGrowthChart from '$lib/components/workspace/Metrics/IndexGrowthChart.svelte';
+	import EmbeddingsVisualizerModal from '$lib/components/workspace/Metrics/EmbeddingsVisualizerModal.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import Info from '$lib/components/icons/Info.svelte';
 	import Download from '$lib/components/icons/Download.svelte';
@@ -101,6 +104,9 @@
 	let endDate = '';
 	let modelType: 'local' | 'external' | 'both' = 'both';
 	let showCost = false;
+	let includeEmbeddings = false;
+	let showEmbeddingsVisualizer = false;
+	let previousIncludeEmbeddings = false;
 
 	// Data stores
 	let modelMetrics: any[] = [];
@@ -113,6 +119,7 @@
 	let modelPopularity: any[] = [];
 	let costPerTokenDaily: any[] = [];
 	let taskGenerationTypesDaily: any[] = [];
+	let indexGrowthDaily: any[] = [];
 
 	// Loading states for each component
 	let loadingModels = false;
@@ -125,6 +132,7 @@
 	let loadingPopularity = false;
 	let loadingCostPerToken = false;
 	let loadingTaskGenerationTypes = false;
+	let loadingIndexGrowth = false;
 
 	// Track request IDs to prevent race conditions
 	let currentRequestId = 0;
@@ -206,7 +214,8 @@
 		const params: MetricsParams = {
 			model_type: modelType,
 			start_date: startDate,
-			end_date: endDate
+			end_date: endDate,
+			include_embeddings: includeEmbeddings
 		};
 
 		// Fetch all metrics independently
@@ -290,6 +299,14 @@
 			(v) => (taskGenerationTypesDaily = v),
 			requestId
 		);
+		fetchMetric(
+			'index/growth/daily',
+			getIndexGrowthDaily,
+			params,
+			(v) => (loadingIndexGrowth = v),
+			(v) => (indexGrowthDaily = v),
+			requestId
+		);
 	};
 
 	// Update URL query parameters
@@ -299,6 +316,8 @@
 		if (startDate) params.set('start_date', startDate);
 		if (endDate) params.set('end_date', endDate);
 		if (modelType && modelType !== 'both') params.set('model_type', modelType);
+		// Always set include_embeddings explicitly (true or false) to avoid ambiguity
+		params.set('include_embeddings', includeEmbeddings.toString());
 
 		const queryString = params.toString();
 		const newUrl = queryString ? `${$page.url.pathname}?${queryString}` : $page.url.pathname;
@@ -353,6 +372,17 @@
 			// (not if it's just missing, since 'both' is the default)
 		}
 
+		// Read include embeddings from URL or use default
+		const urlIncludeEmbeddings = params.get('include_embeddings');
+		if (urlIncludeEmbeddings === 'true') {
+			includeEmbeddings = true;
+		} else if (urlIncludeEmbeddings === 'false') {
+			includeEmbeddings = false;
+		} else {
+			includeEmbeddings = false; // Default to false
+		}
+		previousIncludeEmbeddings = includeEmbeddings; // Sync the previous value to prevent false triggers
+
 		// Update URL with defaults if needed (only on initial load)
 		if (needsURLUpdate && !skipFetch) {
 			updateURL();
@@ -363,15 +393,30 @@
 		}
 	};
 
+	// Watch for includeEmbeddings changes and update URL/metrics (but not during initialization)
+	$: if (isInitialized && includeEmbeddings !== previousIncludeEmbeddings) {
+		previousIncludeEmbeddings = includeEmbeddings;
+		if (!isUpdatingURL) {
+			updateURL();
+			fetchAllMetrics();
+		}
+	}
+
 	// Watch for URL changes (e.g., browser back/forward)
 	$: if ($page.url.searchParams && !isUpdatingURL && isInitialized) {
 		const params = $page.url.searchParams;
 		const urlStartDate = params.get('start_date') || '';
 		const urlEndDate = params.get('end_date') || '';
 		const urlModelType = params.get('model_type') || 'both';
+		const urlIncludeEmbeddings = params.get('include_embeddings') === 'true';
 
 		// Check if URL params differ from current state
-		if (urlStartDate !== startDate || urlEndDate !== endDate || urlModelType !== modelType) {
+		if (
+			urlStartDate !== startDate ||
+			urlEndDate !== endDate ||
+			urlModelType !== modelType ||
+			urlIncludeEmbeddings !== includeEmbeddings
+		) {
 			initializeFromURL();
 		}
 	}
@@ -393,12 +438,28 @@
 		<div class="flex md:self-center text-xl font-medium px-0.5 items-center">
 			{$i18n.t('Metrics')}
 		</div>
+		<button
+			class="px-4 py-2 text-sm rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition"
+			on:click={() => (showEmbeddingsVisualizer = true)}
+		>
+			{$i18n.t('Open Embeddings Visualizer')}
+		</button>
 	</div>
 
 	<div class="flex flex-col gap-4">
 		<div class="flex flex-wrap items-start gap-6">
 			<DateRangeSelector bind:startDate bind:endDate on:change={handleDateRangeChange} />
-			<div class="ml-auto">
+			<div class="ml-auto flex items-start gap-4">
+				<div class="flex flex-col gap-2">
+					<!-- spacer div. doesn't perfectly fix alignment but it's close enough for now -->
+					<div class="text-xs">&nbsp;</div>
+					<div class="flex items-center gap-2">
+						<span class="text-sm text-gray-600 dark:text-gray-400"
+							>{$i18n.t('Include Embeddings')}</span
+						>
+						<Switch bind:state={includeEmbeddings} />
+					</div>
+				</div>
 				<ModelTypeFilter bind:modelType on:change={handleModelTypeChange} />
 			</div>
 		</div>
@@ -551,6 +612,22 @@
 					/>
 				</div>
 			</div>
+
+			<!-- Index Growth -->
+			<div class="lg:col-span-2">
+				<div class="flex items-center gap-2 mb-2">
+					<h3 class="text-lg font-semibold">{$i18n.t('Index Growth Over Time')}</h3>
+					<Tooltip
+						content="This shows the cumulative number of vectors in the vector database over time, approximated from embedding generations."
+						placement="top"
+					>
+						<Info className="w-4 h-4 text-gray-500 dark:text-gray-400 cursor-help" />
+					</Tooltip>
+				</div>
+				<div class="bg-white dark:bg-gray-800 rounded-xl p-4">
+					<IndexGrowthChart data={indexGrowthDaily} loading={loadingIndexGrowth} />
+				</div>
+			</div>
 		</div>
 
 		<!-- Disclaimer -->
@@ -575,4 +652,7 @@
 			<p>All dates are in UTC timezone, so a date may span multiple local calendar days.</p>
 		</div>
 	</div>
+
+	<!-- Embeddings Visualizer Modal -->
+	<EmbeddingsVisualizerModal bind:show={showEmbeddingsVisualizer} />
 </div>
