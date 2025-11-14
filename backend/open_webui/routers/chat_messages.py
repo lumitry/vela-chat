@@ -14,6 +14,8 @@ from open_webui.models.chat_messages import (
 )
 from open_webui.models.chats import Chats
 from open_webui.utils.auth import get_verified_user
+from open_webui.services.embedding_metrics import associate_pending_embeddings_with_message
+from open_webui.routers.retrieval import pending_embedding_metadata
 
 
 log = logging.getLogger(__name__)
@@ -78,7 +80,8 @@ async def get_chat_messages(
                         )
                     )
 
-        out = [MessageOut(**m.model_dump(), attachments=attachments_map.get(m.id, [])) for m in base_msgs]
+        out = [MessageOut(
+            **m.model_dump(), attachments=attachments_map.get(m.id, [])) for m in base_msgs]
         return {"messages": out}
     except Exception as e:
         log.exception(e)
@@ -90,7 +93,20 @@ async def create_chat_message(
     chat_id: str, form: MessageCreateForm, user=Depends(get_verified_user)
 ):
     try:
-        return ChatMessages.insert_message(chat_id, form)
+        message = ChatMessages.insert_message(chat_id, form)
+
+        # Associate pending embeddings with this message if it has file attachments
+        if message and form.attachments:
+            file_ids = [att.get("file_id") for att in form.attachments if att.get("file_id")]
+            if file_ids:
+                associate_pending_embeddings_with_message(
+                    file_ids=file_ids,
+                    chat_id=chat_id,
+                    message_id=message.id,
+                    pending_metadata=pending_embedding_metadata,
+                )
+
+        return message
     except Exception as e:
         log.exception(e)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -129,5 +145,3 @@ async def get_all_chat_messages(chat_id: str, user=Depends(get_verified_user)):
     except Exception as e:
         log.exception(e)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-
-

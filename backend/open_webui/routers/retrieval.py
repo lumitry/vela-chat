@@ -5,7 +5,7 @@ import os
 import shutil
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator, List, Optional, Sequence, Union
 
@@ -64,6 +64,7 @@ from open_webui.retrieval.web.sougou import search_sougou
 
 from open_webui.retrieval.utils import (
     get_embedding_function,
+    get_embedding_function_with_usage,
     get_model_path,
     query_collection,
     query_collection_with_hybrid_search,
@@ -91,10 +92,20 @@ from open_webui.env import (
     DEVICE_TYPE,
     DOCKER,
 )
-from open_webui.constants import ERROR_MESSAGES
+from open_webui.constants import ERROR_MESSAGES, EMBEDDING_TYPES
+from open_webui.services.embedding_metrics import (
+    record_embedding_generation,
+    update_embedding_metrics_rollup,
+    update_rollup_from_embedding_generations,
+    extract_embedding_usage,
+)
 
 log = logging.getLogger(__name__)
 log.setLevel(SRC_LOG_LEVELS["RAG"])
+
+# In-memory storage for pending embedding metadata (keyed by file_id)
+# Format: {file_id: {"embedding_type": ..., "user_id": ..., "model_id": ..., "usage": ..., "cost": ..., "tokens": ..., "embedding_engine": ...}}
+pending_embedding_metadata: dict[str, dict] = {}
 
 ##########################################
 #
@@ -177,6 +188,8 @@ class ProcessUrlForm(CollectionNameForm):
 
 class SearchForm(BaseModel):
     query: str
+    chat_id: Optional[str] = None
+    message_id: Optional[str] = None
 
 
 @router.get("/")
@@ -838,6 +851,11 @@ def save_docs_to_vector_db(
     add: bool = False,
     user=None,
     use_web_search_embedding: bool = False,
+    embedding_type: Optional[str] = None,
+    chat_id: Optional[str] = None,
+    message_id: Optional[str] = None,
+    knowledge_base_id: Optional[str] = None,
+    skip_rollup_update: bool = False,
 ) -> bool:
     def _get_docs_info(docs: list[Document]) -> str:
         docs_info = set()
@@ -939,7 +957,7 @@ def save_docs_to_vector_db(
                 return True
 
         log.info(f"adding to collection {collection_name}")
-        
+
         # Use web search embedding config if specified and configured, otherwise use regular RAG config
         # If WEB_SEARCH_EMBEDDING_ENGINE is empty string, it means "use documents setting" (fallback to RAG config)
         # If it's set to a specific engine (including "sentence-transformers"), use that for web search
@@ -948,15 +966,15 @@ def save_docs_to_vector_db(
             embedding_engine = request.app.state.config.WEB_SEARCH_EMBEDDING_ENGINE
             embedding_model = request.app.state.config.WEB_SEARCH_EMBEDDING_MODEL or request.app.state.config.RAG_EMBEDDING_MODEL
             embedding_batch_size = request.app.state.config.WEB_SEARCH_EMBEDDING_BATCH_SIZE or request.app.state.config.RAG_EMBEDDING_BATCH_SIZE
-            
+
             # Get embedding function for web search (ef) if needed (for sentence transformers)
             web_search_ef = request.app.state.ef
             if embedding_engine == "" or embedding_engine == "sentence-transformers":
                 web_search_ef = get_ef("", embedding_model, RAG_EMBEDDING_MODEL_AUTO_UPDATE)
-            
+
             # Normalize sentence-transformers to empty string for get_embedding_function
             normalized_engine = "" if embedding_engine == "sentence-transformers" else embedding_engine
-            embedding_function = get_embedding_function(
+            embedding_function_with_usage = get_embedding_function_with_usage(
                 normalized_engine,
                 embedding_model,
                 web_search_ef,
@@ -972,7 +990,9 @@ def save_docs_to_vector_db(
                 ),
                 embedding_batch_size,
             )
-            
+            current_embedding_engine = normalized_engine
+            current_embedding_model = embedding_model
+
             # Update metadata with web search embedding config
             for metadata in metadatas:
                 embedding_config = json.loads(metadata.get("embedding_config", "{}"))
@@ -981,7 +1001,7 @@ def save_docs_to_vector_db(
                 metadata["embedding_config"] = json.dumps(embedding_config)
         else:
             # Use regular RAG embedding config
-            embedding_function = get_embedding_function(
+            embedding_function_with_usage = get_embedding_function_with_usage(
                 request.app.state.config.RAG_EMBEDDING_ENGINE,
                 request.app.state.config.RAG_EMBEDDING_MODEL,
                 request.app.state.ef,
@@ -997,12 +1017,95 @@ def save_docs_to_vector_db(
                 ),
                 request.app.state.config.RAG_EMBEDDING_BATCH_SIZE,
             )
+            current_embedding_engine = request.app.state.config.RAG_EMBEDDING_ENGINE
+            current_embedding_model = request.app.state.config.RAG_EMBEDDING_MODEL
 
-        embeddings = embedding_function(
+        # Generate embeddings with usage tracking
+        embeddings, aggregated_usage = embedding_function_with_usage(
             list(map(lambda x: x.replace("\n", " "), texts)),
             prefix=RAG_EMBEDDING_CONTENT_PREFIX,
             user=user,
         )
+
+        # Record embedding metrics if embedding_type is provided
+        if embedding_type and user:
+            # Extract usage information
+            total_cost = aggregated_usage.get("total_cost", 0) or 0
+            total_tokens = aggregated_usage.get("total_tokens", 0) or 0
+            usage_list = aggregated_usage.get("usage_list", [])
+
+            # Determine if we should store in pending metadata (file upload without chat_id/message_id)
+            file_id = None
+            if metadata:
+                file_id = metadata.get("file_id")
+
+            should_store_pending = (
+                embedding_type == str(EMBEDDING_TYPES.UPLOAD_FILE_EMBEDDING) and
+                file_id is not None and
+                (not chat_id or not message_id)
+            )
+
+            # Record individual embedding generation
+            if not should_store_pending:
+                # We have chat_id/message_id or it's not a file upload - record directly
+                record_embedding_generation(
+                    embedding_type=embedding_type,
+                    user_id=user.id,
+                    embedding_engine=current_embedding_engine or "sentencetransformers",
+                    model_id=current_embedding_model,
+                    total_input_tokens=total_tokens if total_tokens > 0 else None,
+                    cost=total_cost if total_cost > 0 else None,
+                    usage={"usage_list": usage_list} if usage_list else None,
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    knowledge_base_id=knowledge_base_id,
+                )
+            else:
+                # Store in pending metadata for later association
+                if file_id is not None:
+                    pending_embedding_metadata[file_id] = {
+                        "embedding_type": embedding_type,
+                        "user_id": user.id,
+                        "model_id": current_embedding_model,
+                        "embedding_engine": current_embedding_engine or "sentencetransformers",
+                        "usage": {"usage_list": usage_list, "file_id": file_id} if usage_list else {"file_id": file_id},
+                        "cost": total_cost if total_cost > 0 else None,
+                        "tokens": total_tokens if total_tokens > 0 else None,
+                    }
+                    # Still record the generation but without chat_id/message_id
+                    # Store file_id in usage JSON so we can find it later
+                    usage_with_file_id = {"usage_list": usage_list, "file_id": file_id} if usage_list else {"file_id": file_id}
+                    record_embedding_generation(
+                        embedding_type=embedding_type,
+                        user_id=user.id,
+                        embedding_engine=current_embedding_engine or "sentencetransformers",
+                        model_id=current_embedding_model,
+                        total_input_tokens=total_tokens if total_tokens > 0 else None,
+                        cost=total_cost if total_cost > 0 else None,
+                        usage=usage_with_file_id,
+                        chat_id=None,
+                        message_id=None,
+                        knowledge_base_id=knowledge_base_id,
+                    )
+
+            # Update rollup table for single operations (not batch operations like web search)
+            # Batch operations should call update_rollup_from_embedding_generations after all embeddings complete
+            if not skip_rollup_update:
+                date_str = datetime.now(timezone.utc).date().isoformat()
+                update_embedding_metrics_rollup(
+                    user_id=user.id,
+                    date=date_str,
+                    embedding_type=embedding_type,
+                    model_id=current_embedding_model,
+                    embedding_model_type="internal" if (
+                        current_embedding_engine == "" or current_embedding_engine == "ollama") else "external",
+                    aggregated_usage={
+                        "total_cost": total_cost,
+                        "total_tokens": total_tokens,
+                        "count": aggregated_usage.get("count", 1),
+                        "distinct_chat_count": 1 if chat_id else 0,
+                    }
+                )
 
         items = [
             {
@@ -1159,6 +1262,10 @@ def process_file(
 
         if not request.app.state.config.BYPASS_EMBEDDING_AND_RETRIEVAL:
             try:
+                # Determine embedding type: knowledge base if collection_name provided, otherwise file upload
+                embedding_type = str(EMBEDDING_TYPES.KNOWLEDGE_BASE_EMBEDDING) if form_data.collection_name else str(EMBEDDING_TYPES.UPLOAD_FILE_EMBEDDING)
+                knowledge_base_id = form_data.collection_name if form_data.collection_name else None
+
                 result = save_docs_to_vector_db(
                     request,
                     docs=docs,
@@ -1170,6 +1277,8 @@ def process_file(
                     },
                     add=(True if form_data.collection_name else False),
                     user=user,
+                    embedding_type=embedding_type,
+                    knowledge_base_id=knowledge_base_id,
                 )
 
                 if result:
@@ -1269,7 +1378,8 @@ def process_youtube_video(
         log.debug(f"text_content: {content}")
 
         save_docs_to_vector_db(
-            request, docs, collection_name, overwrite=True, user=user
+            request, docs, collection_name, overwrite=True, user=user,
+            embedding_type=str(EMBEDDING_TYPES.PROCESS_YOUTUBE_EMBEDDING)
         )
 
         return {
@@ -1314,7 +1424,8 @@ def process_web(
 
         if not request.app.state.config.BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL:
             save_docs_to_vector_db(
-                request, docs, collection_name, overwrite=True, user=user
+                request, docs, collection_name, overwrite=True, user=user,
+                embedding_type=str(EMBEDDING_TYPES.PROCESS_WEB_EMBEDDING)
             )
         else:
             collection_name = None
@@ -1598,6 +1709,13 @@ async def process_web_search(
             }
         else:
             collection_names = []
+            # Get chat_id and message_id from form_data if available
+            chat_id = form_data.chat_id
+            message_id = form_data.message_id
+
+            # Track embedding info for rollup update
+            embedding_info = None
+
             for doc_idx, doc in enumerate(docs):
                 if doc and doc.page_content:
                     collection_name = f"web-search-{calculate_sha256_string(form_data.query + '-' + urls[doc_idx])}"[
@@ -1613,7 +1731,40 @@ async def process_web_search(
                         overwrite=True,
                         user=user,
                         use_web_search_embedding=True,
+                        embedding_type=str(EMBEDDING_TYPES.WEB_SEARCH_EMBEDDING),
+                        chat_id=chat_id,
+                        message_id=message_id,
+                        skip_rollup_update=True,  # Skip individual rollup updates, aggregate at end
                     )
+
+                    # Capture embedding info from the first doc for rollup update
+                    if embedding_info is None and user:
+                        # Determine embedding engine and model
+                        if request.app.state.config.WEB_SEARCH_EMBEDDING_ENGINE and request.app.state.config.WEB_SEARCH_EMBEDDING_ENGINE != "":
+                            embedding_engine = request.app.state.config.WEB_SEARCH_EMBEDDING_ENGINE
+                            embedding_model = request.app.state.config.WEB_SEARCH_EMBEDDING_MODEL or request.app.state.config.RAG_EMBEDDING_MODEL
+                        else:
+                            embedding_engine = request.app.state.config.RAG_EMBEDDING_ENGINE
+                            embedding_model = request.app.state.config.RAG_EMBEDDING_MODEL
+
+                        embedding_model_type = "internal" if (embedding_engine == "" or embedding_engine == "ollama") else "external"
+                        embedding_info = {
+                            "user_id": user.id,
+                            "embedding_type": str(EMBEDDING_TYPES.WEB_SEARCH_EMBEDDING),
+                            "model_id": embedding_model,
+                            "embedding_model_type": embedding_model_type,
+                        }
+
+            # Update rollup table after all embeddings are complete
+            if embedding_info:
+                date_str = datetime.now(timezone.utc).date().isoformat()
+                update_rollup_from_embedding_generations(
+                    user_id=embedding_info["user_id"],
+                    date=date_str,
+                    embedding_type=embedding_info["embedding_type"],
+                    model_id=embedding_info["model_id"],
+                    embedding_model_type=embedding_info["embedding_model_type"],
+                )
 
             return {
                 "status": True,
@@ -1871,12 +2022,17 @@ def process_files_batch(
     # Save all documents in one batch
     if all_docs:
         try:
+            # For batch processing, determine embedding type based on whether it's a knowledge base
+            embedding_type = str(EMBEDDING_TYPES.KNOWLEDGE_BASE_EMBEDDING) if collection_name else str(EMBEDDING_TYPES.UPLOAD_FILE_EMBEDDING)
+
             save_docs_to_vector_db(
                 request=request,
                 docs=all_docs,
                 collection_name=collection_name,
                 add=True,
                 user=user,
+                embedding_type=embedding_type,
+                knowledge_base_id=collection_name if collection_name else None,
             )
 
             # Update all files with collection name

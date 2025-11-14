@@ -37,6 +37,7 @@ from open_webui.config import (
     RAG_EMBEDDING_QUERY_PREFIX,
     RAG_EMBEDDING_CONTENT_PREFIX,
     RAG_EMBEDDING_PREFIX_FIELD_NAME,
+    RAG_EMBEDDING_MODEL_AUTO_UPDATE,
 )
 
 log = logging.getLogger(__name__)
@@ -409,6 +410,141 @@ def get_embedding_function(
         raise ValueError(f"Unknown embedding engine: {embedding_engine}")
 
 
+def get_embedding_function_with_usage(
+    embedding_engine,
+    embedding_model,
+    embedding_function,
+    url,
+    key,
+    embedding_batch_size,
+):
+    """
+    Get embedding function that returns both embeddings and usage data.
+    Returns a function that takes (query, prefix=None, user=None) and returns
+    (embeddings, aggregated_usage) where aggregated_usage is a dict with:
+    - total_cost: float
+    - total_tokens: int
+    - count: int
+    - usage_list: list of individual usage dicts
+    """
+    from open_webui.services.embedding_metrics import get_sentence_transformer_tokens
+
+    if embedding_engine == "":
+        # SentenceTransformers
+        def func(query, prefix=None, user=None):
+            if isinstance(query, list):
+                embeddings = []
+                total_tokens = 0
+                for text in query:
+                    emb = embedding_function.encode(text, **({"prompt": prefix} if prefix else {})).tolist()
+                    embeddings.append(emb)
+                    # Calculate tokens
+                    tokens = get_sentence_transformer_tokens(embedding_function, [text])
+                    total_tokens += tokens
+                aggregated_usage = {
+                    "total_cost": 0.0,
+                    "total_tokens": total_tokens,
+                    "count": len(query),
+                    "usage_list": [{"cost": 0, "prompt_tokens": get_sentence_transformer_tokens(embedding_function, [text])} for text in query]
+                }
+                # Ensure total_tokens is correct (sum of individual tokens)
+                if aggregated_usage["usage_list"]:
+                    aggregated_usage["total_tokens"] = sum(u.get("prompt_tokens", 0) for u in aggregated_usage["usage_list"])
+                return embeddings, aggregated_usage
+            else:
+                emb = embedding_function.encode(query, **({"prompt": prefix} if prefix else {})).tolist()
+                tokens = get_sentence_transformer_tokens(embedding_function, [query])
+                aggregated_usage = {
+                    "total_cost": 0.0,
+                    "total_tokens": tokens,
+                    "count": 1,
+                    "usage_list": [{"cost": 0, "prompt_tokens": tokens}]
+                }
+                return emb, aggregated_usage
+        return func
+    elif embedding_engine in ["ollama", "openai"]:
+        def func(query, prefix=None, user=None):
+            if isinstance(query, list):
+                embeddings = []
+                aggregated_usage = {
+                    "total_cost": 0.0,
+                    "total_tokens": 0,
+                    "count": 0,
+                    "usage_list": []
+                }
+                for i in range(0, len(query), embedding_batch_size):
+                    batch = query[i: i + embedding_batch_size]
+                    if embedding_engine == "ollama":
+                        batch_embeddings, batch_usage = generate_ollama_batch_embeddings(
+                            model=embedding_model,
+                            texts=batch,
+                            url=url,
+                            key=key,
+                            prefix=prefix,
+                            user=user,
+                        )
+                    else:  # openai
+                        batch_embeddings, batch_usage = generate_openai_batch_embeddings(
+                            model=embedding_model,
+                            texts=batch,
+                            url=url,
+                            key=key,
+                            prefix=prefix,
+                            user=user,
+                        )
+                    if batch_embeddings:
+                        embeddings.extend(batch_embeddings)
+                        # Aggregate usage
+                        if batch_usage:
+                            cost = batch_usage.get("cost", 0) or 0
+                            if embedding_engine == "ollama":
+                                tokens = batch_usage.get("prompt_eval_count", 0) or 0
+                            else:  # openai
+                                tokens = batch_usage.get("prompt_tokens", 0) or 0
+                            aggregated_usage["total_cost"] += cost
+                            aggregated_usage["total_tokens"] += tokens
+                            aggregated_usage["count"] += 1
+                            aggregated_usage["usage_list"].append(batch_usage)
+                return embeddings, aggregated_usage
+            else:
+                # Single query
+                if embedding_engine == "ollama":
+                    embeddings, usage = generate_ollama_batch_embeddings(
+                        model=embedding_model,
+                        texts=[query],
+                        url=url,
+                        key=key,
+                        prefix=prefix,
+                        user=user,
+                    )
+                else:  # openai
+                    embeddings, usage = generate_openai_batch_embeddings(
+                        model=embedding_model,
+                        texts=[query],
+                        url=url,
+                        key=key,
+                        prefix=prefix,
+                        user=user,
+                    )
+                if embeddings:
+                    embeddings = embeddings[0]
+                cost = usage.get("cost", 0) or 0 if usage else 0
+                if embedding_engine == "ollama":
+                    tokens = usage.get("prompt_eval_count",0) or 0 if usage else 0
+                else:  # openai
+                    tokens = usage.get("prompt_tokens", 0) or 0 if usage else 0
+                aggregated_usage = {
+                    "total_cost": cost,
+                    "total_tokens": tokens,
+                    "count": 1,
+                    "usage_list": [usage] if usage else []
+                }
+                return embeddings, aggregated_usage
+        return func
+    else:
+        raise ValueError(f"Unknown embedding engine: {embedding_engine}")
+
+
 def get_sources_from_files(
     request,
     files,
@@ -421,6 +557,10 @@ def get_sources_from_files(
     hybrid_search,
     full_context=False,
 ):
+    """
+    Get sources from files. Handles embedding function selection for web search collections.
+    Web search collections use the web search embedding override if configured.
+    """
     def _ctx_counts(ctx: dict) -> tuple[int, int]:
         try:
             documents = ctx.get("documents") or []
@@ -615,8 +755,8 @@ def get_sources_from_files(
                 log.warning(
                     f"RAG DEBUG: File has no id or collection_name: {file}")
 
-            collection_names = set(collection_names).difference(
-                extracted_collections)
+            collection_names = list(set(collection_names).difference(
+                extracted_collections))
             log.info(
                 f"RAG DEBUG: Final collection_names for file {file_idx}: {collection_names}")
             if not collection_names:
@@ -646,12 +786,55 @@ def get_sources_from_files(
                     else:
                         log.info(
                             f"RAG DEBUG: Querying collections: {collection_names}, hybrid_search={hybrid_search}")
+
+                        # Determine which embedding function to use for these collections
+                        # If this is a web_search file and web search embedding override is active, use web search embedding function
+                        query_embedding_function = embedding_function
+                        is_web_search_collection = (
+                            file.get("type") == "web_search" or
+                            any(cn.startswith("web-search-")
+                                for cn in collection_names)
+                        )
+
+                        if is_web_search_collection and request.app.state.config.WEB_SEARCH_EMBEDDING_ENGINE and request.app.state.config.WEB_SEARCH_EMBEDDING_ENGINE != "":
+                            # Use web search embedding function for web search collections
+                            from open_webui.routers.retrieval import get_ef
+
+                            embedding_engine = request.app.state.config.WEB_SEARCH_EMBEDDING_ENGINE
+                            embedding_model = request.app.state.config.WEB_SEARCH_EMBEDDING_MODEL or request.app.state.config.RAG_EMBEDDING_MODEL
+                            embedding_batch_size = request.app.state.config.WEB_SEARCH_EMBEDDING_BATCH_SIZE or request.app.state.config.RAG_EMBEDDING_BATCH_SIZE
+
+                            # Get embedding function for web search (ef) if needed (for sentence transformers)
+                            web_search_ef = request.app.state.ef
+                            if embedding_engine == "" or embedding_engine == "sentence-transformers":
+                                web_search_ef = get_ef("", embedding_model, RAG_EMBEDDING_MODEL_AUTO_UPDATE)
+
+                            # Normalize sentence-transformers to empty string for get_embedding_function
+                            normalized_engine = "" if embedding_engine == "sentence-transformers" else embedding_engine
+                            query_embedding_function = get_embedding_function(
+                                normalized_engine,
+                                embedding_model,
+                                web_search_ef,
+                                (
+                                    request.app.state.config.WEB_SEARCH_OPENAI_API_BASE_URL
+                                    if normalized_engine == "openai"
+                                    else request.app.state.config.WEB_SEARCH_OLLAMA_BASE_URL
+                                ),
+                                (
+                                    request.app.state.config.WEB_SEARCH_OPENAI_API_KEY
+                                    if normalized_engine == "openai"
+                                    else request.app.state.config.WEB_SEARCH_OLLAMA_API_KEY
+                                ),
+                                embedding_batch_size,
+                            )
+                            log.info(f"RAG DEBUG: Using web search embedding function for web search collections: engine={embedding_engine}, model={embedding_model}")
+
                         if hybrid_search:
                             try:
                                 context = query_collection_with_hybrid_search(
                                     collection_names=collection_names,
                                     queries=queries,
-                                    embedding_function=embedding_function,
+                                    embedding_function=query_embedding_function,
                                     k=k,
                                     reranking_function=reranking_function,
                                     k_reranker=k_reranker,
@@ -670,7 +853,7 @@ def get_sources_from_files(
                             context = query_collection(
                                 collection_names=collection_names,
                                 queries=queries,
-                                embedding_function=embedding_function,
+                                embedding_function=query_embedding_function,
                                 k=k,
                             )
                             d, m = _ctx_counts(context or {})
@@ -799,7 +982,16 @@ def generate_openai_batch_embeddings(
     key: str = "",
     prefix: str = None,
     user: UserModel = None,
-) -> Optional[list[list[float]]]:
+) -> tuple[Optional[list[list[float]]], Optional[dict]]:
+    """
+    Generate embeddings using OpenAI/OpenRouter API.
+
+    Returns:
+        Tuple of (embeddings, usage_data) where usage_data contains:
+        - prompt_tokens: int
+        - total_tokens: int
+        - cost: float (if available)
+    """
     try:
         log.debug(
             f"generate_openai_batch_embeddings:model {model} batch size: {len(texts)}"
@@ -829,12 +1021,18 @@ def generate_openai_batch_embeddings(
         r.raise_for_status()
         data = r.json()
         if "data" in data:
-            return [elem["embedding"] for elem in data["data"]]
+            embeddings = [elem["embedding"] for elem in data["data"]]
+            # Extract usage data
+            usage_data = data.get("usage", {})
+            # Include cost if available (OpenRouter format)
+            if "cost" in data.get("usage", {}):
+                usage_data["cost"] = data["usage"]["cost"]
+            return embeddings, usage_data
         else:
             raise "Something went wrong :/"
     except Exception as e:
         log.exception(f"Error generating openai batch embeddings: {e}")
-        return None
+        return None, None
 
 
 def generate_ollama_batch_embeddings(
@@ -844,7 +1042,14 @@ def generate_ollama_batch_embeddings(
     key: str = "",
     prefix: str = None,
     user: UserModel = None,
-) -> Optional[list[list[float]]]:
+) -> tuple[Optional[list[list[float]]], Optional[dict]]:
+    """
+    Generate embeddings using Ollama API.
+
+    Returns:
+        Tuple of (embeddings, usage_data) where usage_data contains:
+        - prompt_eval_count: int (from metadata)
+    """
     try:
         log.debug(
             f"generate_ollama_batch_embeddings:model {model} batch size: {len(texts)}"
@@ -875,12 +1080,17 @@ def generate_ollama_batch_embeddings(
         data = r.json()
 
         if "embeddings" in data:
-            return data["embeddings"]
+            embeddings = data["embeddings"]
+            # Extract usage data from metadata
+            usage_data = {}
+            if "prompt_eval_count" in data:
+                usage_data["prompt_eval_count"] = data["prompt_eval_count"]
+            return embeddings, usage_data
         else:
             raise "Something went wrong :/"
     except Exception as e:
         log.exception(f"Error generating ollama batch embeddings: {e}")
-        return None
+        return None, None
 
 
 def generate_embeddings(
@@ -890,6 +1100,10 @@ def generate_embeddings(
     prefix: Union[str, None] = None,
     **kwargs,
 ):
+    """
+    Generate embeddings. Returns embeddings only (for backward compatibility).
+    For usage data, use the batch functions directly or get_embedding_function_with_usage.
+    """
     url = kwargs.get("url", "")
     key = kwargs.get("key", "")
     user = kwargs.get("user")
@@ -902,7 +1116,7 @@ def generate_embeddings(
 
     if engine == "ollama":
         if isinstance(text, list):
-            embeddings = generate_ollama_batch_embeddings(
+            embeddings, _ = generate_ollama_batch_embeddings(
                 **{
                     "model": model,
                     "texts": text,
@@ -913,7 +1127,7 @@ def generate_embeddings(
                 }
             )
         else:
-            embeddings = generate_ollama_batch_embeddings(
+            embeddings, _ = generate_ollama_batch_embeddings(
                 **{
                     "model": model,
                     "texts": [text],
@@ -923,17 +1137,17 @@ def generate_embeddings(
                     "user": user,
                 }
             )
-        return embeddings[0] if isinstance(text, str) else embeddings
+        return embeddings[0] if isinstance(text, str) and embeddings else embeddings
     elif engine == "openai":
         if isinstance(text, list):
-            embeddings = generate_openai_batch_embeddings(
+            embeddings, _ = generate_openai_batch_embeddings(
                 model, text, url, key, prefix, user
             )
         else:
-            embeddings = generate_openai_batch_embeddings(
+            embeddings, _ = generate_openai_batch_embeddings(
                 model, [text], url, key, prefix, user
             )
-        return embeddings[0] if isinstance(text, str) else embeddings
+        return embeddings[0] if isinstance(text, str) and embeddings else embeddings
 
 
 class RerankCompressor(BaseDocumentCompressor):

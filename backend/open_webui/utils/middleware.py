@@ -395,6 +395,8 @@ async def chat_web_search_handler(
                 SearchForm(
                     **{
                         "query": searchQuery,
+                        "chat_id": chat_id,
+                        "message_id": message_id,
                     }
                 ),
                 user=user,
@@ -523,7 +525,7 @@ async def chat_image_generation_handler(
                         message_id = user_messages[-1].id
                 except Exception as e:
                     log.debug(f"Could not get message_id for image prompt generation: {e}")
-            
+
             res = await generate_image_prompt(
                 request,
                 {
@@ -628,7 +630,7 @@ async def chat_completion_files_handler(
                         message_id = user_messages[-1].id
                 except Exception as e:
                     log.debug(f"Could not get message_id for retrieval query generation: {e}")
-            
+
             queries_response = await generate_queries(
                 request,
                 {
@@ -734,25 +736,25 @@ def apply_params_to_form_data(form_data, model):
                 transformed = {}
                 for key, value in provider_params.items():
                     transformed[key] = value
-                
+
                 # Convert comma-separated strings to arrays
                 for key in ['order', 'only', 'ignore']:
                     if key in transformed and transformed[key]:
                         if isinstance(transformed[key], str):
                             transformed[key] = [item.strip() for item in transformed[key].split(',') if item.strip()]
-                
+
                 # Handle boolean values
                 for key in ['allow_fallbacks', 'require_parameters']:
                     if key in transformed and transformed[key] is not None:
                         if isinstance(transformed[key], str):
                             transformed[key] = transformed[key].lower() in ('true', '1', 'yes')
-                
+
                 # Handle string values (ensure they're stripped)
                 for key in ['data_collection', 'sort']:
                     if key in transformed and transformed[key] is not None:
                         if isinstance(transformed[key], str):
                             transformed[key] = transformed[key].strip()
-                
+
                 form_data["provider"] = transformed
             else:
                 form_data["provider"] = params["provider"]
@@ -843,11 +845,11 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                 form_data["messages"] = rebuilt
         except Exception as e:
             log.debug(f"Failed to rebuild messages from normalized storage: {e}")
-    
+
     # Ensure messages is always a list, even if empty or missing
     if "messages" not in form_data or form_data["messages"] is None:
         form_data["messages"] = []
-    
+
     # Compute _request_files BEFORE processing user messages so files are available when we need them
     # This determines which files should be attached to the user message
     files = form_data.get("files", [])
@@ -855,17 +857,17 @@ async def process_chat_payload(request, form_data, user, metadata, model):
     new_request_files: list[dict] = []
     if files and chat_id:
         all_request_files = [f for f in files if isinstance(f, dict)]
-        
+
         try:
             from open_webui.models.chat_messages import ChatMessage, ChatMessageAttachment
             from open_webui.internal.db import get_db
-            
+
             # Get files already in chat.files
             chat_model = Chats.get_chat_by_id(chat_id)
             existing_chat_files: list[dict] = []
             if chat_model and chat_model.chat and isinstance(chat_model.chat, dict):
                 existing_chat_files = chat_model.chat.get("files", []) or []
-            
+
             # Get all files already attached to messages in this chat
             with get_db() as db:
                 # Get all user messages in this chat
@@ -873,7 +875,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                     chat_id=chat_id,
                     role="user"
                 ).all()
-                
+
                 # Collect all file IDs/keys from message attachments and meta
                 attached_file_keys = set()
                 for msg in attached_messages:
@@ -888,7 +890,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                                     file_type = f.get("type", "file")
                                     if file_id:
                                         attached_file_keys.add((file_type, file_id))
-                
+
                 # Check message attachments table directly
                 message_ids = [msg.id for msg in attached_messages]
                 if message_ids:
@@ -903,14 +905,14 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                             match = re.search(r"/files/([A-Za-z0-9\-]+)", att.url)
                             if match:
                                 attached_file_keys.add((att.type or "file", match.group(1)))
-            
+
             def _file_key(file_item: dict) -> tuple:
                 if not isinstance(file_item, dict):
                     return (None, None)
                 meta = file_item.get("meta") or {}
                 file_id = file_item.get("id") or file_item.get("collection_name") or meta.get("collection_name")
                 return (file_item.get("type", "file"), file_id)
-            
+
             # Files that should be attached: in chat.files but not yet attached to any message
             existing_chat_keys = {_file_key(f) for f in existing_chat_files if isinstance(f, dict)}
             for file_item in all_request_files:
@@ -925,10 +927,10 @@ async def process_chat_payload(request, form_data, user, metadata, model):
             log.debug(f"Error checking attached files for chat {chat_id}: {e}", exc_info=True)
             # Fallback: if we can't check, don't attach any files (safer than duplicating)
             new_request_files = []
-    
+
     # Store _request_files in metadata so it's available when processing user messages
     metadata["_request_files"] = new_request_files
-    
+
     # Insert user message into normalized database if we have chat_id and a user message
     if chat_id and form_data.get("messages"):
         try:
@@ -939,7 +941,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                 content_text = None
                 content_json = None
                 attachments = []
-                
+
                 content = user_msg.get("content")
                 if isinstance(content, str):
                     content_text = content
@@ -972,13 +974,13 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                     # If we have a list with no text, store as JSON
                     if not content_text and content:
                         content_json = {"items": content}
-                
+
                 # Attach files explicitly provided on this user message.
                 # We only attach files that the frontend marked on this specific user message.
                 request_files = metadata.get("_request_files", [])
                 user_msg_files = user_msg.get("files", [])  # Files from message object (may be empty)
                 user_meta = None
-                
+
                 files_to_attach: list[dict] = []
                 # Priority 1: Files explicitly in user_msg.files (explicitly attached to this message)
                 if isinstance(user_msg_files, list) and user_msg_files:
@@ -986,13 +988,13 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                 # Priority 2: Files that are new to the chat (not already in chat.files)
                 elif isinstance(request_files, list) and request_files:
                     files_to_attach = [f for f in request_files if isinstance(f, dict)]
-                
+
                 meta_files = []
                 if files_to_attach:
                     for file_item in files_to_attach:
                         file_type = file_item.get("type", "file")
                         file_id = file_item.get("id")
-                        
+
                         # Build attachment metadata preserving all fields
                         attachment_meta = {}
                         if "meta" in file_item and isinstance(file_item["meta"], dict):
@@ -1011,7 +1013,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                         for key in fields_to_copy:
                             if key in file_item:
                                 attachment_meta[key] = file_item[key]
-                        
+
                         # Create attachment dict
                         att_dict = {
                             "type": file_type,
@@ -1022,7 +1024,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                             "metadata": attachment_meta if attachment_meta else {}
                         }
                         attachments.append(att_dict)
-                        
+
                         # Preserve full file metadata for the message meta (deep copy to avoid mutation)
                         sanitized = deepcopy(file_item)
                         # Avoid storing large in-memory data blobs on the message meta
@@ -1046,22 +1048,22 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                     user_meta = user_meta.copy() if user_meta else {}
                     user_meta["files"] = meta_files
                 metadata.pop("_request_files", None)
-                
+
                 # Get parent_id from the message structure if available
                 # Convert to string to ensure consistent format
                 parent_id_raw = user_msg.get("parent_id") or user_msg.get("parentId")
                 parent_id = str(parent_id_raw) if parent_id_raw is not None else None
-                
+
                 # Frontend-provided user message ID (use it if provided)
                 # Convert to string to ensure consistent format
                 frontend_user_id_raw = user_msg.get("id")
                 frontend_user_id = str(frontend_user_id_raw) if frontend_user_id_raw is not None else None
-                
+
                 # For side-by-side chats: check if a user message with the same content already exists recently
                 # This prevents duplicate user messages when multiple models respond to the same prompt
                 should_insert_user = True
                 existing_user_message_id = None
-                
+
                 if frontend_user_id:
                     existing = ChatMessages.get_message_by_id(frontend_user_id)
                     if existing:
@@ -1105,7 +1107,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                         user_message_id = None
                 else:
                     user_message_id = None
-                
+
                 # If we don't have an existing message by ID, check for duplicate content (side-by-side scenario)
                 # BUT: Only use duplicate detection if we don't have a frontend-provided ID
                 # If frontend provided an ID, we should use it even if content is duplicate (to preserve ID consistency)
@@ -1113,7 +1115,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                     from open_webui.internal.db import get_db
                     from open_webui.models.chat_messages import ChatMessage
                     from sqlalchemy import and_
-                    
+
                     with get_db() as db:
                         # Look for a user message with the same content created within the last 30 seconds
                         recent_cutoff = int(time.time()) - 30
@@ -1125,7 +1127,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                                 ChatMessage.created_at >= recent_cutoff
                             )
                         ).order_by(ChatMessage.created_at.desc()).first()
-                        
+
                         if duplicate:
                             # Reuse the existing user message for side-by-side chats
                             should_insert_user = False
@@ -1166,7 +1168,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                                             att_key = (att_type, att_file_id) if att_file_id else None
                                             if att_key and att_key not in existing_att_keys:
                                                 ChatMessages.add_attachment(user_message_id, att_dict)
-                
+
                 # Validate parent_id exists in database if provided
                 # If parent_id is provided but doesn't exist, it might be a frontend ID that wasn't saved correctly
                 # In that case, we should try to find the message by other means (e.g., by content/timestamp)
@@ -1201,7 +1203,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                         if str(parent_msg.id) != str(parent_id):
                             log.debug(f"Parent ID mismatch: requested {parent_id}, got {parent_msg.id}")
                             parent_id = str(parent_msg.id)
-                
+
                 # If parent_id is still not set and we're inserting, try to get it from chat's active_message_id
                 # For side-by-side chats, the frontend sets parent_id to the selected assistant message
                 # so we should trust the parent_id from the user message payload
@@ -1223,12 +1225,12 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                             root_msg = ChatMessages.get_message_by_id(chat_model.root_message_id)
                             if root_msg and root_msg.role == "user":
                                 parent_id = str(chat_model.root_message_id)
-                
+
                 # Extract models array from user message for side-by-side chats
                 # This is stored in the user message's "models" property in the frontend
                 # First try to get it from the user message in the payload
                 user_models = user_msg.get("models")
-                
+
                 # If not in the message, try to get it from chat.chat["models"] (stored at chat level)
                 if not user_models:
                     chat_model = Chats.get_chat_by_id(chat_id)
@@ -1238,17 +1240,17 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                     # Also check params as fallback
                     if not user_models and chat_model and chat_model.params:
                         user_models = chat_model.params.get("models")
-                
+
                 if user_models:
                     user_meta = user_meta.copy() if user_meta else {}
                     user_meta["models"] = user_models
-                
+
                 # Insert user message if needed
                 if should_insert_user:
                     # Ensure parent_id and frontend_user_id are strings
                     parent_id_str = str(parent_id) if parent_id else None
                     frontend_user_id_str = str(frontend_user_id) if frontend_user_id else None
-                    
+
                     inserted_user = ChatMessages.insert_message(chat_id, MessageCreateForm(
                         parent_id=parent_id_str,
                         role="user",
@@ -1263,7 +1265,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                         # If this is the first message (no parent), set it as root_message_id
                         if not parent_id:
                             Chats.update_chat_active_and_root_message_ids(chat_id, root_message_id=user_message_id)
-                
+
                 # Insert assistant placeholder if we have message_id and it doesn't exist
                 assistant_id = metadata.get("message_id")
                 if assistant_id:
@@ -1279,12 +1281,12 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                             # Use modelIdx as position for side-by-side chats to ensure correct ordering
                             # This prevents race conditions when multiple messages are created simultaneously
                             position_for_assistant = model_idx
-                        
+
                         # For side-by-side chats, use modelIdx as position to ensure correct ordering
                         # Ensure user_message_id and assistant_id are strings
                         user_message_id_str = str(user_message_id) if user_message_id else None
                         assistant_id_str = str(assistant_id) if assistant_id else None
-                        
+
                         ChatMessages.insert_message(chat_id, MessageCreateForm(
                             parent_id=user_message_id_str,
                             role="assistant",
