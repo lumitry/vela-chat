@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import { onMount, tick, getContext } from 'svelte';
+	import { onDestroy, onMount, tick, getContext } from 'svelte';
 	import { openDB, deleteDB } from 'idb';
 	import fileSaver from 'file-saver';
 	const { saveAs } = fileSaver;
@@ -36,8 +36,12 @@
 		banners,
 		showSettings,
 		showChangelog,
+		chatTitle,
 		temporaryChatEnabled,
-		toolServers
+		toolServers,
+		commandPaletteQuery,
+		commandPaletteSubmenu,
+		isCommandPaletteOpen
 	} from '$lib/stores';
 
 	import Sidebar from '$lib/components/layout/Sidebar.svelte';
@@ -47,6 +51,9 @@
 	import UpdateInfoToast from '$lib/components/layout/UpdateInfoToast.svelte';
 	import { get } from 'svelte/store';
 	import Spinner from '$lib/components/common/Spinner.svelte';
+	import { registerCoreCommands } from '$lib/utils/commandPalette/commands';
+	import { addRecentChat } from '$lib/utils/commandPalette/recentChats';
+	import CommandPalette from '$lib/components/common/CommandPalette/CommandPalette.svelte';
 
 	const i18n = getContext('i18n');
 
@@ -56,8 +63,26 @@
 	let localDBChats = [];
 
 	let version;
+	let paletteShortcut = 'cmd+p';
+	let lastShiftPress = 0;
+	let paletteShortcutUnsubscribe: (() => void) | null = null;
+
+	page.subscribe(($page) => {
+		if (typeof window === 'undefined') return;
+		const match = /^\/c\/([^/]+)/.exec($page.url.pathname);
+		if (match) {
+			const currentTitle = get(chatTitle) ?? 'Chat';
+			addRecentChat({ id: match[1], title: currentTitle });
+		}
+	});
 
 	onMount(async () => {
+		registerCoreCommands();
+
+		paletteShortcutUnsubscribe = settings.subscribe(($settings) => {
+			paletteShortcut = $settings?.commandPaletteShortcut ?? 'cmd+p';
+		});
+
 		if ($user === undefined || $user === null) {
 			await goto('/auth');
 		} else if (['user', 'admin'].includes($user?.role)) {
@@ -154,6 +179,10 @@
 			}
 
 			document.addEventListener('keydown', async function (event) {
+				if (handleCommandPaletteHotkey(event)) {
+					return;
+				}
+
 				const isCtrlPressed = event.ctrlKey || event.metaKey; // metaKey is for Cmd key on Mac
 				// Check if the Shift key is pressed
 				const isShiftPressed = event.shiftKey;
@@ -324,6 +353,75 @@
 		showSidebar = true;
 	});
 
+	function toggleCommandPalette() {
+		if (get(isCommandPaletteOpen)) {
+			isCommandPaletteOpen.set(false);
+			lastShiftPress = 0;
+		} else {
+			commandPaletteSubmenu.set([]);
+			commandPaletteQuery.set('');
+			isCommandPaletteOpen.set(true);
+		}
+	}
+
+	function handleCommandPaletteHotkey(event: KeyboardEvent): boolean {
+		const target = event.target as HTMLElement | null;
+		const isTextInput = Boolean(
+			target && (target.closest('input, textarea') || target.isContentEditable === true)
+		);
+
+		if (paletteShortcut === 'double-shift') {
+			if (isTextInput) {
+				return false;
+			}
+
+			if (
+				event.key === 'Shift' &&
+				!event.ctrlKey &&
+				!event.metaKey &&
+				!event.altKey &&
+				!event.repeat
+			) {
+				const now = Date.now();
+				if (now - lastShiftPress < 400) {
+					event.preventDefault();
+					lastShiftPress = 0;
+					toggleCommandPalette();
+					return true;
+				}
+				lastShiftPress = now;
+			}
+			return false;
+		}
+
+		const key = event.key.toLowerCase();
+		const isMeta = event.metaKey || event.ctrlKey;
+
+		if (!isMeta || event.altKey || event.repeat) {
+			return false;
+		}
+
+		if (isTextInput && paletteShortcut === 'cmd+e') {
+			return false;
+		}
+
+		if (
+			(paletteShortcut === 'cmd+p' && key === 'p') ||
+			(paletteShortcut === 'cmd+k' && key === 'k') ||
+			(paletteShortcut === 'cmd+e' && key === 'e')
+		) {
+			event.preventDefault();
+			toggleCommandPalette();
+			return true;
+		}
+
+		return false;
+	}
+
+	onDestroy(() => {
+		paletteShortcutUnsubscribe?.();
+	});
+
 	const checkForVersionUpdates = async () => {
 		version = await getVersionUpdates(localStorage.token).catch((error) => {
 			return {
@@ -346,6 +444,7 @@
 
 <SettingsModal bind:show={$showSettings} />
 <ChangelogModal bind:show={$showChangelog} />
+<CommandPalette />
 
 {#if version && compareVersion(version.latest, version.current) && ($settings?.showUpdateToast ?? true)}
 	<div class=" absolute bottom-8 right-8 z-50" in:fade={{ duration: 100 }}>

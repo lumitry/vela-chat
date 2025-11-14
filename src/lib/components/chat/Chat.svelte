@@ -214,6 +214,25 @@
 		loadAndLink();
 	}
 
+	// Watch for URL changes when on home page (no chatId) to trigger initNewChat
+	let lastUrlQuery = '';
+	$: if (!chatIdProp && $page.url.pathname === '/') {
+		const currentQuery = $page.url.searchParams.get('q') ?? '';
+		// Only call initNewChat if query changed and we're on home page
+		if (currentQuery !== lastUrlQuery) {
+			lastUrlQuery = currentQuery;
+			// Only call if there's a query or other params that need initNewChat
+			if (
+				currentQuery ||
+				$page.url.searchParams.has('web-search') ||
+				$page.url.searchParams.has('image-generation') ||
+				$page.url.searchParams.has('knowledge-base')
+			) {
+				initNewChat();
+			}
+		}
+	}
+
 	$: if (selectedModels && chatIdProp !== '') {
 		saveSessionSelectedModels();
 	}
@@ -521,12 +540,36 @@
 		}
 	};
 
+	// Handle model updates from command palette
+	function handleModelUpdate(event: CustomEvent) {
+		const { chatId: updatedChatId, models: newModels } = event.detail;
+		if (updatedChatId === chatIdProp && newModels && newModels.length > 0) {
+			selectedModels = newModels;
+			// Also update the cache entry if it exists
+			chatCache.update((cache) => {
+				const cached = cache.get(updatedChatId);
+				if (cached && cached.chat) {
+					cached.chat.models = newModels;
+					cache.set(updatedChatId, cached);
+				}
+				return cache;
+			});
+		}
+	}
+
 	onMount(async () => {
+		window.addEventListener('chat-model-updated', handleModelUpdate as EventListener);
 		console.log('mounted');
 		window.addEventListener('message', onMessageHandler);
 		$socket?.on('chat-events', chatEventHandler);
 
 		if (!$chatId) {
+			// Initialize new chat on mount if we're on home page
+			if ($page.url.pathname === '/') {
+				await tick();
+				await initNewChat();
+			}
+
 			chatIdUnsubscriber = chatId.subscribe(async (value) => {
 				if (!value) {
 					await tick(); // Wait for DOM updates
@@ -583,6 +626,7 @@
 	});
 
 	onDestroy(() => {
+		window.removeEventListener('chat-model-updated', handleModelUpdate as EventListener);
 		chatIdUnsubscriber?.();
 		window.removeEventListener('message', onMessageHandler);
 		$socket?.off('chat-events', chatEventHandler);
@@ -775,6 +819,17 @@
 	//////////////////////////
 
 	const initNewChat = async () => {
+		// Wait for models to be loaded before proceeding
+		if ($models.length === 0) {
+			// Wait up to 5 seconds for models to load
+			let attempts = 0;
+			while ($models.length === 0 && attempts < 50) {
+				await tick();
+				await new Promise((resolve) => setTimeout(resolve, 100));
+				attempts++;
+			}
+		}
+
 		if ($page.url.searchParams.get('models')) {
 			selectedModels = $page.url.searchParams.get('models')?.split(',');
 		} else if ($page.url.searchParams.get('model')) {
@@ -820,7 +875,13 @@
 			if ($models.length > 0) {
 				selectedModels = [$models[0].id];
 			} else {
-				selectedModels = [''];
+				// If still no models, wait a bit more and try again
+				await new Promise((resolve) => setTimeout(resolve, 200));
+				if ($models.length > 0) {
+					selectedModels = [$models[0].id];
+				} else {
+					selectedModels = [''];
+				}
 			}
 		}
 
@@ -843,7 +904,35 @@
 			currentId: null
 		};
 
-		chatFiles = [];
+		// Handle knowledge base from URL or sessionStorage AFTER clearing chatFiles
+		const knowledgeBaseId = $page.url.searchParams.get('knowledge-base');
+		if (knowledgeBaseId) {
+			try {
+				const kbData = sessionStorage.getItem('commandPaletteKnowledgeBase');
+				if (kbData) {
+					const kb = JSON.parse(kbData);
+					console.log('kb', kb);
+					// Add knowledge base as a file attachment
+					// Knowledge bases use type: 'collection' (not 'knowledge')
+					// The structure should match what Knowledge.svelte creates
+					chatFiles = [
+						{
+							type: 'collection',
+							id: knowledgeBaseId,
+							name: kb.name || 'Knowledge Base',
+							description: kb.description,
+							collection_name: knowledgeBaseId,
+							status: 'processed'
+						}
+					];
+					sessionStorage.removeItem('commandPaletteKnowledgeBase');
+				}
+			} catch (error) {
+				console.error('Failed to attach knowledge base:', error);
+			}
+		} else {
+			chatFiles = [];
+		}
 		params = {};
 
 		if ($page.url.searchParams.get('youtube')) {
@@ -879,11 +968,42 @@
 		}
 
 		if ($page.url.searchParams.get('q')) {
-			prompt = $page.url.searchParams.get('q') ?? '';
+			const queryPrompt = $page.url.searchParams.get('q') ?? '';
+			prompt = queryPrompt;
 
-			if (prompt) {
-				await tick();
-				submitPrompt(prompt);
+			console.log('queryPrompt', queryPrompt);
+
+			if (queryPrompt) {
+				// Wait for component to be fully ready before submitting
+				// Use a more robust waiting mechanism
+				const waitForReady = async (maxAttempts = 20) => {
+					for (let i = 0; i < maxAttempts; i++) {
+						await tick();
+						console.log('not yet ready, waiting for 100ms');
+						await new Promise((resolve) => setTimeout(resolve, 100));
+
+						// Check if models are ready and valid
+						const validModels = selectedModels.filter(
+							(modelId) => modelId && modelId !== '' && $models.map((m) => m.id).includes(modelId)
+						);
+
+						if (validModels.length > 0 && $models.length > 0 && !loading) {
+							selectedModels = validModels;
+							await tick();
+							return true;
+						}
+					}
+					return false;
+				};
+
+				const isReady = await waitForReady();
+				if (isReady) {
+					submitPrompt(queryPrompt);
+				} else {
+					// Fallback: set prompt and let user submit manually
+					prompt = queryPrompt;
+					console.warn('Component not ready for auto-submit, prompt set for manual submission');
+				}
 			}
 		}
 

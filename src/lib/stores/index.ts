@@ -90,6 +90,12 @@ export const chatListSortBy = writable(
 export const isLastActiveTab = writable(true);
 export const playingNotificationSound = writable(false);
 
+export {
+	commandPaletteQuery,
+	commandPaletteSubmenu,
+	isCommandPaletteOpen
+} from './commandPalette';
+
 // LRU Cache for chat prefetching - size-limited to prevent memory bloat
 class LRUCache {
 	private cache: Map<string, any> = new Map();

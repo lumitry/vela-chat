@@ -978,16 +978,16 @@
 													}
 
 													// Check if Ctrl + R is pressed
-													if (prompt === '' && isCtrlPressed && e.key.toLowerCase() === 'r') {
-														e.preventDefault();
-														console.log('regenerate');
+													// if (prompt === '' && isCtrlPressed && e.key.toLowerCase() === 'r') {
+													// 	e.preventDefault();
+													// 	console.log('regenerate');
 
-														const regenerateButton = [
-															...document.getElementsByClassName('regenerate-response-button')
-														]?.at(-1);
+													// 	const regenerateButton = [
+													// 		...document.getElementsByClassName('regenerate-response-button')
+													// 	]?.at(-1);
 
-														regenerateButton?.click();
-													}
+													// 	regenerateButton?.click();
+													// }
 
 													if (prompt === '' && e.key == 'ArrowUp') {
 														e.preventDefault();

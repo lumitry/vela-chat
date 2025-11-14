@@ -4,6 +4,7 @@
 	import { config, models, settings, user } from '$lib/stores';
 	import { createEventDispatcher, onMount, getContext } from 'svelte';
 	import { get } from 'svelte/store';
+	import type { Writable } from 'svelte/store';
 	import { toast } from 'svelte-sonner';
 	import SettingRow from './SettingRow.svelte';
 	import SwitchSetting from './SwitchSetting.svelte';
@@ -12,17 +13,30 @@
 	import SettingRenderer from './SettingRenderer.svelte';
 	import ChatBackgroundImageSetting from './ChatBackgroundImageSetting.svelte';
 	import ImageCompressionSizeSetting from './ImageCompressionSizeSetting.svelte';
+	import {
+		buildInterfaceSettings,
+		chatFontScaleOptions,
+		commandPaletteShortcutOptions,
+		type InterfaceSettingBindings,
+		type SettingConfig,
+		type SettingContext
+	} from './interfaceSettingsConfig';
 	import { updateUserInfo } from '$lib/apis/users';
 	import { getUserPosition } from '$lib/utils';
 	import { setInterfaceKeywords } from './interfaceKeywords';
 	const dispatch = createEventDispatcher();
 
-	const i18n = getContext('i18n');
+	const i18n = getContext<Writable<any>>('i18n');
+
+	const translate = (key: string): string => {
+		const storeValue = get(i18n);
+		return storeValue?.t ? storeValue.t(key) : key;
+	};
 
 	export let saveSettings: Function;
 	export let searchQuery: string = '';
 
-	let backgroundImageUrl = null;
+	let backgroundImageUrl: string | null = null;
 
 	// Check if a setting matches the search query
 	function settingMatchesSearch(setting: SettingConfig, query: string): boolean {
@@ -35,9 +49,11 @@
 		}
 
 		// Check label (using get() to access store value)
-		const label = get(i18n).t(setting.label);
-		if (label.toLowerCase().includes(lowerQuery)) {
-			return true;
+		if ('label' in setting && setting.label) {
+			const label = translate(setting.label);
+			if (label.toLowerCase().includes(lowerQuery)) {
+				return true;
+			}
 		}
 
 		return false;
@@ -55,7 +71,7 @@
 	}
 
 	// Helper function to build context object
-	function buildContext() {
+	function buildContext(): SettingContext {
 		return {
 			chatBubble,
 			richTextInput,
@@ -93,11 +109,11 @@
 			}
 		}
 	}
-	let inputFiles = null;
-	let filesInputElement;
+	let inputFiles: FileList | null = null;
+	let filesInputElement: HTMLInputElement;
 
 	// Reactively update backgroundImageUrl when settings store changes
-	$: backgroundImageUrl = $settings.backgroundImageUrl ?? null;
+	$: backgroundImageUrl = (($settings as Record<string, any>) ?? {}).backgroundImageUrl ?? null;
 
 	// Addons
 	let titleAutoGenerate = true;
@@ -128,13 +144,8 @@
 	let chatDirection: 'LTR' | 'RTL' | 'auto' = 'auto';
 	let ctrlEnterToSend = false;
 	let copyFormatted = false;
+	let commandPaletteShortcut = 'cmd+p';
 
-	const chatFontScaleOptions = [
-		{ value: '0.875', label: 'Small' },
-		{ value: '1', label: 'Default' },
-		{ value: '1.125', label: 'Large' },
-		{ value: '1.25', label: 'Extra Large' }
-	];
 	let chatFontScale = 1;
 
 	// Find the matching option value string for the current chatFontScale
@@ -165,7 +176,7 @@
 	let voiceInterruption = false;
 	let hapticFeedback = false;
 
-	let webSearch = null;
+	let webSearch: string | null = null;
 
 	let iframeSandboxAllowSameOrigin = false;
 	let iframeSandboxAllowForms = false;
@@ -203,192 +214,138 @@
 		saveSettings({ webSearch: webSearch });
 	};
 
-	type SettingContext = {
-		chatBubble: boolean;
-		richTextInput: boolean;
-		imageCompression: boolean;
-		config: any;
-		user: any;
-		settings: any;
-	};
+	function handleBackgroundImageChange() {
+		const reader = new FileReader();
+		reader.onload = (event) => {
+			const target = event.target as FileReader | null;
+			const originalImageUrl = `${target?.result ?? ''}`;
 
-	type SettingConfig =
-		| {
-				type: 'switch';
-				id: string;
-				label: string;
-				labelSuffix?: string;
-				keywords: string[];
-				get: () => boolean;
-				set: (value: boolean) => boolean | Promise<boolean>;
-				requiresAdmin?: boolean;
-				dependsOn?: (context: SettingContext) => boolean;
-		  }
-		| {
-				type: 'select';
-				id: string;
-				label: string;
-				keywords: string[];
-				get: () => string;
-				set: (value: string) => void | Promise<void>;
-				options: Array<{ value: string; label: string }>;
-				requiresAdmin?: boolean;
-				dependsOn?: (context: SettingContext) => boolean;
-		  }
-		| {
-				type: 'button';
-				id: string;
-				label: string;
-				keywords: string[];
-				getValue: () => any;
-				getLabel: (value: any) => string;
-				onClick: () => void | Promise<void>;
-				requiresAdmin?: boolean;
-				dependsOn?: (context: SettingContext) => boolean;
-		  }
-		| {
-				type: 'custom';
-				id: string;
-				label?: string;
-				keywords: string[];
-				component: any; // Svelte component class
-				getProps?: () => Record<string, any>; // Function that returns props (reactive)
-				requiresAdmin?: boolean;
-				dependsOn?: (context: SettingContext) => boolean;
-		  };
+			backgroundImageUrl = originalImageUrl;
+			saveSettings({ backgroundImageUrl });
+		};
 
-	const uiSwitchSettings: SettingConfig[] = [
-		{
-			type: 'switch',
-			id: 'chatBubble',
-			label: 'Chat Bubble UI',
-			keywords: ['chat', 'bubble', 'layout', 'interface', 'ui'],
+		const file = inputFiles?.item(0);
+
+		if (file && ['image/gif', 'image/webp', 'image/jpeg', 'image/png'].includes(file.type)) {
+			reader.readAsDataURL(file);
+		} else if (file) {
+			toast.error(`Unsupported File Type '${file.type}'.`);
+			inputFiles = null;
+		}
+	}
+
+	const interfaceSettingBindings: InterfaceSettingBindings = {
+		landingPageMode: {
+			getValue: () => landingPageMode,
+			getLabel: (val: string) => (val === '' ? 'Default' : 'Chat'),
+			onClick: async () => {
+				await toggleLandingPageMode();
+			}
+		},
+		chatBubble: {
 			get: () => chatBubble,
-			set: async (value) => {
+			set: async (value: boolean) => {
 				chatBubble = value;
 				await saveSettings({ chatBubble: value });
 				return true;
 			}
 		},
-		{
-			type: 'switch',
-			id: 'showUsername',
-			label: 'Display the username instead of You in the Chat',
-			keywords: ['username', 'display', 'chat', 'interface', 'ui'],
+		showUsername: {
 			get: () => showUsername,
-			set: async (value) => {
+			set: async (value: boolean) => {
 				showUsername = value;
 				await saveSettings({ showUsername: value });
 				return true;
-			},
-			dependsOn: ({ chatBubble }) => !chatBubble
+			}
 		},
-		{
-			type: 'switch',
-			id: 'widescreenMode',
-			label: 'Widescreen Mode',
-			keywords: ['widescreen', 'layout', 'interface', 'ui'],
+		widescreenMode: {
 			get: () => widescreenMode,
-			set: async (value) => {
+			set: async (value: boolean) => {
 				widescreenMode = value;
 				await saveSettings({ widescreenMode: value });
 				return true;
 			}
 		},
-		{
-			type: 'switch',
-			id: 'notificationSound',
-			label: 'Notification Sound',
-			keywords: ['notification', 'sound', 'audio', 'interface'],
+		notificationSound: {
 			get: () => notificationSound,
-			set: async (value) => {
+			set: async (value: boolean) => {
 				notificationSound = value;
 				await saveSettings({ notificationSound: value });
 				return true;
 			}
 		},
-		{
-			type: 'switch',
-			id: 'showUpdateToast',
-			label: 'Toast notifications for new updates',
-			keywords: ['notification', 'updates', 'admin'],
+		showUpdateToast: {
 			get: () => showUpdateToast,
-			set: async (value) => {
+			set: async (value: boolean) => {
 				showUpdateToast = value;
 				await saveSettings({ showUpdateToast: value });
 				return true;
-			},
-			requiresAdmin: true
+			}
 		},
-		{
-			type: 'switch',
-			id: 'showChangelog',
-			label: 'Show "What\'s New" modal on login',
-			keywords: ['changelog', 'updates', 'modal', 'admin'],
+		showChangelog: {
 			get: () => showChangelog,
-			set: async (value) => {
+			set: async (value: boolean) => {
 				showChangelog = value;
 				await saveSettings({ showChangelog: value });
 				return true;
+			}
+		},
+		chatFontSize: {
+			get: () => getChatFontScaleString(chatFontScale),
+			set: async (value: string) => {
+				const numValue = parseFloat(value);
+				if (!Number.isNaN(numValue)) {
+					chatFontScale = numValue;
+					await saveSettings({ chatFontScale: value });
+				}
 			},
-			requiresAdmin: true
-		}
-	];
-
-	const chatSwitchSettings: SettingConfig[] = [
-		{
-			type: 'switch',
-			id: 'titleAutoGenerate',
-			label: 'Title Auto-Generation',
-			keywords: ['title', 'auto', 'chat'],
+			options: chatFontScaleOptions
+		},
+		commandPaletteShortcut: {
+			get: () => commandPaletteShortcut,
+			set: async (value: string) => {
+				commandPaletteShortcut = value;
+				await saveSettings({ commandPaletteShortcut: value });
+			},
+			options: commandPaletteShortcutOptions
+		},
+		titleAutoGenerate: {
 			get: () => titleAutoGenerate,
-			set: async (value) => {
+			set: async (value: boolean) => {
+				const currentSettings = ($settings as Record<string, any>) ?? {};
 				titleAutoGenerate = value;
 				await saveSettings({
 					title: {
-						...$settings.title,
+						...(currentSettings.title ?? {}),
 						auto: value
 					}
 				});
 				return true;
 			}
 		},
-		{
-			type: 'switch',
-			id: 'autoTags',
-			label: 'Chat Tags Auto-Generation',
-			keywords: ['tags', 'auto', 'chat'],
+		autoTags: {
 			get: () => autoTags,
-			set: async (value) => {
+			set: async (value: boolean) => {
 				autoTags = value;
 				await saveSettings({ autoTags: value });
 				return true;
 			}
 		},
-		{
-			type: 'switch',
-			id: 'detectArtifacts',
-			label: 'Detect Artifacts Automatically',
-			keywords: ['artifacts', 'chat'],
+		detectArtifacts: {
 			get: () => detectArtifacts,
-			set: async (value) => {
+			set: async (value: boolean) => {
 				detectArtifacts = value;
 				await saveSettings({ detectArtifacts: value });
 				return true;
 			}
 		},
-		{
-			type: 'switch',
-			id: 'responseAutoCopy',
-			label: 'Auto-Copy Response to Clipboard',
-			keywords: ['clipboard', 'copy', 'response'],
+		responseAutoCopy: {
 			get: () => responseAutoCopy,
-			set: async (value) => {
+			set: async (value: boolean) => {
 				if (value) {
-					// Check if clipboard API is available
 					if (!navigator.clipboard) {
 						toast.error(
-							get(i18n).t('Clipboard API is not available. Please use HTTPS or localhost.')
+							translate('Clipboard API is not available. Please use HTTPS or localhost.')
 						);
 						return false;
 					}
@@ -404,7 +361,7 @@
 
 					if (permission !== 'granted') {
 						toast.error(
-							get(i18n).t(
+							translate(
 								'Clipboard write permission denied. Please check your browser settings to grant the necessary access.'
 							)
 						);
@@ -417,160 +374,105 @@
 				return true;
 			}
 		},
-		{
-			type: 'switch',
-			id: 'richTextInput',
-			label: 'Rich Text Input for Chat',
-			keywords: ['rich text', 'input', 'chat'],
+		richTextInput: {
 			get: () => richTextInput,
-			set: async (value) => {
+			set: async (value: boolean) => {
 				richTextInput = value;
 				await saveSettings({ richTextInput: value });
 				return true;
 			}
 		},
-		{
-			type: 'switch',
-			id: 'promptAutocomplete',
-			label: 'Prompt Autocompletion',
-			keywords: ['prompt', 'autocomplete', 'chat'],
+		promptAutocomplete: {
 			get: () => promptAutocomplete,
-			set: async (value) => {
+			set: async (value: boolean) => {
 				promptAutocomplete = value;
 				await saveSettings({ promptAutocomplete: value });
 				return true;
-			},
-			dependsOn: ({ richTextInput, config }) =>
-				richTextInput && (config?.features?.enable_autocomplete_generation ?? false)
+			}
 		},
-		{
-			type: 'switch',
-			id: 'largeTextAsFile',
-			label: 'Paste Large Text as File',
-			keywords: ['paste', 'file', 'chat'],
+		largeTextAsFile: {
 			get: () => largeTextAsFile,
-			set: async (value) => {
+			set: async (value: boolean) => {
 				largeTextAsFile = value;
 				await saveSettings({ largeTextAsFile: value });
 				return true;
 			}
 		},
-		{
-			type: 'switch',
-			id: 'pasteAsMarkdown',
-			label: 'Paste as Markdown',
-			keywords: ['paste', 'markdown', 'chat'],
+		pasteAsMarkdown: {
 			get: () => pasteAsMarkdown,
-			set: async (value) => {
+			set: async (value: boolean) => {
 				pasteAsMarkdown = value;
 				await saveSettings({ pasteAsMarkdown: value });
 				return true;
 			}
 		},
-		{
-			type: 'switch',
-			id: 'showHexColorSwatches',
-			label: 'Show Hex Color Swatches',
-			keywords: ['color', 'hex', 'swatches'],
+		showHexColorSwatches: {
 			get: () => showHexColorSwatches,
-			set: async (value) => {
+			set: async (value: boolean) => {
 				showHexColorSwatches = value;
 				await saveSettings({ showHexColorSwatches: value });
 				return true;
 			}
 		},
-		{
-			type: 'switch',
-			id: 'copyFormatted',
-			label: 'Copy Formatted Text',
-			keywords: ['copy', 'formatted', 'text'],
+		copyFormatted: {
 			get: () => copyFormatted,
-			set: async (value) => {
+			set: async (value: boolean) => {
 				copyFormatted = value;
 				await saveSettings({ copyFormatted: value });
 				return true;
 			}
 		},
-		{
-			type: 'switch',
-			id: 'collapseCodeBlocks',
-			label: 'Always Collapse Code Blocks',
-			keywords: ['code', 'collapse', 'chat'],
+		collapseCodeBlocks: {
 			get: () => collapseCodeBlocks,
-			set: async (value) => {
+			set: async (value: boolean) => {
 				collapseCodeBlocks = value;
 				await saveSettings({ collapseCodeBlocks: value });
 				return true;
 			}
 		},
-		{
-			type: 'switch',
-			id: 'expandDetails',
-			label: 'Always Expand Details',
-			keywords: ['details', 'expand', 'chat'],
+		expandDetails: {
 			get: () => expandDetails,
-			set: async (value) => {
+			set: async (value: boolean) => {
 				expandDetails = value;
 				await saveSettings({ expandDetails: value });
 				return true;
 			}
 		},
-		{
-			type: 'switch',
-			id: 'scrollOnBranchChange',
-			label: 'Scroll to bottom when switching between branches',
-			keywords: ['scroll', 'branches', 'chat'],
+		scrollOnBranchChange: {
 			get: () => scrollOnBranchChange,
-			set: async (value) => {
+			set: async (value: boolean) => {
 				scrollOnBranchChange = value;
 				await saveSettings({ scrollOnBranchChange: value });
 				return true;
 			}
 		},
-		{
-			type: 'switch',
-			id: 'hapticFeedback',
-			label: 'Haptic Feedback',
-			labelSuffix: 'Android',
-			keywords: ['haptic', 'feedback', 'android'],
+		hapticFeedback: {
 			get: () => hapticFeedback,
-			set: async (value) => {
+			set: async (value: boolean) => {
 				hapticFeedback = value;
 				await saveSettings({ hapticFeedback: value });
 				return true;
 			}
 		},
-		{
-			type: 'switch',
-			id: 'voiceInterruption',
-			label: 'Allow Voice Interruption in Call',
-			keywords: ['voice', 'call', 'interruption'],
+		voiceInterruption: {
 			get: () => voiceInterruption,
-			set: async (value) => {
+			set: async (value: boolean) => {
 				voiceInterruption = value;
 				await saveSettings({ voiceInterruption: value });
 				return true;
 			}
 		},
-		{
-			type: 'switch',
-			id: 'showEmojiInCall',
-			label: 'Display Emoji in Call',
-			keywords: ['emoji', 'call'],
+		showEmojiInCall: {
 			get: () => showEmojiInCall,
-			set: async (value) => {
+			set: async (value: boolean) => {
 				showEmojiInCall = value;
 				await saveSettings({ showEmojiInCall: value });
 				return true;
 			}
 		},
-		{
-			type: 'switch',
-			id: 'userLocation',
-			label: 'Allow User Location',
-			keywords: ['location', 'user'],
+		userLocation: {
 			get: () => userLocation,
-			set: async (value) => {
+			set: async (value: boolean) => {
 				if (value) {
 					const position = await getUserPosition().catch((error) => {
 						toast.error(error.message);
@@ -579,7 +481,7 @@
 
 					if (position) {
 						await updateUserInfo(localStorage.token, { location: position });
-						toast.success(get(i18n).t('User location successfully retrieved.'));
+						toast.success(translate('User location successfully retrieved.'));
 					} else {
 						return false;
 					}
@@ -589,232 +491,142 @@
 				await saveSettings({ userLocation: value });
 				return true;
 			}
+		},
+		chatBackgroundImage: {
+			component: ChatBackgroundImageSetting,
+			getProps: () => ({
+				backgroundImageUrl,
+				filesInputElement,
+				saveSettings
+			})
+		},
+		ctrlEnterToSend: {
+			getValue: () => ctrlEnterToSend,
+			getLabel: (val: boolean) => (val ? 'Ctrl+Enter to Send' : 'Enter to Send'),
+			onClick: async () => {
+				await togglectrlEnterToSend();
+			}
+		},
+		webSearch: {
+			getValue: () => webSearch,
+			getLabel: (val: string | null) => (val === 'always' ? 'Always' : 'Default'),
+			onClick: async () => {
+				await toggleWebSearch();
+			}
+		},
+		iframeSandboxAllowSameOrigin: {
+			get: () => iframeSandboxAllowSameOrigin,
+			set: async (value: boolean) => {
+				iframeSandboxAllowSameOrigin = value;
+				await saveSettings({ iframeSandboxAllowSameOrigin: value });
+				return true;
+			}
+		},
+		iframeSandboxAllowForms: {
+			get: () => iframeSandboxAllowForms,
+			set: async (value: boolean) => {
+				iframeSandboxAllowForms = value;
+				await saveSettings({ iframeSandboxAllowForms: value });
+				return true;
+			}
+		},
+		imageCompression: {
+			get: () => imageCompression,
+			set: async (value: boolean) => {
+				imageCompression = value;
+				await saveSettings({ imageCompression: value });
+				return true;
+			}
+		},
+		imageCompressionSize: {
+			component: ImageCompressionSizeSetting,
+			getProps: () => ({
+				imageCompressionSize,
+				saveSettings
+			})
+		},
+		chatDirection: {
+			getValue: () => chatDirection,
+			getLabel: (val: string) => {
+				if (val === 'LTR') return 'LTR';
+				if (val === 'RTL') return 'RTL';
+				return 'Auto';
+			},
+			onClick: async () => {
+				await toggleChangeChatDirection();
+			}
 		}
-	];
+	};
 
-	// Unified settings configuration
-	const allSettings: Array<{ section?: string; settings: SettingConfig[] }> = [
-		{
-			section: 'UI',
-			settings: [
-				{
-					type: 'button',
-					id: 'landingPageMode',
-					label: 'Landing Page Mode',
-					keywords: ['landing', 'page', 'mode', 'ui'],
-					getValue: () => landingPageMode,
-					getLabel: (val) => (val === '' ? 'Default' : 'Chat'),
-					onClick: async () => {
-						await toggleLandingPageMode();
-					}
-				},
-				...uiSwitchSettings,
-				{
-					type: 'button',
-					id: 'chatDirection',
-					label: 'Chat direction',
-					keywords: ['chat', 'direction', 'ltr', 'rtl', 'auto'],
-					getValue: () => chatDirection,
-					getLabel: (val) => {
-						if (val === 'LTR') return 'LTR';
-						if (val === 'RTL') return 'RTL';
-						return 'Auto';
-					},
-					onClick: async () => {
-						await toggleChangeChatDirection();
-					}
-				}
-			]
-		},
-		{
-			section: 'Chat',
-			settings: [
-				{
-					type: 'select',
-					id: 'chatFontSize',
-					label: 'Chat Font Size',
-					keywords: ['font', 'size', 'chat', 'text'],
-					get: () => getChatFontScaleString(chatFontScale),
-					set: async (value: string) => {
-						const numValue = parseFloat(value);
-						if (!Number.isNaN(numValue)) {
-							chatFontScale = numValue;
-							await saveSettings({ chatFontScale: value });
-						}
-					},
-					options: chatFontScaleOptions
-				},
-				...chatSwitchSettings,
-				{
-					type: 'custom',
-					id: 'chatBackgroundImage',
-					keywords: ['background', 'image', 'chat'],
-					component: ChatBackgroundImageSetting,
-					getProps: () => ({
-						backgroundImageUrl,
-						filesInputElement,
-						saveSettings
-					})
-				},
-				{
-					type: 'button',
-					id: 'ctrlEnterToSend',
-					label: 'Enter Key Behavior',
-					keywords: ['enter', 'key', 'behavior', 'send'],
-					getValue: () => ctrlEnterToSend,
-					getLabel: (val) => (val ? 'Ctrl+Enter to Send' : 'Enter to Send'),
-					onClick: async () => {
-						await togglectrlEnterToSend();
-					}
-				},
-				{
-					type: 'button',
-					id: 'webSearch',
-					label: 'Web Search in Chat',
-					keywords: ['web', 'search', 'chat'],
-					getValue: () => webSearch,
-					getLabel: (val) => (val === 'always' ? 'Always' : 'Default'),
-					onClick: async () => {
-						await toggleWebSearch();
-					}
-				},
-				{
-					type: 'switch',
-					id: 'iframeSandboxAllowSameOrigin',
-					label: 'iframe Sandbox Allow Same Origin',
-					keywords: ['iframe', 'sandbox', 'same', 'origin'],
-					get: () => iframeSandboxAllowSameOrigin,
-					set: async (value) => {
-						iframeSandboxAllowSameOrigin = value;
-						await saveSettings({ iframeSandboxAllowSameOrigin: value });
-						return true;
-					}
-				},
-				{
-					type: 'switch',
-					id: 'iframeSandboxAllowForms',
-					label: 'iframe Sandbox Allow Forms',
-					keywords: ['iframe', 'sandbox', 'forms'],
-					get: () => iframeSandboxAllowForms,
-					set: async (value) => {
-						iframeSandboxAllowForms = value;
-						await saveSettings({ iframeSandboxAllowForms: value });
-						return true;
-					}
-				}
-			]
-		},
-		{
-			section: 'Voice',
-			settings: [
-				{
-					type: 'switch',
-					id: 'voiceInterruption',
-					label: 'Allow Voice Interruption in Call',
-					keywords: ['voice', 'call', 'interruption'],
-					get: () => voiceInterruption,
-					set: async (value) => {
-						voiceInterruption = value;
-						await saveSettings({ voiceInterruption: value });
-						return true;
-					}
-				},
-				{
-					type: 'switch',
-					id: 'showEmojiInCall',
-					label: 'Display Emoji in Call',
-					keywords: ['emoji', 'call'],
-					get: () => showEmojiInCall,
-					set: async (value) => {
-						showEmojiInCall = value;
-						await saveSettings({ showEmojiInCall: value });
-						return true;
-					}
-				}
-			]
-		},
-		{
-			section: 'File',
-			settings: [
-				{
-					type: 'switch',
-					id: 'imageCompression',
-					label: 'Image Compression',
-					keywords: ['image', 'compression', 'file'],
-					get: () => imageCompression,
-					set: async (value) => {
-						imageCompression = value;
-						await saveSettings({ imageCompression: value });
-						return true;
-					}
-				},
-				{
-					type: 'custom',
-					id: 'imageCompressionSize',
-					keywords: ['image', 'compression', 'size', 'file'],
-					dependsOn: ({ imageCompression }) => imageCompression,
-					component: ImageCompressionSizeSetting,
-					getProps: () => ({
-						imageCompressionSize,
-						saveSettings
-					})
-				}
-			]
-		}
-	];
+	const allSettings = buildInterfaceSettings(interfaceSettingBindings);
 
-	onMount(async () => {
-		// Update keywords cache when component mounts
-		updateInterfaceKeywords();
+	// Function to initialize local variables from settings store
+	function initializeFromSettings() {
+		const settingsAny = ($settings as Record<string, any>) ?? {};
 
-		titleAutoGenerate = $settings?.title?.auto ?? true;
-		autoTags = $settings.autoTags ?? true;
+		titleAutoGenerate = settingsAny?.title?.auto ?? true;
+		autoTags = settingsAny.autoTags ?? true;
 
-		detectArtifacts = $settings.detectArtifacts ?? true;
-		responseAutoCopy = $settings.responseAutoCopy ?? false;
+		detectArtifacts = settingsAny.detectArtifacts ?? true;
+		responseAutoCopy = settingsAny.responseAutoCopy ?? false;
 
-		showUsername = $settings.showUsername ?? false;
-		showUpdateToast = $settings.showUpdateToast ?? true;
-		showChangelog = $settings.showChangelog ?? true;
+		showUsername = settingsAny.showUsername ?? false;
+		showUpdateToast = settingsAny.showUpdateToast ?? true;
+		showChangelog = settingsAny.showChangelog ?? true;
 
-		showEmojiInCall = $settings.showEmojiInCall ?? false;
-		voiceInterruption = $settings.voiceInterruption ?? false;
+		showEmojiInCall = settingsAny.showEmojiInCall ?? false;
+		voiceInterruption = settingsAny.voiceInterruption ?? false;
 
-		richTextInput = $settings.richTextInput ?? true;
-		promptAutocomplete = $settings.promptAutocomplete ?? false;
-		largeTextAsFile = $settings.largeTextAsFile ?? false;
-		pasteAsMarkdown = $settings.pasteAsMarkdown ?? true;
-		showHexColorSwatches = $settings.showHexColorSwatches ?? true;
-		copyFormatted = $settings.copyFormatted ?? false;
-		chatFontScale = $settings.chatFontScale ?? 1;
+		richTextInput = settingsAny.richTextInput ?? true;
+		promptAutocomplete = settingsAny.promptAutocomplete ?? false;
+		largeTextAsFile = settingsAny.largeTextAsFile ?? false;
+		pasteAsMarkdown = settingsAny.pasteAsMarkdown ?? true;
+		showHexColorSwatches = settingsAny.showHexColorSwatches ?? true;
+		copyFormatted = settingsAny.copyFormatted ?? false;
+		chatFontScale = settingsAny.chatFontScale ?? 1;
 
-		collapseCodeBlocks = $settings.collapseCodeBlocks ?? false;
-		expandDetails = $settings.expandDetails ?? false;
+		collapseCodeBlocks = settingsAny.collapseCodeBlocks ?? false;
+		expandDetails = settingsAny.expandDetails ?? false;
 
-		landingPageMode = $settings.landingPageMode ?? '';
-		chatBubble = $settings.chatBubble ?? true;
-		widescreenMode = $settings.widescreenMode ?? false;
-		splitLargeChunks = $settings.splitLargeChunks ?? false;
-		scrollOnBranchChange = $settings.scrollOnBranchChange ?? true;
-		chatDirection = $settings.chatDirection ?? 'auto';
-		userLocation = $settings.userLocation ?? false;
+		landingPageMode = settingsAny.landingPageMode ?? '';
+		chatBubble = settingsAny.chatBubble ?? true;
+		widescreenMode = settingsAny.widescreenMode ?? false;
+		splitLargeChunks = settingsAny.splitLargeChunks ?? false;
+		scrollOnBranchChange = settingsAny.scrollOnBranchChange ?? true;
+		chatDirection = settingsAny.chatDirection ?? 'auto';
+		userLocation = settingsAny.userLocation ?? false;
 
-		notificationSound = $settings.notificationSound ?? true;
+		notificationSound = settingsAny.notificationSound ?? true;
 
-		hapticFeedback = $settings.hapticFeedback ?? false;
-		ctrlEnterToSend = $settings.ctrlEnterToSend ?? false;
+		hapticFeedback = settingsAny.hapticFeedback ?? false;
+		ctrlEnterToSend = settingsAny.ctrlEnterToSend ?? false;
 
-		imageCompression = $settings.imageCompression ?? false;
-		imageCompressionSize = $settings.imageCompressionSize ?? { width: '', height: '' };
+		imageCompression = settingsAny.imageCompression ?? false;
+		imageCompressionSize = settingsAny.imageCompressionSize ?? { width: '', height: '' };
 
-		defaultModelId = $settings?.models?.at(0) ?? '';
+		defaultModelId = settingsAny?.models?.at(0) ?? '';
 		if ($config?.default_models) {
 			defaultModelId = $config.default_models.split(',')[0];
 		}
 
+		commandPaletteShortcut = settingsAny.commandPaletteShortcut ?? 'cmd+p';
+
 		// backgroundImageUrl is now reactive to $settings, so no need to set it here
-		webSearch = $settings.webSearch ?? null;
+		const settingsState = ($settings as Record<string, any>) ?? {};
+		webSearch = settingsState.webSearch ?? null;
+	}
+
+	onMount(async () => {
+		// Update keywords cache when component mounts
+		updateInterfaceKeywords();
+		initializeFromSettings();
 	});
+
+	// Reactively update local variables when settings store changes
+	// This ensures the component stays in sync when settings are reloaded from the server
+	$: if ($settings) {
+		initializeFromSettings();
+	}
 </script>
 
 <form
@@ -830,26 +642,7 @@
 		type="file"
 		hidden
 		accept="image/*"
-		on:change={() => {
-			let reader = new FileReader();
-			reader.onload = (event) => {
-				let originalImageUrl = `${event.target.result}`;
-
-				backgroundImageUrl = originalImageUrl;
-				saveSettings({ backgroundImageUrl });
-			};
-
-			if (
-				inputFiles &&
-				inputFiles.length > 0 &&
-				['image/gif', 'image/webp', 'image/jpeg', 'image/png'].includes(inputFiles[0]['type'])
-			) {
-				reader.readAsDataURL(inputFiles[0]);
-			} else {
-				toast.error(`Unsupported File Type '${inputFiles[0]['type']}'.`);
-				inputFiles = null;
-			}
-		}}
+		on:change={handleBackgroundImageChange}
 	/>
 
 	<div class=" space-y-1 overflow-y-scroll max-h-[28rem] lg:max-h-full">

@@ -2,7 +2,7 @@
 	import { getContext, tick } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { config, models, settings, user } from '$lib/stores';
-	import { updateUserSettings } from '$lib/apis/users';
+	import { updateUserSettings, getUserSettings } from '$lib/apis/users';
 	import { getModels as _getModels } from '$lib/apis';
 	import { goto } from '$app/navigation';
 
@@ -344,9 +344,10 @@
 
 	const saveSettings = async (updated) => {
 		console.log(updated);
-		await settings.set({ ...$settings, ...updated });
+		const mergedSettings = { ...$settings, ...updated };
+		await settings.set(mergedSettings);
 		await models.set(await getModels());
-		await updateUserSettings(localStorage.token, { ui: $settings });
+		await updateUserSettings(localStorage.token, { ui: mergedSettings });
 	};
 
 	const getModels = async () => {
@@ -383,10 +384,26 @@
 		}
 	};
 
+	let previousShowState = false;
+
 	$: if (show) {
 		addScrollListener();
+		// Reload settings from server when modal first opens (not on every reactive update)
+		if (!previousShowState) {
+			getUserSettings(localStorage.token)
+				.then((userSettings) => {
+					if (userSettings?.ui) {
+						settings.set(userSettings.ui);
+					}
+				})
+				.catch((error) => {
+					console.error('Failed to reload user settings:', error);
+				});
+		}
+		previousShowState = true;
 	} else {
 		removeScrollListener();
+		previousShowState = false;
 	}
 </script>
 
