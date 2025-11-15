@@ -1,6 +1,6 @@
 from typing import List, Optional
 from pydantic import BaseModel
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 import logging
 
 from open_webui.models.knowledge import (
@@ -8,6 +8,7 @@ from open_webui.models.knowledge import (
     KnowledgeForm,
     KnowledgeResponse,
     KnowledgeUserResponse,
+    KnowledgeMetadataResponse,
 )
 from open_webui.models.files import Files, FileModel
 from open_webui.retrieval.vector.connector import VECTOR_DB_CLIENT
@@ -87,13 +88,20 @@ async def get_knowledge(user=Depends(get_verified_user)):
 
 
 @router.get("/list", response_model=list[KnowledgeUserResponse])
-async def get_knowledge_list(user=Depends(get_verified_user)):
+async def get_knowledge_list(
+    user=Depends(get_verified_user),
+    exclude_owned: bool = Query(False, description="Exclude knowledge bases owned by the current user")
+):
     knowledge_bases = []
 
     if user.role == "admin":
         knowledge_bases = Knowledges.get_knowledge_bases()
     else:
         knowledge_bases = Knowledges.get_knowledge_bases_by_user_id(user.id, "write")
+
+    # Filter out owned knowledge bases if exclude_owned is True
+    if exclude_owned:
+        knowledge_bases = [kb for kb in knowledge_bases if kb.user_id != user.id]
 
     # Get files for each knowledge base
     knowledge_with_files = []
@@ -131,6 +139,36 @@ async def get_knowledge_list(user=Depends(get_verified_user)):
             )
         )
     return knowledge_with_files
+
+
+############################
+# getKnowledgeMetadata
+############################
+
+
+@router.get("/metadata", response_model=list[KnowledgeMetadataResponse])
+async def get_knowledge_metadata(user=Depends(get_verified_user)):
+    """
+    Returns a lean list of knowledge bases with only id, name, description, and meta.
+    Excludes files and user objects to reduce payload size.
+    """
+    knowledge_bases = []
+
+    if user.role == "admin":
+        knowledge_bases = Knowledges.get_knowledge_bases()
+    else:
+        knowledge_bases = Knowledges.get_knowledge_bases_by_user_id(user.id, "read")
+
+    # Return only essential fields
+    return [
+        KnowledgeMetadataResponse(
+            id=kb.id,
+            name=kb.name,
+            description=kb.description,
+            meta=kb.meta,
+        )
+        for kb in knowledge_bases
+    ]
 
 
 ############################

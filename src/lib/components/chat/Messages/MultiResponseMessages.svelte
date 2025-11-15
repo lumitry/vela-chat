@@ -43,6 +43,7 @@
 	export let addMessages: Function;
 
 	export let triggerScroll: Function;
+	export let searchQuery: string = '';
 
 	const dispatch = createEventDispatcher();
 
@@ -308,7 +309,7 @@
 									{#if (message?.content ?? '') === ''}
 										<Skeleton />
 									{:else}
-										<Markdown id={`merged`} content={message.content ?? ''} />
+										<Markdown id={`merged`} content={message.content ?? ''} {searchQuery} />
 									{/if}
 								</div>
 							</div>

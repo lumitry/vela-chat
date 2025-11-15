@@ -7,12 +7,7 @@
 	import { onMount, getContext } from 'svelte';
 	import { WEBUI_NAME, config, prompts as _prompts, user } from '$lib/stores';
 
-	import {
-		createNewPrompt,
-		deletePromptByCommand,
-		getPrompts,
-		getPromptList
-	} from '$lib/apis/prompts';
+	import { createNewPrompt, deletePromptByCommand, getPrompts } from '$lib/apis/prompts';
 
 	import PromptMenu from './Prompts/PromptMenu.svelte';
 	import EllipsisHorizontal from '../icons/EllipsisHorizontal.svelte';
@@ -76,8 +71,11 @@
 	};
 
 	const init = async () => {
-		prompts = await getPromptList(localStorage.token);
-		await _prompts.set(await getPrompts(localStorage.token));
+		// Get all prompts (owned + shared with read access)
+		// Since write access implies read access, this includes everything
+		const allPrompts = await getPrompts(localStorage.token);
+		prompts = allPrompts;
+		await _prompts.set(allPrompts);
 	};
 
 	onMount(async () => {

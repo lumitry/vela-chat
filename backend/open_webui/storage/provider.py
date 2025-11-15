@@ -59,6 +59,13 @@ class StorageProvider(ABC):
 class LocalStorageProvider(StorageProvider):
     @staticmethod
     def upload_file(file: BinaryIO, filename: str) -> Tuple[bytes, str]:
+        # Ensure file pointer is at the beginning before reading (important for some runtimes)
+        try:
+            if hasattr(file, "seek"):
+                file.seek(0)
+        except Exception:
+            pass
+
         contents = file.read()
         if not contents:
             raise ValueError(ERROR_MESSAGES.EMPTY_CONTENT)

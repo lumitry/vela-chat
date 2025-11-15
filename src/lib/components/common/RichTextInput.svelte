@@ -24,6 +24,7 @@
 	import Typography from '@tiptap/extension-typography';
 	import StarterKit from '@tiptap/starter-kit';
 	import { all, createLowlight } from 'lowlight';
+	// TODO: Consider nuking this since Lowlight is over 1mb and it's only used here.
 
 	import { PASTED_TEXT_CHARACTER_LIMIT } from '$lib/constants';
 

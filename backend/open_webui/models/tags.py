@@ -105,5 +105,35 @@ class TagTable:
             log.error(f"delete_tag: {e}")
             return False
 
+    def ensure_tags_exist(self, tag_names: list[str], user_id: str) -> None:
+        """
+        Ensure that all tags in the given list exist in the database.
+        Creates any tags that don't exist yet.
+        
+        Args:
+            tag_names: List of tag names (can be tag objects with 'name' property or strings)
+            user_id: User ID to associate tags with
+        """
+        if not tag_names:
+            return
+        
+        for tag_item in tag_names:
+            # Handle both string tags and tag objects with 'name' property
+            if isinstance(tag_item, str):
+                tag_name = tag_item
+            elif isinstance(tag_item, dict) and "name" in tag_item:
+                tag_name = tag_item["name"]
+            else:
+                continue
+            
+            # Skip empty or invalid tag names
+            if not tag_name or tag_name.lower() == "none":
+                continue
+            
+            # Check if tag exists, create if it doesn't
+            tag = self.get_tag_by_name_and_user_id(tag_name, user_id)
+            if tag is None:
+                self.insert_new_tag(tag_name, user_id)
+
 
 Tags = TagTable()

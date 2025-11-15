@@ -1,5 +1,4 @@
 import { env } from '@huggingface/transformers';
-import { KokoroTTS } from 'kokoro-js';
 
 // TODO: Below doesn't work as expected, need to investigate further
 env.backends.onnx.wasm.wasmPaths = '/wasm/';
@@ -7,6 +6,16 @@ env.backends.onnx.wasm.wasmPaths = '/wasm/';
 let tts;
 let isInitialized = false; // Flag to track initialization status
 const DEFAULT_MODEL_ID = 'onnx-community/Kokoro-82M-v1.0-ONNX'; // Default model
+
+// Lazy load KokoroTTS to avoid blocking worker initialization
+let KokoroTTS: any = null;
+const loadKokoroTTSModule = async () => {
+	if (!KokoroTTS) {
+		const module = await import('kokoro-js');
+		KokoroTTS = module.KokoroTTS;
+	}
+	return KokoroTTS;
+};
 
 self.onmessage = async (event) => {
 	const { type, payload } = event.data;
@@ -18,13 +27,16 @@ self.onmessage = async (event) => {
 		self.postMessage({ status: 'init:start' });
 
 		try {
-			tts = await KokoroTTS.from_pretrained(model_id, {
+			// Lazy load the KokoroTTS module only when needed
+			const KokoroTTSClass = await loadKokoroTTSModule();
+			
+			tts = await KokoroTTSClass.from_pretrained(model_id, {
 				dtype,
 				device: !!navigator?.gpu ? 'webgpu' : 'wasm' // Detect WebGPU
 			});
 			isInitialized = true; // Mark as initialized after successful loading
 			self.postMessage({ status: 'init:complete' });
-		} catch (error) {
+		} catch (error: any) {
 			isInitialized = false; // Ensure it's marked as false on failure
 			self.postMessage({ status: 'init:error', error: error.message });
 		}

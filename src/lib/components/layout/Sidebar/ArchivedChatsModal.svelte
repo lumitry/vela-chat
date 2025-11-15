@@ -47,7 +47,7 @@
 	};
 
 	const exportChatsHandler = async () => {
-		const chats = await getAllArchivedChats(localStorage.token);
+		const chats = await getAllArchivedChats(localStorage.token, true);
 		let blob = new Blob([JSON.stringify(chats)], {
 			type: 'application/json'
 		});

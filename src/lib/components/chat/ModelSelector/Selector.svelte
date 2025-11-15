@@ -57,8 +57,24 @@
 	let show = false;
 	let tags = [];
 
-	let selectedModel = '';
-	$: selectedModel = items.find((item) => item.value === value) ?? '';
+	let selectedModel: { label: string; value: string; model: Model } | '' = '';
+	// Make this reactive to both items and value so it updates when models load
+	// Force reactivity by explicitly reading items.length at the start
+	$: {
+		// Explicitly read items.length first to ensure Svelte tracks the array
+		const itemsLength = items?.length ?? 0;
+		if (itemsLength > 0 && value) {
+			const found = items.find((item) => item.value === value);
+			if (found) {
+				selectedModel = found;
+			} else {
+				selectedModel = '';
+			}
+		} else if (!value) {
+			selectedModel = '';
+		}
+		// If items is empty but value exists, keep current selectedModel (might be transitioning)
+	}
 
 	let searchValue = '';
 

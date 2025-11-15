@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { getContext, createEventDispatcher, onMount } from 'svelte';
+	import { getContext, createEventDispatcher } from 'svelte';
 	import Modal from '$lib/components/common/Modal.svelte';
 	import { getFolders } from '$lib/apis/folders';
+	import { folders as foldersStore } from '$lib/stores';
 	import FolderOpen from '$lib/components/icons/FolderOpen.svelte';
 	import Home from '$lib/components/icons/Home.svelte';
 
@@ -10,7 +11,6 @@
 
 	export let show = false;
 
-	let folders = {};
 	let selectedFolderId: string | null = null;
 
 	interface FolderOption {
@@ -22,14 +22,9 @@
 
 	let folderOptions: FolderOption[] = [];
 
-	const loadFolders = async () => {
-		const folderList = await getFolders(localStorage.token);
-
-		// Build a lookup table
-		folders = {};
-		for (const folder of folderList) {
-			folders[folder.id] = folder;
-		}
+	const buildFolderOptions = (folders: Record<string, any>) => {
+		// Convert folders object to array
+		const folderList = Object.values(folders).filter((f: any) => f.id && f.name);
 
 		// Build hierarchical folder options
 		folderOptions = [
@@ -44,8 +39,8 @@
 		// Add folders in hierarchical order
 		const addFolderWithChildren = (folderId: string | null, level: number) => {
 			const children = folderList
-				.filter((f) => f.parent_id === folderId)
-				.sort((a, b) =>
+				.filter((f: any) => f.parent_id === folderId)
+				.sort((a: any, b: any) =>
 					a.name.localeCompare(b.name, undefined, {
 						numeric: true,
 						sensitivity: 'base'
@@ -66,6 +61,38 @@
 		addFolderWithChildren(null, 1);
 	};
 
+	const loadFolders = async () => {
+		// Check if folders are already in the store
+		const cachedFolders = $foldersStore;
+		if (Object.keys(cachedFolders).length > 0) {
+			// Use cached folders
+			buildFolderOptions(cachedFolders);
+			return;
+		}
+
+		// If not cached, fetch from API
+		loading = true;
+		try {
+			const folderList = await getFolders(localStorage.token);
+
+			// Build a lookup table
+			const folders: Record<string, any> = {};
+			for (const folder of folderList) {
+				folders[folder.id] = folder;
+			}
+
+			// Update store for future use
+			foldersStore.set(folders);
+
+			// Build options from fetched data
+			buildFolderOptions(folders);
+		} catch (error) {
+			console.error('Error loading folders:', error);
+		} finally {
+			loading = false;
+		}
+	};
+
 	const handleConfirm = () => {
 		dispatch('confirm', { folderId: selectedFolderId });
 		show = false;
@@ -74,10 +101,6 @@
 	const handleCancel = () => {
 		show = false;
 	};
-
-	onMount(() => {
-		loadFolders();
-	});
 
 	$: if (show) {
 		loadFolders();

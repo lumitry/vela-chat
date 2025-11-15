@@ -36,6 +36,7 @@
 
 	export let isFirstMessage: boolean;
 	export let readOnly: boolean;
+	export let searchQuery: string = '';
 
 	let showDeleteConfirm = false;
 
@@ -275,7 +276,7 @@
 									: ' w-full'}"
 							>
 								{#if message.content}
-									<Markdown id={message.id} content={message.content} />
+									<Markdown id={message.id} content={message.content} {searchQuery} />
 								{/if}
 							</div>
 						</div>

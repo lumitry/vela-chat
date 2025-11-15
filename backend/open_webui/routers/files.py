@@ -129,7 +129,8 @@ def upload_file(
                         ProcessFileForm(file_id=id, content=result.get("text", "")),
                         user=user,
                     )
-                elif file.content_type not in ["image/png", "image/jpeg", "image/gif"]:
+                elif not (file.content_type or "").startswith("image/"):
+                    # Only process non-image files for text extraction / vectorization
                     process_file(request, ProcessFileForm(file_id=id), user=user)
 
                 file_item = Files.get_file_by_id(id=id)
@@ -382,6 +383,19 @@ async def get_file_content_by_id(
                 filename = file.meta.get("name", file.filename)
                 encoded_filename = quote(filename)
                 headers = {}
+
+                # Add cache headers for images (UUID-based file IDs are immutable)
+                is_image = content_type and content_type.startswith("image/")
+                if is_image:
+                    # Files use UUID-based IDs, so the same ID always points to the same content
+                    # Once created, files are immutable (new uploads get new UUIDs)
+                    # Cache for 1 year with immutable flag
+                    headers["Cache-Control"] = "public, max-age=31536000, immutable"
+                    # Use hash as ETag if available (better for validation), otherwise use file ID
+                    if file.hash:
+                        headers["ETag"] = f'"{file.hash}"'
+                    else:
+                        headers["ETag"] = f'"{file.id}"'
 
                 if attachment:
                     headers["Content-Disposition"] = (

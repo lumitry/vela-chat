@@ -30,7 +30,7 @@
 
 	import PencilSquare from '../icons/PencilSquare.svelte';
 	import Banner from '../common/Banner.svelte';
-	import { getChatById } from '$lib/apis/chats';
+	import { getChatMetaById } from '$lib/apis/chats';
 	import { getFolders } from '$lib/apis/folders';
 	import { navigateToChat, navigateToFolder } from '$lib/stores/sidebar';
 
@@ -161,7 +161,7 @@
 	const refreshChatDetails = async () => {
 		// Re-fetch the chat details to get updated title and folder_id
 		try {
-			const updatedChatDetails = await getChatById(localStorage.token, $chatId);
+			const updatedChatDetails = await getChatMetaById(localStorage.token, $chatId);
 			if (updatedChatDetails && currentChatDetails) {
 				// Update both title and folder_id if they changed
 				if (updatedChatDetails.title !== currentChatDetails.title) {
@@ -178,7 +178,7 @@
 
 	const loadCurrentChatDetails = async () => {
 		try {
-			currentChatDetails = await getChatById(localStorage.token, $chatId);
+			currentChatDetails = await getChatMetaById(localStorage.token, $chatId);
 			// Position adjustment will be triggered by reactive statement
 		} catch (error) {
 			console.error('Failed to load chat details:', error);

@@ -181,7 +181,6 @@
 				<div class=" self-center">
 					<img
 						id="logo"
-						crossorigin="anonymous"
 						src="{WEBUI_BASE_URL}/static/splash.png"
 						class=" w-6 rounded-full"
 						alt="logo"

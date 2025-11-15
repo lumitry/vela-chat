@@ -129,9 +129,11 @@
 	export let regenerateResponse: Function;
 
 	export let addMessages: Function;
+	export let refreshChatMeta: Function = () => {};
 
 	export let isLastMessage = true;
 	export let readOnly = false;
+	export let searchQuery: string = '';
 
 	let buttonsContainerElement: HTMLDivElement;
 	let showDeleteConfirm = false;
@@ -346,37 +348,10 @@
 		}
 	};
 
-	let preprocessedDetailsCache = [];
-
-	function preprocessForEditing(content: string): string {
-		// Replace <details>...</details> with unique ID placeholder
-		const detailsBlocks = [];
-		let i = 0;
-
-		content = content.replace(/<details[\s\S]*?<\/details>/gi, (match) => {
-			detailsBlocks.push(match);
-			return `<details id="__DETAIL_${i++}__"/>`;
-		});
-
-		// Store original blocks in the editedContent or globally (see merging later)
-		preprocessedDetailsCache = detailsBlocks;
-
-		return content;
-	}
-
-	function postprocessAfterEditing(content: string): string {
-		const restoredContent = content.replace(
-			/<details id="__DETAIL_(\d+)__"\/>/g,
-			(_, index) => preprocessedDetailsCache[parseInt(index)] || ''
-		);
-
-		return restoredContent;
-	}
-
 	const editMessageHandler = async () => {
 		edit = true;
 
-		editedContent = preprocessForEditing(message.content);
+		editedContent = message.content;
 
 		await tick();
 
@@ -385,7 +360,7 @@
 	};
 
 	const editMessageConfirmHandler = async () => {
-		const messageContent = postprocessAfterEditing(editedContent ? editedContent : '');
+		const messageContent = editedContent ? editedContent : '';
 		editMessage(message.id, messageContent, false);
 
 		edit = false;
@@ -395,7 +370,7 @@
 	};
 
 	const saveAsCopyHandler = async () => {
-		const messageContent = postprocessAfterEditing(editedContent ? editedContent : '');
+		const messageContent = editedContent ? editedContent : '';
 
 		editMessage(message.id, messageContent);
 
@@ -800,6 +775,7 @@
 										floatingButtons={message?.done && !readOnly}
 										save={!readOnly}
 										{model}
+										{searchQuery}
 										onTaskClick={async (e) => {
 											console.log(e);
 										}}

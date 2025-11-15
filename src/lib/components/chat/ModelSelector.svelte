@@ -29,6 +29,8 @@
 		selectedModels = selectedModels.map((model) =>
 			$models.map((m) => m.id).includes(model) ? model : ''
 		);
+		// Force reactivity - ensure selectedModels array reference updates
+		selectedModels = [...selectedModels];
 	}
 </script>
 
@@ -37,20 +39,22 @@
 		<div class="flex w-full max-w-fit">
 			<div class="overflow-hidden w-full">
 				<div class="mr-1 max-w-full">
-					<Selector
-						id={`${selectedModelIdx}`}
-						placeholder={$i18n.t('Select a model')}
-						items={$models.map((model) => ({
-							value: model.id,
-							label: model.name,
-							model: model
-						}))}
-						showTemporaryChatControl={$user?.role === 'user'
-							? ($user?.permissions?.chat?.temporary ?? true) &&
-								!($user?.permissions?.chat?.temporary_enforced ?? false)
-							: true}
-						bind:value={selectedModel}
-					/>
+					{#key $models.length}
+						<Selector
+							id={`${selectedModelIdx}`}
+							placeholder={$i18n.t('Select a model')}
+							items={$models.map((model) => ({
+								value: model.id,
+								label: model.name,
+								model: model
+							}))}
+							showTemporaryChatControl={$user?.role === 'user'
+								? ($user?.permissions?.chat?.temporary ?? true) &&
+									!($user?.permissions?.chat?.temporary_enforced ?? false)
+								: true}
+							bind:value={selectedModel}
+						/>
+					{/key}
 				</div>
 			</div>
 

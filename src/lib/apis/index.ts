@@ -770,7 +770,9 @@ export const generateAutoCompletion = async (
 	model: string,
 	prompt: string,
 	messages?: object[],
-	type: string = 'search query'
+	type: string = 'search query',
+	chatId?: string,
+	messageId?: string
 ) => {
 	const controller = new AbortController();
 	let error = null;
@@ -788,7 +790,9 @@ export const generateAutoCompletion = async (
 			prompt: prompt,
 			...(messages && { messages: messages }),
 			type: type,
-			stream: false
+			stream: false,
+			...(chatId && { chat_id: chatId }),
+			...(messageId && { message_id: messageId })
 		})
 	})
 		.then(async (res) => {
@@ -840,7 +844,9 @@ export const generateMoACompletion = async (
 	token: string = '',
 	model: string,
 	prompt: string,
-	responses: string[]
+	responses: string[],
+	chatId?: string,
+	messageId?: string
 ) => {
 	const controller = new AbortController();
 	let error = null;
@@ -857,7 +863,9 @@ export const generateMoACompletion = async (
 			model: model,
 			prompt: prompt,
 			responses: responses,
-			stream: true
+			stream: true,
+			...(chatId && { chat_id: chatId }),
+			...(messageId && { message_id: messageId })
 		})
 	}).catch((err) => {
 		console.log(err);

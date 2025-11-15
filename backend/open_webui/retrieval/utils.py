@@ -1,3 +1,10 @@
+from langchain_core.documents import BaseDocumentCompressor, Document
+from langchain_core.callbacks import Callbacks
+from typing import Optional, Sequence
+import operator
+from langchain_core.retrievers import BaseRetriever
+from langchain_core.callbacks import CallbackManagerForRetrieverRun
+from typing import Any
 import logging
 import os
 from typing import Optional, Union
@@ -16,6 +23,7 @@ from open_webui.retrieval.vector.connector import VECTOR_DB_CLIENT
 
 from open_webui.models.users import UserModel
 from open_webui.models.files import Files
+from open_webui.models.knowledge import Knowledges
 
 from open_webui.retrieval.vector.main import GetResult
 
@@ -29,16 +37,11 @@ from open_webui.config import (
     RAG_EMBEDDING_QUERY_PREFIX,
     RAG_EMBEDDING_CONTENT_PREFIX,
     RAG_EMBEDDING_PREFIX_FIELD_NAME,
+    RAG_EMBEDDING_MODEL_AUTO_UPDATE,
 )
 
 log = logging.getLogger(__name__)
 log.setLevel(SRC_LOG_LEVELS["RAG"])
-
-
-from typing import Any
-
-from langchain_core.callbacks import CallbackManagerForRetrieverRun
-from langchain_core.retrievers import BaseRetriever
 
 
 class VectorSearchRetriever(BaseRetriever):
@@ -368,7 +371,7 @@ def get_embedding_function(
             query, **({"prompt": prefix} if prefix else {})
         ).tolist()
     elif embedding_engine in ["ollama", "openai"]:
-        func = lambda query, prefix=None, user=None: generate_embeddings(
+        def func(query, prefix=None, user=None): return generate_embeddings(
             engine=embedding_engine,
             model=embedding_model,
             text=query,
@@ -384,7 +387,7 @@ def get_embedding_function(
                 for i in range(0, len(query), embedding_batch_size):
                     embeddings.extend(
                         func(
-                            query[i : i + embedding_batch_size],
+                            query[i: i + embedding_batch_size],
                             prefix=prefix,
                             user=user,
                         )
@@ -396,6 +399,141 @@ def get_embedding_function(
         return lambda query, prefix=None, user=None: generate_multiple(
             query, prefix, user, func
         )
+    else:
+        raise ValueError(f"Unknown embedding engine: {embedding_engine}")
+
+
+def get_embedding_function_with_usage(
+    embedding_engine,
+    embedding_model,
+    embedding_function,
+    url,
+    key,
+    embedding_batch_size,
+):
+    """
+    Get embedding function that returns both embeddings and usage data.
+    Returns a function that takes (query, prefix=None, user=None) and returns
+    (embeddings, aggregated_usage) where aggregated_usage is a dict with:
+    - total_cost: float
+    - total_tokens: int
+    - count: int
+    - usage_list: list of individual usage dicts
+    """
+    from open_webui.services.embedding_metrics import get_sentence_transformer_tokens
+
+    if embedding_engine == "":
+        # SentenceTransformers
+        def func(query, prefix=None, user=None):
+            if isinstance(query, list):
+                embeddings = []
+                total_tokens = 0
+                for text in query:
+                    emb = embedding_function.encode(text, **({"prompt": prefix} if prefix else {})).tolist()
+                    embeddings.append(emb)
+                    # Calculate tokens
+                    tokens = get_sentence_transformer_tokens(embedding_function, [text])
+                    total_tokens += tokens
+                aggregated_usage = {
+                    "total_cost": 0.0,
+                    "total_tokens": total_tokens,
+                    "count": len(query),
+                    "usage_list": [{"cost": 0, "prompt_tokens": get_sentence_transformer_tokens(embedding_function, [text])} for text in query]
+                }
+                # Ensure total_tokens is correct (sum of individual tokens)
+                if aggregated_usage["usage_list"]:
+                    aggregated_usage["total_tokens"] = sum(u.get("prompt_tokens", 0) for u in aggregated_usage["usage_list"])
+                return embeddings, aggregated_usage
+            else:
+                emb = embedding_function.encode(query, **({"prompt": prefix} if prefix else {})).tolist()
+                tokens = get_sentence_transformer_tokens(embedding_function, [query])
+                aggregated_usage = {
+                    "total_cost": 0.0,
+                    "total_tokens": tokens,
+                    "count": 1,
+                    "usage_list": [{"cost": 0, "prompt_tokens": tokens}]
+                }
+                return emb, aggregated_usage
+        return func
+    elif embedding_engine in ["ollama", "openai"]:
+        def func(query, prefix=None, user=None):
+            if isinstance(query, list):
+                embeddings = []
+                aggregated_usage = {
+                    "total_cost": 0.0,
+                    "total_tokens": 0,
+                    "count": 0,
+                    "usage_list": []
+                }
+                for i in range(0, len(query), embedding_batch_size):
+                    batch = query[i: i + embedding_batch_size]
+                    if embedding_engine == "ollama":
+                        batch_embeddings, batch_usage = generate_ollama_batch_embeddings(
+                            model=embedding_model,
+                            texts=batch,
+                            url=url,
+                            key=key,
+                            prefix=prefix,
+                            user=user,
+                        )
+                    else:  # openai
+                        batch_embeddings, batch_usage = generate_openai_batch_embeddings(
+                            model=embedding_model,
+                            texts=batch,
+                            url=url,
+                            key=key,
+                            prefix=prefix,
+                            user=user,
+                        )
+                    if batch_embeddings:
+                        embeddings.extend(batch_embeddings)
+                        # Aggregate usage
+                        if batch_usage:
+                            cost = batch_usage.get("cost", 0) or 0
+                            if embedding_engine == "ollama":
+                                tokens = batch_usage.get("prompt_eval_count", 0) or 0
+                            else:  # openai
+                                tokens = batch_usage.get("prompt_tokens", 0) or 0
+                            aggregated_usage["total_cost"] += cost
+                            aggregated_usage["total_tokens"] += tokens
+                            aggregated_usage["count"] += 1
+                            aggregated_usage["usage_list"].append(batch_usage)
+                return embeddings, aggregated_usage
+            else:
+                # Single query
+                if embedding_engine == "ollama":
+                    embeddings, usage = generate_ollama_batch_embeddings(
+                        model=embedding_model,
+                        texts=[query],
+                        url=url,
+                        key=key,
+                        prefix=prefix,
+                        user=user,
+                    )
+                else:  # openai
+                    embeddings, usage = generate_openai_batch_embeddings(
+                        model=embedding_model,
+                        texts=[query],
+                        url=url,
+                        key=key,
+                        prefix=prefix,
+                        user=user,
+                    )
+                if embeddings:
+                    embeddings = embeddings[0]
+                cost = usage.get("cost", 0) or 0 if usage else 0
+                if embedding_engine == "ollama":
+                    tokens = usage.get("prompt_eval_count",0) or 0 if usage else 0
+                else:  # openai
+                    tokens = usage.get("prompt_tokens", 0) or 0 if usage else 0
+                aggregated_usage = {
+                    "total_cost": cost,
+                    "total_tokens": tokens,
+                    "count": 1,
+                    "usage_list": [usage] if usage else []
+                }
+                return embeddings, aggregated_usage
+        return func
     else:
         raise ValueError(f"Unknown embedding engine: {embedding_engine}")
 
@@ -412,14 +550,40 @@ def get_sources_from_files(
     hybrid_search,
     full_context=False,
 ):
-    log.debug(
-        f"files: {files} {queries} {embedding_function} {reranking_function} {full_context}"
-    )
+    """
+    Get sources from files. Handles embedding function selection for web search collections.
+    Web search collections use the web search embedding override if configured.
+    """
+    def _ctx_counts(ctx: dict) -> tuple[int, int]:
+        try:
+            documents = ctx.get("documents") or []
+            metadatas = ctx.get("metadatas") or []
+            num_docs = len(documents[0]) if isinstance(
+                documents, list) and len(documents) > 0 else 0
+            num_metas = len(metadatas[0]) if isinstance(
+                metadatas, list) and len(metadatas) > 0 else 0
+            return num_docs, num_metas
+        except Exception:
+            return 0, 0
+
+    def _has_results(ctx: dict) -> bool:
+        try:
+            n_docs, n_metas = _ctx_counts(ctx)
+            return n_docs > 0 and n_metas > 0
+        except Exception:
+            return False
+
+    log.info(f"RAG DEBUG get_sources_from_files: Called with {len(files)} files, {len(queries)} queries")
+    log.info(f"RAG DEBUG get_sources_from_files: full_context={full_context}, hybrid_search={hybrid_search}")
+    log.debug(f"files: {files} {queries} {embedding_function} {reranking_function} {full_context}")
 
     extracted_collections = []
     relevant_contexts = []
 
-    for file in files:
+    for file_idx, file in enumerate(files):
+        log.info(f"RAG DEBUG get_sources_from_files: Processing file {file_idx}: type={file.get('type')}, "
+                 f"id={file.get('id')}, collection_name={file.get('collection_name')}, "
+                 f"keys={list(file.keys())}")
 
         context = None
         if file.get("docs"):
@@ -440,7 +604,18 @@ def get_sources_from_files(
         ):
             # BYPASS_EMBEDDING_AND_RETRIEVAL
             if file.get("type") == "collection":
+                collection_id = file.get("id")
+                # Try to get file_ids from the file object first (for backward compatibility)
                 file_ids = file.get("data", {}).get("file_ids", [])
+                # If not present, query the knowledge table
+                if not file_ids and collection_id:
+                    try:
+                        knowledge = Knowledges.get_knowledge_by_id(collection_id)
+                        if knowledge and knowledge.data:
+                            file_ids = knowledge.data.get("file_ids", [])
+                    except Exception as e:
+                        log.warning(f"Failed to fetch file_ids from knowledge table for collection {collection_id}: {e}")
+                        file_ids = []
 
                 documents = []
                 metadatas = []
@@ -486,85 +661,225 @@ def get_sources_from_files(
                 }
         else:
             collection_names = []
-            if file.get("type") == "collection":
+            meta = file.get("meta") or {}
+            ftype = file.get("type")
+            # For direct file attachments, prefer the per-file collection (file-{id})
+            if ftype in ["file", "image"] and file.get("id"):
+                per_file_collection = f"file-{file['id']}"
+                collection_names.append(per_file_collection)
+                log.debug(f"RAG DEBUG: File attachment - using per-file collection_name={per_file_collection}")
+                # Ensure per-file collection has at least one vector; auto-index if empty
+                try:
+                    # Gate auto-indexing behind env var to avoid heavy-handed mutation
+                    auto_index = (os.getenv("RAG_AUTO_INDEX_MISSING", "false").lower() == "true")
+                    get_res = VECTOR_DB_CLIENT.get(collection_name=per_file_collection)
+                    has_any = bool(get_res and get_res.ids and len(get_res.ids[0]) > 0)
+                    if auto_index and not has_any:
+                        fobj = Files.get_file_by_id(file["id"])
+                        content_text = (fobj.data or {}).get("content") if fobj else None
+                        if content_text:
+                            vector = embedding_function(content_text, prefix=RAG_EMBEDDING_CONTENT_PREFIX)
+                            VECTOR_DB_CLIENT.upsert(
+                                collection_name=per_file_collection,
+                                items=[
+                                    {
+                                        "id": fobj.id,
+                                        "text": content_text,
+                                        "vector": vector,
+                                        "metadata": {
+                                            "file_id": fobj.id,
+                                            "name": fobj.filename,
+                                            "source": fobj.filename,
+                                        },
+                                    }
+                                ],
+                            )
+                            log.info("RAG: Auto-indexed per-file collection (enabled via RAG_AUTO_INDEX_MISSING)")
+                        else:
+                            log.debug("RAG DEBUG: Per-file collection empty and file has no stored content; skipping auto-index")
+                except Exception as e:
+                    log.debug(f"RAG DEBUG: Unable to auto-index per-file collection: {e}")
+            elif ftype == "collection":
                 if file.get("legacy"):
                     collection_names = file.get("collection_names", [])
+                    log.info(f"RAG DEBUG: Collection (legacy) - collection_names={collection_names}")
                 else:
-                    collection_names.append(file["id"])
-            elif file.get("collection_name"):
-                collection_names.append(file["collection_name"])
+                    # Prefer explicit id; otherwise try meta.collection_name
+                    collection_id = file.get("id") or meta.get("collection_name")
+                    if collection_id:
+                        collection_names.append(collection_id)
+                        log.info(f"RAG DEBUG: Collection (non-legacy) - using id/collection_name={collection_id}")
+                    else:
+                        log.warning(f"RAG DEBUG: Collection type file has no id or meta.collection_name: {file}")
+            elif file.get("collection_name") or meta.get("collection_name"):
+                cn = file.get("collection_name") or meta.get("collection_name")
+                collection_names.append(cn)
+                log.info(f"RAG DEBUG: File has collection_name={cn}")
             elif file.get("id"):
                 if file.get("legacy"):
                     collection_names.append(f"{file['id']}")
+                    log.info(f"RAG DEBUG: File (legacy) - using id={file['id']}")
                 else:
-                    collection_names.append(f"file-{file['id']}")
+                    collection_name = f"file-{file['id']}"
+                    collection_names.append(collection_name)
+                    log.info(f"RAG DEBUG: File (non-legacy) - constructed collection_name={collection_name}")
+            else:
+                log.warning(f"RAG DEBUG: File has no id or collection_name: {file}")
 
-            collection_names = set(collection_names).difference(extracted_collections)
+            collection_names = list(set(collection_names).difference(
+                extracted_collections))
+            log.info(f"RAG DEBUG: Final collection_names for file {file_idx}: {collection_names}")
             if not collection_names:
-                log.debug(f"skipping {file} as it has already been extracted")
+                log.info(f"RAG DEBUG: Skipping file {file_idx} as it has already been extracted")
                 continue
 
             if full_context:
                 try:
+                    log.info(f"RAG DEBUG: Using full_context mode for collections: {collection_names}")
                     context = get_all_items_from_collections(collection_names)
+                    d, m = _ctx_counts(context or {})
+                    log.info(f"RAG DEBUG: Full context retrieved: docs={d}, metas={m}")
                 except Exception as e:
-                    log.exception(e)
+                    log.exception(f"RAG DEBUG: Exception in get_all_items_from_collections: {e}")
 
             else:
                 try:
                     context = None
                     if file.get("type") == "text":
+                        log.info(f"RAG DEBUG: File type is text, using content directly")
                         context = file["content"]
                     else:
+                        log.info(f"RAG DEBUG: Querying collections: {collection_names}, hybrid_search={hybrid_search}")
+
+                        # Determine which embedding function to use for these collections
+                        # If this is a web_search file and web search embedding override is active, use web search embedding function
+                        query_embedding_function = embedding_function
+                        is_web_search_collection = (
+                            file.get("type") == "web_search" or
+                            any(cn.startswith("web-search-")
+                                for cn in collection_names)
+                        )
+
+                        if is_web_search_collection and request.app.state.config.WEB_SEARCH_EMBEDDING_ENGINE and request.app.state.config.WEB_SEARCH_EMBEDDING_ENGINE != "":
+                            # Use web search embedding function for web search collections
+                            from open_webui.routers.retrieval import get_ef
+
+                            embedding_engine = request.app.state.config.WEB_SEARCH_EMBEDDING_ENGINE
+                            embedding_model = request.app.state.config.WEB_SEARCH_EMBEDDING_MODEL or request.app.state.config.RAG_EMBEDDING_MODEL
+                            embedding_batch_size = request.app.state.config.WEB_SEARCH_EMBEDDING_BATCH_SIZE or request.app.state.config.RAG_EMBEDDING_BATCH_SIZE
+
+                            # Get embedding function for web search (ef) if needed (for sentence transformers)
+                            web_search_ef = request.app.state.ef
+                            if embedding_engine == "" or embedding_engine == "sentence-transformers":
+                                web_search_ef = get_ef("", embedding_model, RAG_EMBEDDING_MODEL_AUTO_UPDATE)
+
+                            # Normalize sentence-transformers to empty string for get_embedding_function
+                            normalized_engine = "" if embedding_engine == "sentence-transformers" else embedding_engine
+                            query_embedding_function = get_embedding_function(
+                                normalized_engine,
+                                embedding_model,
+                                web_search_ef,
+                                (
+                                    request.app.state.config.WEB_SEARCH_OPENAI_API_BASE_URL
+                                    if normalized_engine == "openai"
+                                    else request.app.state.config.WEB_SEARCH_OLLAMA_BASE_URL
+                                ),
+                                (
+                                    request.app.state.config.WEB_SEARCH_OPENAI_API_KEY
+                                    if normalized_engine == "openai"
+                                    else request.app.state.config.WEB_SEARCH_OLLAMA_API_KEY
+                                ),
+                                embedding_batch_size,
+                            )
+                            log.info(f"RAG DEBUG: Using web search embedding function for web search collections: engine={embedding_engine}, model={embedding_model}")
+
                         if hybrid_search:
                             try:
                                 context = query_collection_with_hybrid_search(
                                     collection_names=collection_names,
                                     queries=queries,
-                                    embedding_function=embedding_function,
+                                    embedding_function=query_embedding_function,
                                     k=k,
                                     reranking_function=reranking_function,
                                     k_reranker=k_reranker,
                                     r=r,
                                 )
+                                d, m = _ctx_counts(context or {})
+                                log.info(f"RAG DEBUG: Hybrid search returned context: docs={d}, metas={m}")
                             except Exception as e:
-                                log.debug(
-                                    "Error when using hybrid search, using"
-                                    " non hybrid search as fallback."
-                                )
+                                log.warning(f"RAG DEBUG: Error when using hybrid search: {e}, using non hybrid search as fallback.")
 
-                        if (not hybrid_search) or (context is None):
+                        if (not hybrid_search) or (context is None) or (not _has_results(context)):
+                            log.info(f"RAG DEBUG: Using standard query_collection (hybrid_search={hybrid_search}, context_has_results={_has_results(context) if context is not None else None})")
                             context = query_collection(
                                 collection_names=collection_names,
                                 queries=queries,
-                                embedding_function=embedding_function,
+                                embedding_function=query_embedding_function,
                                 k=k,
                             )
+                            d, m = _ctx_counts(context or {})
+                            log.info(f"RAG DEBUG: query_collection returned: docs={d}, metas={m}")
+
+                    # Fallback: if no results, try loading full file content directly
+                    if (context is None or not _has_results(context)) and file.get("id") and file.get("type") in ["file", "image"]:
+                        try:
+                            fobj = Files.get_file_by_id(file.get("id"))
+                            if fobj and (fobj.data or {}).get("content"):
+                                content_text = fobj.data.get("content")
+                                context = {
+                                    "documents": [[content_text]],
+                                    "metadatas": [[
+                                        {
+                                            "file_id": fobj.id,
+                                            "name": fobj.filename,
+                                            "source": fobj.filename,
+                                        }
+                                    ]],
+                                }
+                                log.info("RAG DEBUG: Fallback used - built context from raw file content")
+                        except Exception as e:
+                            log.debug(f"RAG DEBUG: Fallback failed to read file content: {e}")
                 except Exception as e:
-                    log.exception(e)
+                    log.exception(f"RAG DEBUG: Exception querying collections: {e}")
 
             extracted_collections.extend(collection_names)
 
         if context:
+            d, m = _ctx_counts(context if isinstance(context, dict) else {})
+            log.info(f"RAG DEBUG: File {file_idx} produced context: docs={d}, metas={m}")
             if "data" in file:
                 del file["data"]
 
             relevant_contexts.append({**context, "file": file})
+        else:
+            log.warning(f"RAG DEBUG: File {file_idx} produced NO context (context is None or empty)")
 
+    log.info(f"RAG DEBUG: Processing {len(relevant_contexts)} relevant contexts into sources")
     sources = []
-    for context in relevant_contexts:
+    for ctx_idx, context in enumerate(relevant_contexts):
         try:
+            d, m = _ctx_counts(context)
+            log.info(f"RAG DEBUG: Processing context {ctx_idx}: docs={d}, metas={m}, file_type={context.get('file', {}).get('type')}")
             if "documents" in context:
                 if "metadatas" in context:
+                    # Strip collections from source object to reduce payload size
+                    file_obj = context["file"]
+                    if isinstance(file_obj, dict) and file_obj.get("type") == "collection":
+                        from open_webui.models.chat_converter import strip_collection_files
+                        file_obj = strip_collection_files(file_obj)
+
                     source = {
-                        "source": context["file"],
+                        "source": file_obj,
                         "document": context["documents"][0],
                         "metadata": context["metadatas"][0],
                     }
                     if "distances" in context and context["distances"]:
                         source["distances"] = context["distances"][0]
-
-                    sources.append(source)
+                    # Only append non-empty content
+                    if source["document"] and source["metadata"] and len(source["document"]) > 0 and len(source["metadata"]) > 0:
+                        sources.append(source)
+                    else:
+                        log.info(f"RAG DEBUG: Skipping empty source for context {ctx_idx}")
         except Exception as e:
             log.exception(e)
 
@@ -619,7 +934,16 @@ def generate_openai_batch_embeddings(
     key: str = "",
     prefix: str = None,
     user: UserModel = None,
-) -> Optional[list[list[float]]]:
+) -> tuple[Optional[list[list[float]]], Optional[dict]]:
+    """
+    Generate embeddings using OpenAI/OpenRouter API.
+
+    Returns:
+        Tuple of (embeddings, usage_data) where usage_data contains:
+        - prompt_tokens: int
+        - total_tokens: int
+        - cost: float (if available)
+    """
     try:
         log.debug(
             f"generate_openai_batch_embeddings:model {model} batch size: {len(texts)}"
@@ -649,12 +973,18 @@ def generate_openai_batch_embeddings(
         r.raise_for_status()
         data = r.json()
         if "data" in data:
-            return [elem["embedding"] for elem in data["data"]]
+            embeddings = [elem["embedding"] for elem in data["data"]]
+            # Extract usage data
+            usage_data = data.get("usage", {})
+            # Include cost if available (OpenRouter format)
+            if "cost" in data.get("usage", {}):
+                usage_data["cost"] = data["usage"]["cost"]
+            return embeddings, usage_data
         else:
             raise "Something went wrong :/"
     except Exception as e:
         log.exception(f"Error generating openai batch embeddings: {e}")
-        return None
+        return None, None
 
 
 def generate_ollama_batch_embeddings(
@@ -664,7 +994,14 @@ def generate_ollama_batch_embeddings(
     key: str = "",
     prefix: str = None,
     user: UserModel = None,
-) -> Optional[list[list[float]]]:
+) -> tuple[Optional[list[list[float]]], Optional[dict]]:
+    """
+    Generate embeddings using Ollama API.
+
+    Returns:
+        Tuple of (embeddings, usage_data) where usage_data contains:
+        - prompt_eval_count: int (from metadata)
+    """
     try:
         log.debug(
             f"generate_ollama_batch_embeddings:model {model} batch size: {len(texts)}"
@@ -695,12 +1032,17 @@ def generate_ollama_batch_embeddings(
         data = r.json()
 
         if "embeddings" in data:
-            return data["embeddings"]
+            embeddings = data["embeddings"]
+            # Extract usage data from metadata
+            usage_data = {}
+            if "prompt_eval_count" in data:
+                usage_data["prompt_eval_count"] = data["prompt_eval_count"]
+            return embeddings, usage_data
         else:
             raise "Something went wrong :/"
     except Exception as e:
         log.exception(f"Error generating ollama batch embeddings: {e}")
-        return None
+        return None, None
 
 
 def generate_embeddings(
@@ -710,6 +1052,10 @@ def generate_embeddings(
     prefix: Union[str, None] = None,
     **kwargs,
 ):
+    """
+    Generate embeddings. Returns embeddings only (for backward compatibility).
+    For usage data, use the batch functions directly or get_embedding_function_with_usage.
+    """
     url = kwargs.get("url", "")
     key = kwargs.get("key", "")
     user = kwargs.get("user")
@@ -722,7 +1068,7 @@ def generate_embeddings(
 
     if engine == "ollama":
         if isinstance(text, list):
-            embeddings = generate_ollama_batch_embeddings(
+            embeddings, _ = generate_ollama_batch_embeddings(
                 **{
                     "model": model,
                     "texts": text,
@@ -733,7 +1079,7 @@ def generate_embeddings(
                 }
             )
         else:
-            embeddings = generate_ollama_batch_embeddings(
+            embeddings, _ = generate_ollama_batch_embeddings(
                 **{
                     "model": model,
                     "texts": [text],
@@ -743,24 +1089,17 @@ def generate_embeddings(
                     "user": user,
                 }
             )
-        return embeddings[0] if isinstance(text, str) else embeddings
+        return embeddings[0] if isinstance(text, str) and embeddings else embeddings
     elif engine == "openai":
         if isinstance(text, list):
-            embeddings = generate_openai_batch_embeddings(
+            embeddings, _ = generate_openai_batch_embeddings(
                 model, text, url, key, prefix, user
             )
         else:
-            embeddings = generate_openai_batch_embeddings(
+            embeddings, _ = generate_openai_batch_embeddings(
                 model, [text], url, key, prefix, user
             )
-        return embeddings[0] if isinstance(text, str) else embeddings
-
-
-import operator
-from typing import Optional, Sequence
-
-from langchain_core.callbacks import Callbacks
-from langchain_core.documents import BaseDocumentCompressor, Document
+        return embeddings[0] if isinstance(text, str) and embeddings else embeddings
 
 
 class RerankCompressor(BaseDocumentCompressor):
@@ -800,7 +1139,7 @@ class RerankCompressor(BaseDocumentCompressor):
                 (d, s) for d, s in docs_with_scores if s >= self.r_score
             ]
 
-        result = sorted(docs_with_scores, key=operator.itemgetter(1), reverse=True)
+        result = sorted(docs_with_scores,key=operator.itemgetter(1), reverse=True)
         final_results = []
         for doc, doc_score in result[: self.top_n]:
             metadata = doc.metadata

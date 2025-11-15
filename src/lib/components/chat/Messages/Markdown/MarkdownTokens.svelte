@@ -35,6 +35,7 @@
 
 	export let onTaskClick: Function = () => {};
 	export let onSourceClick: Function = () => {};
+	export let searchQuery: string = '';
 
 	const headerComponent = (depth: number) => {
 		return 'h' + depth;
@@ -113,7 +114,7 @@
 		<hr class=" border-gray-100 dark:border-gray-850" />
 	{:else if token.type === 'heading'}
 		<svelte:element this={headerComponent(token.depth)} dir="auto">
-			<MarkdownInlineTokens id={`${id}-${tokenIdx}-h`} tokens={token.tokens} {onSourceClick} />
+			<MarkdownInlineTokens id={`${id}-${tokenIdx}-h`} tokens={token.tokens} {onSourceClick} {searchQuery} />
 		</svelte:element>
 	{:else if token.type === 'code'}
 		{#if token.raw.includes('```')}
@@ -161,6 +162,7 @@
 												id={`${id}-${tokenIdx}-header-${headerIdx}`}
 												tokens={header.tokens}
 												{onSourceClick}
+												{searchQuery}
 											/>
 										</div>
 									</div>
@@ -181,6 +183,7 @@
 												id={`${id}-${tokenIdx}-row-${rowIdx}-${cellIdx}`}
 												tokens={cell.tokens}
 												{onSourceClick}
+												{searchQuery}
 											/>
 										</div>
 									</td>
@@ -223,9 +226,9 @@
 		{#if alert}
 			<AlertRenderer {token} {alert} />
 		{:else}
-			<blockquote dir="auto">
-				<svelte:self id={`${id}-${tokenIdx}`} tokens={token.tokens} {onTaskClick} {onSourceClick} />
-			</blockquote>
+		<blockquote dir="auto">
+			<svelte:self id={`${id}-${tokenIdx}`} tokens={token.tokens} {onTaskClick} {onSourceClick} {searchQuery} />
+		</blockquote>
 		{/if}
 	{:else if token.type === 'list'}
 		{#if token.ordered}
@@ -256,6 +259,7 @@
 							top={token.loose}
 							{onTaskClick}
 							{onSourceClick}
+							{searchQuery}
 						/>
 					</li>
 				{/each}
@@ -288,6 +292,7 @@
 							top={token.loose}
 							{onTaskClick}
 							{onSourceClick}
+							{searchQuery}
 						/>
 					</li>
 				{/each}
@@ -308,6 +313,7 @@
 					attributes={token?.attributes}
 					{onTaskClick}
 					{onSourceClick}
+					{searchQuery}
 				/>
 			</div>
 		</Collapsible>
@@ -336,13 +342,14 @@
 				id={`${id}-${tokenIdx}-p`}
 				tokens={token.tokens ?? []}
 				{onSourceClick}
+				{searchQuery}
 			/>
 		</p>
 	{:else if token.type === 'text'}
 		{#if top}
 			<p>
 				{#if token.tokens}
-					<MarkdownInlineTokens id={`${id}-${tokenIdx}-t`} tokens={token.tokens} {onSourceClick} />
+					<MarkdownInlineTokens id={`${id}-${tokenIdx}-t`} tokens={token.tokens} {onSourceClick} {searchQuery} />
 				{:else}
 					{unescapeHtml(token.text)}
 				{/if}
@@ -352,6 +359,7 @@
 				id={`${id}-${tokenIdx}-p`}
 				tokens={token.tokens ?? []}
 				{onSourceClick}
+				{searchQuery}
 			/>
 		{:else}
 			{unescapeHtml(token.text)}

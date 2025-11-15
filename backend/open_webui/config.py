@@ -1346,7 +1346,7 @@ IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE = PersistentConfig(
 )
 
 DEFAULT_IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE = """### Task:
-Generate a detailed prompt for am image generation task based on the given language and context. Describe the image as if you were explaining it to someone who cannot see it. Include relevant details, colors, shapes, and any other important elements.
+Generate a detailed prompt for a text-to-image generation task based on the given language and context. Describe the image as if you were explaining it to someone who cannot see it. Include relevant details, colors, shapes, and any other important elements.
 
 ### Guidelines:
 - Be descriptive and detailed, focusing on the most important aspects of the image.
@@ -2078,6 +2078,52 @@ WEB_SEARCH_TRUST_ENV = PersistentConfig(
     "WEB_SEARCH_TRUST_ENV",
     "rag.web.search.trust_env",
     os.getenv("WEB_SEARCH_TRUST_ENV", "False").lower() == "true",
+)
+
+# Web search embedding settings (override for web search queries)
+WEB_SEARCH_EMBEDDING_ENGINE = PersistentConfig(
+    "WEB_SEARCH_EMBEDDING_ENGINE",
+    "rag.web.search.embedding_engine",
+    os.environ.get("WEB_SEARCH_EMBEDDING_ENGINE", ""),
+)
+
+WEB_SEARCH_EMBEDDING_MODEL = PersistentConfig(
+    "WEB_SEARCH_EMBEDDING_MODEL",
+    "rag.web.search.embedding_model",
+    os.environ.get("WEB_SEARCH_EMBEDDING_MODEL", ""),
+)
+
+WEB_SEARCH_EMBEDDING_BATCH_SIZE = PersistentConfig(
+    "WEB_SEARCH_EMBEDDING_BATCH_SIZE",
+    "rag.web.search.embedding_batch_size",
+    int(
+        os.environ.get("WEB_SEARCH_EMBEDDING_BATCH_SIZE")
+        or os.environ.get("WEB_SEARCH_EMBEDDING_OPENAI_BATCH_SIZE", "1")
+    ),
+)
+
+WEB_SEARCH_OPENAI_API_BASE_URL = PersistentConfig(
+    "WEB_SEARCH_OPENAI_API_BASE_URL",
+    "rag.web.search.openai_api_base_url",
+    os.getenv("WEB_SEARCH_OPENAI_API_BASE_URL", OPENAI_API_BASE_URL),
+)
+
+WEB_SEARCH_OPENAI_API_KEY = PersistentConfig(
+    "WEB_SEARCH_OPENAI_API_KEY",
+    "rag.web.search.openai_api_key",
+    os.getenv("WEB_SEARCH_OPENAI_API_KEY", ""),
+)
+
+WEB_SEARCH_OLLAMA_BASE_URL = PersistentConfig(
+    "WEB_SEARCH_OLLAMA_BASE_URL",
+    "rag.web.search.ollama_base_url",
+    os.getenv("WEB_SEARCH_OLLAMA_BASE_URL", OLLAMA_BASE_URL),
+)
+
+WEB_SEARCH_OLLAMA_API_KEY = PersistentConfig(
+    "WEB_SEARCH_OLLAMA_API_KEY",
+    "rag.web.search.ollama_api_key",
+    os.getenv("WEB_SEARCH_OLLAMA_API_KEY", ""),
 )
 
 

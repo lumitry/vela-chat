@@ -12,6 +12,14 @@
 
 	export let saveHandler: Function;
 
+	let webSearchEmbeddingEngine = '';
+	let webSearchEmbeddingModel = '';
+	let webSearchEmbeddingBatchSize = 1;
+	let webSearchOpenAIUrl = '';
+	let webSearchOpenAIKey = '';
+	let webSearchOllamaUrl = '';
+	let webSearchOllamaKey = '';
+
 	let webSearchEngines = [
 		'searxng',
 		'google_pse',
@@ -55,6 +63,15 @@
 			webConfig.YOUTUBE_LOADER_LANGUAGE = [];
 		}
 
+		// Update web search embedding settings
+		webConfig.WEB_SEARCH_EMBEDDING_ENGINE = webSearchEmbeddingEngine;
+		webConfig.WEB_SEARCH_EMBEDDING_MODEL = webSearchEmbeddingModel;
+		webConfig.WEB_SEARCH_EMBEDDING_BATCH_SIZE = webSearchEmbeddingBatchSize;
+		webConfig.WEB_SEARCH_OPENAI_API_BASE_URL = webSearchOpenAIUrl;
+		webConfig.WEB_SEARCH_OPENAI_API_KEY = webSearchOpenAIKey;
+		webConfig.WEB_SEARCH_OLLAMA_BASE_URL = webSearchOllamaUrl;
+		webConfig.WEB_SEARCH_OLLAMA_API_KEY = webSearchOllamaKey;
+
 		const res = await updateRAGConfig(localStorage.token, {
 			web: webConfig
 		});
@@ -75,6 +92,15 @@
 			}
 
 			webConfig.YOUTUBE_LOADER_LANGUAGE = webConfig.YOUTUBE_LOADER_LANGUAGE.join(',');
+
+			// Initialize web search embedding settings
+			webSearchEmbeddingEngine = webConfig.WEB_SEARCH_EMBEDDING_ENGINE || '';
+			webSearchEmbeddingModel = webConfig.WEB_SEARCH_EMBEDDING_MODEL || '';
+			webSearchEmbeddingBatchSize = webConfig.WEB_SEARCH_EMBEDDING_BATCH_SIZE || 1;
+			webSearchOpenAIUrl = webConfig.WEB_SEARCH_OPENAI_API_BASE_URL || '';
+			webSearchOpenAIKey = webConfig.WEB_SEARCH_OPENAI_API_KEY || '';
+			webSearchOllamaUrl = webConfig.WEB_SEARCH_OLLAMA_BASE_URL || '';
+			webSearchOllamaKey = webConfig.WEB_SEARCH_OLLAMA_API_KEY || '';
 		}
 	});
 </script>
@@ -500,6 +526,125 @@
 							</Tooltip>
 						</div>
 					</div>
+
+					{#if !webConfig.BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL}
+						<div class="mb-3">
+							<div class=" mb-2.5 text-base font-medium">{$i18n.t('Web Search Embedding')}</div>
+
+							<hr class=" border-gray-100 dark:border-gray-850 my-2" />
+
+							<div class="  mb-2.5 flex flex-col w-full justify-between">
+								<div class="flex w-full justify-between">
+									<div class=" self-center text-xs font-medium">
+										{$i18n.t('Embedding Model Engine')}
+									</div>
+									<div class="flex items-center relative">
+										<select
+											class="dark:bg-gray-900 w-fit pr-8 rounded-sm px-2 p-1 text-xs bg-transparent outline-hidden text-right"
+											bind:value={webSearchEmbeddingEngine}
+											placeholder="Select an embedding model engine"
+											on:change={(e) => {
+												if (e.target.value === 'ollama') {
+													webSearchEmbeddingModel = '';
+												} else if (e.target.value === 'openai') {
+													webSearchEmbeddingModel = 'text-embedding-3-small';
+												} else if (e.target.value === 'sentence-transformers') {
+													webSearchEmbeddingModel = 'sentence-transformers/all-MiniLM-L6-v2';
+												} else if (e.target.value === '') {
+													// Use documents setting - clear web search specific settings
+													webSearchEmbeddingModel = '';
+													webSearchOpenAIUrl = '';
+													webSearchOpenAIKey = '';
+													webSearchOllamaUrl = '';
+													webSearchOllamaKey = '';
+													webSearchEmbeddingBatchSize = 1;
+												}
+											}}
+										>
+											<option value="">{$i18n.t('Use Documents Setting')}</option>
+											<option value="sentence-transformers">{$i18n.t('Default (SentenceTransformers)')}</option>
+											<option value="ollama">{$i18n.t('Ollama')}</option>
+											<option value="openai">{$i18n.t('OpenAI')}</option>
+										</select>
+									</div>
+								</div>
+
+								{#if webSearchEmbeddingEngine === 'openai'}
+									<div class="my-0.5 flex gap-2 pr-2">
+										<input
+											class="flex-1 w-full rounded-lg text-sm bg-transparent outline-hidden"
+											placeholder={$i18n.t('API Base URL')}
+											bind:value={webSearchOpenAIUrl}
+											required
+										/>
+
+										<SensitiveInput placeholder={$i18n.t('API Key')} bind:value={webSearchOpenAIKey} />
+									</div>
+								{:else if webSearchEmbeddingEngine === 'ollama'}
+									<div class="my-0.5 flex gap-2 pr-2">
+										<input
+											class="flex-1 w-full rounded-lg text-sm bg-transparent outline-hidden"
+											placeholder={$i18n.t('API Base URL')}
+											bind:value={webSearchOllamaUrl}
+											required
+										/>
+
+										<SensitiveInput placeholder={$i18n.t('API Key')} bind:value={webSearchOllamaKey} />
+									</div>
+								{/if}
+							</div>
+
+							<div class="  mb-2.5 flex flex-col w-full">
+								<div class=" mb-1 text-xs font-medium">{$i18n.t('Embedding Model')}</div>
+
+								<div class="">
+									{#if webSearchEmbeddingEngine === 'ollama'}
+										<div class="flex w-full">
+											<div class="flex-1 mr-2">
+												<input
+													class="flex-1 w-full rounded-lg text-sm bg-transparent outline-hidden"
+													bind:value={webSearchEmbeddingModel}
+													placeholder={$i18n.t('Set embedding model')}
+													required
+												/>
+											</div>
+										</div>
+									{:else}
+										<div class="flex w-full">
+											<div class="flex-1 mr-2">
+												<input
+													class="flex-1 w-full rounded-lg text-sm bg-transparent outline-hidden"
+													placeholder={$i18n.t('Set embedding model (e.g. {{model}})', {
+														model: webSearchEmbeddingModel.slice(-40) || 'text-embedding-3-large'
+													})}
+													bind:value={webSearchEmbeddingModel}
+												/>
+											</div>
+										</div>
+									{/if}
+								</div>
+							</div>
+
+							{#if webSearchEmbeddingEngine === 'ollama' || webSearchEmbeddingEngine === 'openai' || webSearchEmbeddingEngine === 'sentence-transformers'}
+								<div class="  mb-2.5 flex w-full justify-between">
+									<div class=" self-center text-xs font-medium">
+										{$i18n.t('Embedding Batch Size')}
+									</div>
+
+									<div class="">
+										<input
+											bind:value={webSearchEmbeddingBatchSize}
+											type="number"
+											class=" bg-transparent text-center w-14 outline-none"
+											min="1"
+											max="16000"
+											step="1"
+										/>
+									</div>
+								</div>
+							{/if}
+						</div>
+					{/if}
 
 					<div class="  mb-2.5 flex w-full justify-between">
 						<div class=" self-center text-xs font-medium">

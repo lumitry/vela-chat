@@ -10,11 +10,7 @@
 	const i18n = getContext('i18n');
 
 	import { WEBUI_NAME, knowledge } from '$lib/stores';
-	import {
-		getKnowledgeBases,
-		deleteKnowledgeById,
-		getKnowledgeBaseList
-	} from '$lib/apis/knowledge';
+	import { getKnowledgeBases, deleteKnowledgeById } from '$lib/apis/knowledge';
 
 	import { goto } from '$app/navigation';
 
@@ -38,6 +34,12 @@
 	let knowledgeBases = [];
 	let filteredItems = [];
 
+	// Use store value if available, otherwise it will be set by the page component
+	$: if ($knowledge) {
+		knowledgeBases = $knowledge;
+		loaded = true;
+	}
+
 	$: if (knowledgeBases) {
 		fuse = new Fuse(knowledgeBases, {
 			keys: ['name', 'description']
@@ -58,16 +60,12 @@
 		});
 
 		if (res) {
-			knowledgeBases = await getKnowledgeBaseList(localStorage.token);
-			knowledge.set(await getKnowledgeBases(localStorage.token));
+			const updatedKnowledge = await getKnowledgeBases(localStorage.token);
+			knowledgeBases = updatedKnowledge;
+			knowledge.set(updatedKnowledge);
 			toast.success($i18n.t('Knowledge deleted successfully.'));
 		}
 	};
-
-	onMount(async () => {
-		knowledgeBases = await getKnowledgeBaseList(localStorage.token);
-		loaded = true;
-	});
 </script>
 
 <svelte:head>

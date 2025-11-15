@@ -50,10 +50,14 @@ export const channels = writable([]);
 export const chats = writable(null);
 export const pinnedChats = writable([]);
 export const tags = writable([]);
+export const folders: Writable<Record<string, any>> = writable({});
 
 export const models: Writable<Model[]> = writable([]);
 
 export const prompts: Writable<null | Prompt[]> = writable(null);
+
+// Metrics cache
+export const metricsCache: Writable<Map<string, any>> = writable(new Map());
 export const knowledge: Writable<null | Document[]> = writable(null);
 export const tools = writable(null);
 export const functions = writable(null);
@@ -85,6 +89,66 @@ export const chatListSortBy = writable(
 
 export const isLastActiveTab = writable(true);
 export const playingNotificationSound = writable(false);
+
+export {
+	commandPaletteQuery,
+	commandPaletteSubmenu,
+	isCommandPaletteOpen
+} from './commandPalette';
+
+// LRU Cache for chat prefetching - size-limited to prevent memory bloat
+class LRUCache {
+	private cache: Map<string, any> = new Map();
+	private maxSize: number;
+
+	constructor(maxSize: number = 10) {
+		this.maxSize = maxSize;
+	}
+
+	has(key: string): boolean {
+		return this.cache.has(key);
+	}
+
+	get(key: string): any | undefined {
+		if (!this.cache.has(key)) {
+			return undefined;
+		}
+		// Move to end (most recently used)
+		const value = this.cache.get(key);
+		this.cache.delete(key);
+		this.cache.set(key, value);
+		return value;
+	}
+
+	set(key: string, value: any): void {
+		if (this.cache.has(key)) {
+			// Update existing - move to end
+			this.cache.delete(key);
+		} else if (this.cache.size >= this.maxSize) {
+			// Evict oldest (first item)
+			const firstKey = this.cache.keys().next().value;
+			if (firstKey !== undefined) {
+				this.cache.delete(firstKey);
+			}
+		}
+		this.cache.set(key, value);
+	}
+
+	delete(key: string): void {
+		this.cache.delete(key);
+	}
+
+	clear(): void {
+		this.cache.clear();
+	}
+
+	get size(): number {
+		return this.cache.size;
+	}
+}
+
+// Chat cache for navigating to previous chats - LRU with max 10 chats to prevent memory bloat
+export const chatCache: Writable<LRUCache> = writable(new LRUCache(10));
 
 export type Model = OpenAIModel | OllamaModel;
 
@@ -147,6 +211,7 @@ type Settings = {
 	title?: TitleSettings;
 	splitLargeDeltas?: boolean;
 	chatDirection: 'LTR' | 'RTL' | 'auto';
+	chatFontScale?: number;
 	ctrlEnterToSend?: boolean;
 	customThemeColor?: string;
 

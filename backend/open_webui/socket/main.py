@@ -327,11 +327,23 @@ def get_event_emitter(request_info, update_db=True):
 
         if update_db:
             if "type" in event_data and event_data["type"] == "status":
+                # Update legacy format
                 Chats.add_message_status_to_chat_by_id_and_message_id(
                     request_info["chat_id"],
                     request_info["message_id"],
                     event_data.get("data", {}),
                 )
+                # Update normalized table
+                try:
+                    from open_webui.models.chat_messages import ChatMessages
+                    ChatMessages.append_status_history(
+                        request_info["message_id"],
+                        event_data.get("data", {})
+                    )
+                except Exception as e:
+                    import logging
+                    log = logging.getLogger(__name__)
+                    log.debug(f"Failed to append status history to normalized message: {e}")
 
             if "type" in event_data and event_data["type"] == "message":
                 message = Chats.get_message_by_id_and_message_id(
@@ -361,6 +373,37 @@ def get_event_emitter(request_info, update_db=True):
                         "content": content,
                     },
                 )
+            
+            if "type" in event_data and event_data["type"] == "files":
+                # Handle generated images/files - attach them to the assistant message
+                files = event_data.get("data", {}).get("files", [])
+                if files and request_info.get("message_id"):
+                    try:
+                        from open_webui.models.chat_messages import ChatMessages
+                        import re
+                        for file_item in files:
+                            file_url = file_item.get("url", "")
+                            # Extract file_id from URL if it's an internal file URL
+                            file_id = None
+                            if file_url and "/files/" in file_url:
+                                match = re.search(r"/files/([A-Za-z0-9\-]+)", file_url)
+                                if match:
+                                    file_id = match.group(1)
+                            
+                            # Create attachment for the generated image/file
+                            attachment = {
+                                "type": file_item.get("type", "image"),
+                                "file_id": file_id,
+                                "url": file_url,
+                            }
+                            ChatMessages.add_attachment(
+                                request_info["message_id"],
+                                attachment
+                            )
+                    except Exception as e:
+                        import logging
+                        log = logging.getLogger(__name__)
+                        log.debug(f"Failed to attach generated files to normalized message: {e}")
 
     return __event_emitter__
 

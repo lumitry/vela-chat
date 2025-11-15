@@ -76,6 +76,8 @@ from open_webui.routers import (
     tools,
     users,
     utils,
+    chat_messages,
+    metrics,
 )
 
 from open_webui.routers.retrieval import (
@@ -213,6 +215,13 @@ from open_webui.config import (
     WEB_SEARCH_CONCURRENT_REQUESTS,
     WEB_SEARCH_TRUST_ENV,
     WEB_SEARCH_DOMAIN_FILTER_LIST,
+    WEB_SEARCH_EMBEDDING_ENGINE,
+    WEB_SEARCH_EMBEDDING_MODEL,
+    WEB_SEARCH_EMBEDDING_BATCH_SIZE,
+    WEB_SEARCH_OPENAI_API_BASE_URL,
+    WEB_SEARCH_OPENAI_API_KEY,
+    WEB_SEARCH_OLLAMA_BASE_URL,
+    WEB_SEARCH_OLLAMA_API_KEY,
     JINA_API_KEY,
     SEARCHAPI_API_KEY,
     SEARCHAPI_ENGINE,
@@ -640,6 +649,13 @@ app.state.config.WEB_SEARCH_TRUST_ENV = WEB_SEARCH_TRUST_ENV
 app.state.config.BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL = (
     BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL
 )
+app.state.config.WEB_SEARCH_EMBEDDING_ENGINE = WEB_SEARCH_EMBEDDING_ENGINE
+app.state.config.WEB_SEARCH_EMBEDDING_MODEL = WEB_SEARCH_EMBEDDING_MODEL
+app.state.config.WEB_SEARCH_EMBEDDING_BATCH_SIZE = WEB_SEARCH_EMBEDDING_BATCH_SIZE
+app.state.config.WEB_SEARCH_OPENAI_API_BASE_URL = WEB_SEARCH_OPENAI_API_BASE_URL
+app.state.config.WEB_SEARCH_OPENAI_API_KEY = WEB_SEARCH_OPENAI_API_KEY
+app.state.config.WEB_SEARCH_OLLAMA_BASE_URL = WEB_SEARCH_OLLAMA_BASE_URL
+app.state.config.WEB_SEARCH_OLLAMA_API_KEY = WEB_SEARCH_OLLAMA_API_KEY
 
 app.state.config.ENABLE_GOOGLE_DRIVE_INTEGRATION = ENABLE_GOOGLE_DRIVE_INTEGRATION
 app.state.config.ENABLE_ONEDRIVE_INTEGRATION = ENABLE_ONEDRIVE_INTEGRATION
@@ -954,6 +970,7 @@ app.include_router(users.router, prefix="/api/v1/users", tags=["users"])
 
 app.include_router(channels.router, prefix="/api/v1/channels", tags=["channels"])
 app.include_router(chats.router, prefix="/api/v1/chats", tags=["chats"])
+app.include_router(chat_messages.router, prefix="/api/v1/chats", tags=["chat_messages"])
 
 app.include_router(models.router, prefix="/api/v1/models", tags=["models"])
 app.include_router(knowledge.router, prefix="/api/v1/knowledge", tags=["knowledge"])
@@ -969,6 +986,7 @@ app.include_router(
     evaluations.router, prefix="/api/v1/evaluations", tags=["evaluations"]
 )
 app.include_router(utils.router, prefix="/api/v1/utils", tags=["utils"])
+app.include_router(metrics.router, prefix="/api/v1/metrics", tags=["metrics"])
 
 
 try:

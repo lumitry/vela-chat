@@ -2,7 +2,7 @@
 	import { getContext, tick } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { config, models, settings, user } from '$lib/stores';
-	import { updateUserSettings } from '$lib/apis/users';
+	import { updateUserSettings, getUserSettings } from '$lib/apis/users';
 	import { getModels as _getModels } from '$lib/apis';
 	import { goto } from '$app/navigation';
 
@@ -11,6 +11,7 @@
 	import About from './Settings/About.svelte';
 	import General from './Settings/General.svelte';
 	import Interface from './Settings/Interface.svelte';
+	import { getAllInterfaceKeywords } from './Settings/interfaceKeywords';
 	import Audio from './Settings/Audio.svelte';
 	import Chats from './Settings/Chats.svelte';
 	import User from '../icons/User.svelte';
@@ -70,6 +71,10 @@
 				'chat',
 				'chatbubble',
 				'chatui',
+				'font',
+				'fontsize',
+				'textsize',
+				'typography',
 				'username',
 				'showusername',
 				'displayusername',
@@ -305,11 +310,25 @@
 	const searchSettings = (query: string): string[] => {
 		const lowerCaseQuery = query.toLowerCase().trim();
 		return searchData
-			.filter(
-				(tab) =>
+			.filter((tab) => {
+				// Check tab title and hardcoded keywords
+				if (
 					tab.title.toLowerCase().includes(lowerCaseQuery) ||
 					tab.keywords.some((keyword) => keyword.includes(lowerCaseQuery))
-			)
+				) {
+					return true;
+				}
+
+				// For Interface tab, also check individual setting keywords
+				if (tab.id === 'interface') {
+					const interfaceKeywords = getAllInterfaceKeywords();
+					return interfaceKeywords.some((keyword) =>
+						keyword.toLowerCase().includes(lowerCaseQuery)
+					);
+				}
+
+				return false;
+			})
 			.map((tab) => tab.id);
 	};
 
@@ -324,10 +343,10 @@
 	};
 
 	const saveSettings = async (updated) => {
-		console.log(updated);
-		await settings.set({ ...$settings, ...updated });
+		const mergedSettings = { ...$settings, ...updated };
+		await settings.set(mergedSettings);
 		await models.set(await getModels());
-		await updateUserSettings(localStorage.token, { ui: $settings });
+		await updateUserSettings(localStorage.token, { ui: mergedSettings });
 	};
 
 	const getModels = async () => {
@@ -364,10 +383,26 @@
 		}
 	};
 
+	let previousShowState = false;
+
 	$: if (show) {
 		addScrollListener();
+		// Reload settings from server when modal first opens (not on every reactive update)
+		if (!previousShowState) {
+			getUserSettings(localStorage.token)
+				.then((userSettings) => {
+					if (userSettings?.ui) {
+						settings.set(userSettings.ui);
+					}
+				})
+				.catch((error) => {
+					console.error('Failed to reload user settings:', error);
+				});
+		}
+		previousShowState = true;
 	} else {
 		removeScrollListener();
+		previousShowState = false;
 	}
 </script>
 
@@ -688,6 +723,7 @@
 				{:else if selectedTab === 'interface'}
 					<Interface
 						{saveSettings}
+						searchQuery={search}
 						on:save={() => {
 							toast.success($i18n.t('Settings saved successfully!'));
 						}}

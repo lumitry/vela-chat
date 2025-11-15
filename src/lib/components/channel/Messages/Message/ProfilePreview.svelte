@@ -39,7 +39,6 @@
 				<div class=" flex flex-col gap-2 w-full rounded-lg">
 					<div class="py-8 relative bg-gray-900 rounded-t-lg">
 						<img
-							crossorigin="anonymous"
 							src={user?.profile_image_url ?? `${WEBUI_BASE_URL}/static/favicon.png`}
 							class=" absolute -bottom-5 left-3 size-12 ml-0.5 object-cover rounded-full -translate-y-[1px]"
 							alt="profile"

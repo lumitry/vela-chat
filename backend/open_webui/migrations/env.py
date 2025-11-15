@@ -1,9 +1,21 @@
+import sys
+from pathlib import Path
 from logging.config import fileConfig
 
 from alembic import context
+from sqlalchemy import engine_from_config, pool
+
+# Add the backend directory to the Python path
+# migrations/env.py is at: backend/open_webui/migrations/env.py
+# We need to add backend/ to sys.path so open_webui can be imported
+migrations_dir = Path(__file__).resolve().parent
+# Go up: migrations -> open_webui -> backend
+backend_dir = migrations_dir.parent.parent
+if str(backend_dir) not in sys.path:
+    sys.path.insert(0, str(backend_dir))
+
 from open_webui.models.auths import Auth
 from open_webui.env import DATABASE_URL
-from sqlalchemy import engine_from_config, pool
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

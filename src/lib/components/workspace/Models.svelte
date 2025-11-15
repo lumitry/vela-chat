@@ -15,12 +15,11 @@
 	import {
 		createNewModel,
 		deleteModelById,
-		getModels as getWorkspaceModels,
+		getModelsMetadata as getWorkspaceModels,
 		toggleModelById,
 		updateModelById
 	} from '$lib/apis/models';
 
-	import { getModels } from '$lib/apis';
 	import { getGroups } from '$lib/apis/groups';
 
 	import EllipsisHorizontal from '../icons/EllipsisHorizontal.svelte';
@@ -50,6 +49,9 @@
 
 	let group_ids = [];
 
+	// Track which models are currently being toggled to prevent race conditions
+	let togglingModels = new Set();
+
 	$: if (models) {
 		filteredModels = models.filter(
 			(m) => searchValue === '' || m.name.toLowerCase().includes(searchValue.toLowerCase())
@@ -68,12 +70,7 @@
 			toast.success($i18n.t(`Deleted {{name}}`, { name: model.id }));
 		}
 
-		await _models.set(
-			await getModels(
-				localStorage.token,
-				$config?.features?.enable_direct_connections && ($settings?.directConnections ?? null)
-			)
-		);
+		// Only refresh workspace models, not all models
 		models = await getWorkspaceModels(localStorage.token);
 	};
 
@@ -136,12 +133,7 @@
 			);
 		}
 
-		await _models.set(
-			await getModels(
-				localStorage.token,
-				$config?.features?.enable_direct_connections && ($settings?.directConnections ?? null)
-			)
-		);
+		// Only refresh workspace models, not all models
 		models = await getWorkspaceModels(localStorage.token);
 	};
 
@@ -377,14 +369,35 @@
 									<Switch
 										bind:state={model.is_active}
 										on:change={async (e) => {
-											toggleModelById(localStorage.token, model.id);
-											_models.set(
-												await getModels(
-													localStorage.token,
-													$config?.features?.enable_direct_connections &&
-														($settings?.directConnections ?? null)
-												)
-											);
+											// Prevent multiple simultaneous toggles of the same model
+											if (togglingModels.has(model.id)) {
+												return;
+											}
+
+											togglingModels.add(model.id);
+
+											try {
+												await toggleModelById(localStorage.token, model.id);
+												// Update only the specific model in the array instead of replacing everything
+												const updatedModels = await getWorkspaceModels(localStorage.token);
+												if (updatedModels) {
+													const modelIndex = models.findIndex((m) => m.id === model.id);
+													if (modelIndex !== -1) {
+														const updatedModel = updatedModels.find((m) => m.id === model.id);
+														if (updatedModel) {
+															// Update only this specific model to avoid triggering updates for others
+															models[modelIndex] = { ...updatedModel };
+															models = models; // Trigger reactivity
+														}
+													}
+												}
+											} catch (error) {
+												// Revert on error
+												model.is_active = !model.is_active;
+												toast.error($i18n.t('Failed to toggle model'));
+											} finally {
+												togglingModels.delete(model.id);
+											}
 										}}
 									/>
 								</Tooltip>
@@ -436,13 +449,7 @@
 								}
 							}
 
-							await _models.set(
-								await getModels(
-									localStorage.token,
-									$config?.features?.enable_direct_connections &&
-										($settings?.directConnections ?? null)
-								)
-							);
+							// Only refresh workspace models, not all models
 							models = await getWorkspaceModels(localStorage.token);
 						};
 

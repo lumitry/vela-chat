@@ -17,17 +17,33 @@ from open_webui.models.folders import Folders
 from open_webui.config import ENABLE_ADMIN_CHAT_ACCESS, ENABLE_ADMIN_EXPORT
 from open_webui.constants import ERROR_MESSAGES
 from open_webui.env import SRC_LOG_LEVELS
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Query, status
 from pydantic import BaseModel
 
 
 from open_webui.utils.auth import get_admin_user, get_verified_user
 from open_webui.utils.access_control import has_permission
+from open_webui.internal.db import get_db
 
 log = logging.getLogger(__name__)
 log.setLevel(SRC_LOG_LEVELS["MODELS"])
 
 router = APIRouter()
+
+
+############################
+# Response Models
+############################
+
+
+class ChatMetadataResponse(BaseModel):
+    """Lean response model with only essential fields for chat listing/selection"""
+    id: str
+    title: str
+    updated_at: int
+    created_at: int
+    pinned: Optional[bool] = False
+    folder_id: Optional[str] = None
 
 ############################
 # GetChatList
@@ -98,7 +114,32 @@ async def get_user_chat_list_by_user_id(
 @router.post("/new", response_model=Optional[ChatResponse])
 async def create_new_chat(form_data: ChatForm, user=Depends(get_verified_user)):
     try:
+        # Create chat with legacy format in chat.chat blob initially
+        # Messages will be inserted via middleware during streaming
         chat = Chats.insert_new_chat(user.id, form_data)
+        
+        # If the chat form has initial messages/history, convert to normalized format
+        # Legacy format includes BOTH history.messages (dict) AND messages (list)
+        # We should check for history.messages first as it contains all messages
+        has_messages = False
+        if form_data.chat and isinstance(form_data.chat, dict):
+            if "history" in form_data.chat:
+                history = form_data.chat["history"]
+                if isinstance(history, dict) and history.get("messages"):
+                    has_messages = True
+            # Also check for flat messages list as fallback
+            if not has_messages and "messages" in form_data.chat and isinstance(form_data.chat["messages"], list) and len(form_data.chat["messages"]) > 0:
+                has_messages = True
+        
+        if chat and chat.id and has_messages:
+            from open_webui.models.chat_converter import legacy_to_normalized_format
+            try:
+                # Regenerate message IDs during import to avoid collisions
+                legacy_to_normalized_format(chat.id, form_data.chat, regenerate_ids=True)
+            except Exception as e:
+                log.error(f"create_new_chat: Exception during legacy_to_normalized_format: {str(e)}", exc_info=True)
+                raise
+        
         return ChatResponse(**chat.model_dump())
     except Exception as e:
         log.exception(e)
@@ -126,6 +167,33 @@ async def import_chat(form_data: ChatImportForm, user=Depends(get_verified_user)
                     and Tags.get_tag_by_name_and_user_id(tag_name, user.id) is None
                 ):
                     Tags.insert_new_tag(tag_name, user.id)
+            
+            # Convert legacy format to normalized format if chat has messages
+            # Legacy format includes BOTH history.messages (dict) AND messages (list)
+            # We should check for history.messages first as it contains all messages
+            has_messages = False
+            if form_data.chat and isinstance(form_data.chat, dict):
+                if "history" in form_data.chat:
+                    history = form_data.chat["history"]
+                    if isinstance(history, dict) and history.get("messages"):
+                        has_messages = True
+                        log.debug(f"import_chat: Found messages in history.messages (dict format)")
+                # Also check for flat messages list as fallback
+                if not has_messages and "messages" in form_data.chat and isinstance(form_data.chat["messages"], list) and len(form_data.chat["messages"]) > 0:
+                    has_messages = True
+                    log.debug(f"import_chat: Found messages in messages list (flat format)")
+            
+            if chat.id and has_messages:
+                log.debug(f"import_chat: Converting legacy format to normalized format for chat {chat.id}")
+                from open_webui.models.chat_converter import legacy_to_normalized_format
+                try:
+                    # Regenerate message IDs during import to avoid collisions
+                    legacy_to_normalized_format(chat.id, form_data.chat, regenerate_ids=True)
+                except Exception as e:
+                    log.error(f"import_chat: Exception during legacy_to_normalized_format: {str(e)}", exc_info=True)
+                    raise
+            elif chat.id:
+                log.warning(f"import_chat: No messages found in imported chat {chat.id}. Chat keys: {list(form_data.chat.keys()) if isinstance(form_data.chat, dict) else 'not a dict'}")
 
         return ChatResponse(**chat.model_dump())
     except Exception as e:
@@ -203,16 +271,59 @@ async def get_user_pinned_chats(user=Depends(get_verified_user)):
 
 
 ############################
+# GetPinnedChatsMetadata
+############################
+
+
+@router.get("/pinned/metadata", response_model=list[ChatMetadataResponse])
+async def get_user_pinned_chats_metadata(user=Depends(get_verified_user)):
+    """
+    Returns a lean list of pinned chats with only essential fields.
+    Excludes full chat JSON and other heavy fields to reduce payload size.
+    """
+    pinned_chats = Chats.get_pinned_chats_by_user_id(user.id)
+    
+    return [
+        ChatMetadataResponse(
+            id=chat.id,
+            title=chat.title,
+            updated_at=chat.updated_at,
+            created_at=chat.created_at,
+            pinned=chat.pinned,
+            folder_id=chat.folder_id,
+        )
+        for chat in pinned_chats
+    ]
+
+
+############################
 # GetChats
 ############################
 
 
 @router.get("/all", response_model=list[ChatResponse])
-async def get_user_chats(user=Depends(get_verified_user)):
-    return [
-        ChatResponse(**chat.model_dump())
-        for chat in Chats.get_chats_by_user_id(user.id)
-    ]
+async def get_user_chats(user=Depends(get_verified_user), export: bool = Query(False)):
+    from open_webui.models.chat_converter import normalized_to_legacy_format
+    from open_webui.models.chat_messages import ChatMessage
+    
+    chats = Chats.get_chats_by_user_id(user.id)
+    result = []
+    
+    for chat in chats:
+        # Check if this chat uses normalized storage (has messages in chat_message table)
+        with get_db() as db:
+            has_normalized = db.query(ChatMessage).filter_by(chat_id=chat.id).first() is not None
+        
+        if has_normalized:
+            # Convert from normalized tables to legacy format
+            # If export=True, embed files as base64 for portability
+            legacy_chat = normalized_to_legacy_format(chat.id, embed_files_as_base64=export)
+            # Merge with chat metadata
+            chat.chat = legacy_chat
+        
+        result.append(ChatResponse(**chat.model_dump()))
+    
+    return result
 
 
 ############################
@@ -221,11 +332,28 @@ async def get_user_chats(user=Depends(get_verified_user)):
 
 
 @router.get("/all/archived", response_model=list[ChatResponse])
-async def get_user_archived_chats(user=Depends(get_verified_user)):
-    return [
-        ChatResponse(**chat.model_dump())
-        for chat in Chats.get_archived_chats_by_user_id(user.id)
-    ]
+async def get_user_archived_chats(user=Depends(get_verified_user), export: bool = Query(False)):
+    from open_webui.models.chat_converter import normalized_to_legacy_format
+    from open_webui.models.chat_messages import ChatMessage
+    
+    chats = Chats.get_archived_chats_by_user_id(user.id)
+    result = []
+    
+    for chat in chats:
+        # Check if this chat uses normalized storage (has messages in chat_message table)
+        with get_db() as db:
+            has_normalized = db.query(ChatMessage).filter_by(chat_id=chat.id).first() is not None
+        
+        if has_normalized:
+            # Convert from normalized tables to legacy format
+            # If export=True, embed files as base64 for portability
+            legacy_chat = normalized_to_legacy_format(chat.id, embed_files_as_base64=export)
+            # Merge with chat metadata
+            chat.chat = legacy_chat
+        
+        result.append(ChatResponse(**chat.model_dump()))
+    
+    return result
 
 
 ############################
@@ -251,13 +379,33 @@ async def get_all_user_tags(user=Depends(get_verified_user)):
 
 
 @router.get("/all/db", response_model=list[ChatResponse])
-async def get_all_user_chats_in_db(user=Depends(get_admin_user)):
+async def get_all_user_chats_in_db(user=Depends(get_admin_user), export: bool = Query(False)):
     if not ENABLE_ADMIN_EXPORT:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
         )
-    return [ChatResponse(**chat.model_dump()) for chat in Chats.get_chats()]
+    
+    from open_webui.models.chat_converter import normalized_to_legacy_format
+    from open_webui.models.chat_messages import ChatMessage
+    
+    chats = Chats.get_chats()
+    result = []
+    
+    for chat in chats:
+        # Check if this chat uses normalized storage (has messages in chat_message table)
+        with get_db() as db:
+            has_normalized = db.query(ChatMessage).filter_by(chat_id=chat.id).first() is not None
+        
+        if has_normalized:
+            # Convert from normalized tables to legacy format
+            legacy_chat = normalized_to_legacy_format(chat.id)
+            # Merge with chat metadata
+            chat.chat = legacy_chat
+        
+        result.append(ChatResponse(**chat.model_dump()))
+    
+    return result
 
 
 ############################
@@ -341,16 +489,116 @@ async def get_user_chat_list_by_tag_name(
 
 
 @router.get("/{id}", response_model=Optional[ChatResponse])
-async def get_chat_by_id(id: str, user=Depends(get_verified_user)):
+async def get_chat_by_id(id: str, user=Depends(get_verified_user), export: bool = Query(False)):
     chat = Chats.get_chat_by_id_and_user_id(id, user.id)
 
-    if chat:
-        return ChatResponse(**chat.model_dump())
-
-    else:
+    if not chat:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail=ERROR_MESSAGES.NOT_FOUND
         )
+    
+    # Check if this chat uses normalized storage (has messages in chat_message table)
+    from open_webui.models.chat_messages import ChatMessages
+    from open_webui.models.chat_converter import normalized_to_legacy_format
+    
+    # Check if chat has normalized messages
+    with get_db() as db:
+        from open_webui.models.chat_messages import ChatMessage
+        has_normalized = db.query(ChatMessage).filter_by(chat_id=id).first() is not None
+    
+    if has_normalized:
+        # Convert from normalized tables to legacy format
+        # If export=True, embed files as base64 for portability
+        legacy_chat = normalized_to_legacy_format(id, embed_files_as_base64=export)
+        # Merge with chat metadata
+        chat.chat = legacy_chat
+    else:
+        # Legacy chat, use existing chat.chat blob
+        pass
+    
+    return ChatResponse(**chat.model_dump())
+
+
+############################
+# GetChatMeta (lightweight)
+############################
+
+
+class ChatMetaResponse(BaseModel):
+    id: str
+    title: str
+    created_at: int
+    updated_at: int
+    share_id: Optional[str] = None
+    archived: bool
+    pinned: Optional[bool] = False
+    folder_id: Optional[str] = None
+    active_message_id: Optional[str] = None
+    # minimal chat-level fields commonly used by the UI
+    models: list[str] | None = None
+    params: dict | None = None
+    files: list[dict] | None = None
+
+
+@router.get("/{id}/meta", response_model=Optional[ChatMetaResponse])
+async def get_chat_meta_by_id(id: str, user=Depends(get_verified_user)):
+    chat = Chats.get_chat_by_id_and_user_id(id, user.id)
+    if not chat:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
+        )
+
+    # Extract minimal fields without returning the full chat JSON
+    chat_content = chat.chat or {}
+    
+    # Check if this chat uses normalized storage (has messages in chat_message table)
+    from open_webui.models.chat_messages import ChatMessage
+    models = None
+    params = chat_content.get("params")
+    
+    with get_db() as db:
+        has_normalized = db.query(ChatMessage).filter_by(chat_id=id).first() is not None
+    
+    if has_normalized:
+        # For normalized chats, extract models from first user message's meta
+        # (models are stored in user message meta, not in chat.chat.models)
+        with get_db() as db:
+            first_user_msg = db.query(ChatMessage).filter_by(
+                chat_id=id,
+                role="user"
+            ).order_by(ChatMessage.created_at.asc()).first()
+            
+            if first_user_msg is not None:
+                msg_meta = getattr(first_user_msg, 'meta', None)
+                if msg_meta and isinstance(msg_meta, dict) and "models" in msg_meta:
+                    models = msg_meta["models"]
+        
+        # For normalized chats, params are stored in chat.params column, not chat.chat.params
+        if chat.params:
+            params = chat.params
+    else:
+        # Legacy chat, use existing chat.chat blob
+        models = chat_content.get("models")
+        if not params:
+            params = chat_content.get("params")
+    
+    return ChatMetaResponse(
+        **{
+            "id": chat.id,
+            "title": chat.title,
+            "created_at": chat.created_at,
+            "updated_at": chat.updated_at,
+            "share_id": chat.share_id,
+            "archived": chat.archived,
+            "pinned": chat.pinned,
+            "folder_id": chat.folder_id,
+            "active_message_id": getattr(chat, 'active_message_id', None),
+            "models": models,
+            "params": params,
+            "files": chat_content.get("files"),
+        }
+    )
 
 
 ############################
@@ -363,15 +611,103 @@ async def update_chat_by_id(
     id: str, form_data: ChatForm, user=Depends(get_verified_user)
 ):
     chat = Chats.get_chat_by_id_and_user_id(id, user.id)
-    if chat:
-        updated_chat = {**chat.chat, **form_data.chat}
-        chat = Chats.update_chat_by_id(id, updated_chat)
-        return ChatResponse(**chat.model_dump())
-    else:
+    if not chat:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
         )
+    
+    # Check if this chat uses normalized storage
+    from open_webui.models.chat_messages import ChatMessage
+    from open_webui.models.chat_converter import legacy_to_normalized_format, normalized_to_legacy_format
+    from open_webui.models.chats import Chat
+    
+    with get_db() as db:
+        has_normalized = db.query(ChatMessage).filter_by(chat_id=id).first() is not None
+    
+    if has_normalized:
+        # Convert legacy format to normalized tables
+        legacy_to_normalized_format(id, form_data.chat)
+        
+        # Update chat metadata (title, params, etc.)
+        if "title" in form_data.chat:
+            Chats.update_chat_title_by_id(id, form_data.chat["title"])
+        if "params" in form_data.chat:
+            # Clean params - remove models if present (models should be in user message meta, not params)
+            params_clean = form_data.chat["params"].copy() if isinstance(form_data.chat["params"], dict) else {}
+            if "models" in params_clean:
+                del params_clean["models"]
+            with get_db() as db:
+                chat_item = db.query(Chat).filter_by(id=id).first()
+                if chat_item:
+                    # Type ignore: SQLAlchemy Column assignment works at runtime
+                    chat_item.params = params_clean  # type: ignore
+                    db.commit()
+        # Update models: store in first user message's meta (NOT in params)
+        if "models" in form_data.chat:
+            from open_webui.models.chat_messages import ChatMessages, ChatMessage
+            with get_db() as db:
+                # Find the first user message and update its meta
+                first_user_msg = db.query(ChatMessage).filter_by(
+                    chat_id=id,
+                    role="user"
+                ).order_by(ChatMessage.created_at.asc()).first()
+                
+                if first_user_msg:
+                    existing_meta = first_user_msg.meta if first_user_msg.meta else {}
+                    existing_meta["models"] = form_data.chat["models"]
+                    ChatMessages.update_message(first_user_msg.id, meta=existing_meta)
+        
+        # Update active_message_id if history.currentId is present
+        # This handles both full history updates and lightweight updates that only send currentId
+        if "history" in form_data.chat and isinstance(form_data.chat["history"], dict):
+            history_current_id = form_data.chat["history"].get("currentId")
+            if history_current_id:
+                Chats.update_chat_active_and_root_message_ids(id, active_message_id=history_current_id)
+        
+        # Generate legacy response for the API response (includes full message history)
+        legacy_chat_response = normalized_to_legacy_format(id)
+        
+        # Persist only minimal chat metadata (no message history) to the database
+        # Read current chat blob and merge only metadata fields
+        with get_db() as db:
+            from open_webui.models.chats import Chat
+            chat_item = db.query(Chat).filter_by(id=id).first()
+            if chat_item:
+                existing_chat = chat_item.chat if chat_item.chat else {}
+                # Update only metadata fields, preserve anything else that might be there
+                minimal_chat = dict(existing_chat)
+                # Strip collections from chat-level files to remove files array and data.file_ids
+                files_list = legacy_chat_response.get("files", [])
+                if isinstance(files_list, list):
+                    from open_webui.models.chat_converter import strip_collection_files
+                    minimal_chat["files"] = [strip_collection_files(f) for f in files_list]
+                else:
+                    minimal_chat["files"] = files_list
+                minimal_chat["params"] = legacy_chat_response.get("params", {})
+                minimal_chat["models"] = legacy_chat_response.get("models", [])
+                if "title" in legacy_chat_response:
+                    minimal_chat["title"] = legacy_chat_response["title"]
+                # Explicitly remove history and messages if present
+                if "history" in minimal_chat:
+                    del minimal_chat["history"]
+                if "messages" in minimal_chat:
+                    del minimal_chat["messages"]
+                chat_item.chat = minimal_chat
+                db.commit()
+
+        # Reload chat model for response with full legacy payload
+        chat = Chats.get_chat_by_id_and_user_id(id, user.id)
+        if chat:
+            chat_data = chat.model_dump()
+            chat_data["chat"] = legacy_chat_response
+            return ChatResponse(**chat_data)
+    else:
+        # Legacy chat, update the JSON blob
+        updated_chat = {**chat.chat, **form_data.chat}
+        chat = Chats.update_chat_by_id(id, updated_chat)
+    
+    return ChatResponse(**chat.model_dump())
 
 
 ############################
@@ -557,15 +893,30 @@ async def clone_chat_by_id(
 ):
     chat = Chats.get_chat_by_id_and_user_id(id, user.id)
     if chat:
-        updated_chat = {
-            **chat.chat,
-            "originalChatId": chat.id,
-            "branchPointMessageId": chat.chat["history"]["currentId"],
-            "title": form_data.title if form_data.title else f"Clone of {chat.title}",
-        }
-
-        chat = Chats.insert_new_chat(user.id, ChatForm(**{"chat": updated_chat}))
-        return ChatResponse(**chat.model_dump())
+        # Use the new clone_chat method which handles normalized messages properly
+        new_title = form_data.title if form_data.title else None
+        cloned_chat = Chats.clone_chat(id, user.id, new_title)
+        
+        if cloned_chat:
+            # Convert to legacy format for response if needed
+            from open_webui.models.chat_converter import normalized_to_legacy_format
+            from open_webui.models.chat_messages import ChatMessage
+            from open_webui.internal.db import get_db
+            
+            with get_db() as db:
+                has_normalized = db.query(ChatMessage).filter_by(chat_id=cloned_chat.id).first() is not None
+            
+            if has_normalized:
+                # Convert from normalized tables to legacy format for response
+                legacy_chat = normalized_to_legacy_format(cloned_chat.id)
+                cloned_chat.chat = legacy_chat
+            
+            return ChatResponse(**cloned_chat.model_dump())
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+                detail="Failed to clone chat"
+            )
     else:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail=ERROR_MESSAGES.DEFAULT()
@@ -586,15 +937,29 @@ async def clone_shared_chat_by_id(id: str, user=Depends(get_verified_user)):
         chat = Chats.get_chat_by_share_id(id)
 
     if chat:
-        updated_chat = {
-            **chat.chat,
-            "originalChatId": chat.id,
-            "branchPointMessageId": chat.chat["history"]["currentId"],
-            "title": f"Clone of {chat.title}",
-        }
-
-        chat = Chats.insert_new_chat(user.id, ChatForm(**{"chat": updated_chat}))
-        return ChatResponse(**chat.model_dump())
+        # Use the new clone_chat method which handles normalized messages properly
+        cloned_chat = Chats.clone_chat(chat.id, user.id, None)
+        
+        if cloned_chat:
+            # Convert to legacy format for response if needed
+            from open_webui.models.chat_converter import normalized_to_legacy_format
+            from open_webui.models.chat_messages import ChatMessage
+            from open_webui.internal.db import get_db
+            
+            with get_db() as db:
+                has_normalized = db.query(ChatMessage).filter_by(chat_id=cloned_chat.id).first() is not None
+            
+            if has_normalized:
+                # Convert from normalized tables to legacy format for response
+                legacy_chat = normalized_to_legacy_format(cloned_chat.id)
+                cloned_chat.chat = legacy_chat
+            
+            return ChatResponse(**cloned_chat.model_dump())
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+                detail="Failed to clone chat"
+            )
     else:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail=ERROR_MESSAGES.DEFAULT()

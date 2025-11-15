@@ -118,3 +118,14 @@ class TASKS(str, Enum):
     AUTOCOMPLETE_GENERATION = "autocomplete_generation"
     FUNCTION_CALLING = "function_calling"
     MOA_RESPONSE_GENERATION = "moa_response_generation"
+
+
+class EMBEDDING_TYPES(str, Enum):
+    def __str__(self) -> str:
+        return super().__str__()
+
+    WEB_SEARCH_EMBEDDING = "web_search_embedding"
+    KNOWLEDGE_BASE_EMBEDDING = "knowledge_base_embedding"
+    UPLOAD_FILE_EMBEDDING = "upload_file_embedding"
+    PROCESS_WEB_EMBEDDING = "process_web_embedding"
+    PROCESS_YOUTUBE_EMBEDDING = "process_youtube_embedding"

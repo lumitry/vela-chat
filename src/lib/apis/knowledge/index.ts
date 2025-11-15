@@ -69,10 +69,10 @@ export const getKnowledgeBases = async (token: string = '') => {
 	return res;
 };
 
-export const getKnowledgeBaseList = async (token: string = '') => {
+export const getKnowledgeBaseMetadata = async (token: string = '') => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/knowledge/list`, {
+	const res = await fetch(`${WEBUI_API_BASE_URL}/knowledge/metadata`, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',

@@ -1,13 +1,11 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
 	import { createEventDispatcher, onMount, getContext } from 'svelte';
-	import { KokoroTTS } from 'kokoro-js';
 
 	import { user, settings, config } from '$lib/stores';
 	import { getVoices as _getVoices } from '$lib/apis/audio';
 
 	import Switch from '$lib/components/common/Switch.svelte';
-	import { round } from '@huggingface/transformers';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	const dispatch = createEventDispatcher();
 
@@ -37,19 +35,31 @@
 	let playbackRate = 1;
 	const speedOptions = [2, 1.75, 1.5, 1.25, 1, 0.75, 0.5];
 
+	// Lazy load KokoroTTS to avoid blocking page load
+	let KokoroTTS: any = null;
+	const loadKokoroTTSModule = async () => {
+		if (!KokoroTTS) {
+			const module = await import('kokoro-js');
+			KokoroTTS = module.KokoroTTS;
+		}
+		return KokoroTTS;
+	};
+
 	const getVoices = async () => {
 		if (TTSEngine === 'browser-kokoro') {
 			if (!TTSModel) {
 				await loadKokoro();
 			}
 
-			voices = Object.entries(TTSModel.voices).map(([key, value]) => {
-				return {
-					id: key,
-					name: value.name,
-					localService: false
-				};
-			});
+			if (TTSModel) {
+				voices = Object.entries(TTSModel.voices).map(([key, value]) => {
+					return {
+						id: key,
+						name: value.name,
+						localService: false
+					};
+				});
+			}
 		} else {
 			if ($config.audio.tts.engine === '') {
 				const getVoicesLoop = setInterval(async () => {
@@ -102,11 +112,40 @@
 
 		nonLocalVoices = $settings.audio?.tts?.nonLocalVoices ?? false;
 
-		await getVoices();
+		// Load voices for non-Kokoro engines immediately
+		if (TTSEngine !== 'browser-kokoro') {
+			await getVoices();
+		}
+
+		// Defer Kokoro loading until after page has loaded
+		if (TTSEngine === 'browser-kokoro') {
+			const deferredLoad = () => {
+				if ('requestIdleCallback' in window) {
+					requestIdleCallback(() => loadKokoro(), { timeout: 2000 });
+				} else {
+					// Fallback for browsers without requestIdleCallback
+					setTimeout(() => loadKokoro(), 100);
+				}
+			};
+
+			// Wait for page to be fully loaded before loading Kokoro
+			if (document.readyState === 'complete') {
+				deferredLoad();
+			} else {
+				window.addEventListener('load', deferredLoad, { once: true });
+			}
+		}
 	});
 
-	$: if (TTSEngine && TTSEngineConfig) {
-		onTTSEngineChange();
+	$: if (TTSEngine && TTSEngineConfig && TTSEngine === 'browser-kokoro') {
+		// Only trigger if page is already loaded
+		if (document.readyState === 'complete') {
+			if ('requestIdleCallback' in window) {
+				requestIdleCallback(() => onTTSEngineChange(), { timeout: 2000 });
+			} else {
+				setTimeout(() => onTTSEngineChange(), 100);
+			}
+		}
 	}
 
 	const onTTSEngineChange = async () => {
@@ -124,9 +163,12 @@
 				TTSModelProgress = null;
 				TTSModelLoading = true;
 
+				// Lazy load the KokoroTTS module
+				const KokoroTTSClass = await loadKokoroTTSModule();
+
 				const model_id = 'onnx-community/Kokoro-82M-v1.0-ONNX';
 
-				TTSModel = await KokoroTTS.from_pretrained(model_id, {
+				TTSModel = await KokoroTTSClass.from_pretrained(model_id, {
 					dtype: TTSEngineConfig.dtype, // Options: "fp32", "fp16", "q8", "q4", "q4f16"
 					device: !!navigator?.gpu ? 'webgpu' : 'wasm', // Detect WebGPU
 					progress_callback: (e) => {
@@ -197,19 +239,7 @@
 					{$i18n.t('Instant Auto-Send After Voice Transcription')}
 				</div>
 
-				<button
-					class="p-1 px-3 text-xs flex rounded-sm transition"
-					on:click={() => {
-						toggleSpeechAutoSend();
-					}}
-					type="button"
-				>
-					{#if speechAutoSend === true}
-						<span class="ml-2 self-center">{$i18n.t('On')}</span>
-					{:else}
-						<span class="ml-2 self-center">{$i18n.t('Off')}</span>
-					{/if}
-				</button>
+				<Switch bind:state={speechAutoSend} on:change={() => saveSettings({ speechAutoSend })} />
 			</div>
 		</div>
 
@@ -252,19 +282,7 @@
 			<div class=" py-0.5 flex w-full justify-between">
 				<div class=" self-center text-xs font-medium">{$i18n.t('Auto-playback response')}</div>
 
-				<button
-					class="p-1 px-3 text-xs flex rounded-sm transition"
-					on:click={() => {
-						toggleResponseAutoPlayback();
-					}}
-					type="button"
-				>
-					{#if responseAutoPlayback === true}
-						<span class="ml-2 self-center">{$i18n.t('On')}</span>
-					{:else}
-						<span class="ml-2 self-center">{$i18n.t('Off')}</span>
-					{/if}
-				</button>
+				<Switch bind:state={responseAutoPlayback} on:change={() => saveSettings({ responseAutoPlayback })} />
 			</div>
 
 			<div class=" py-0.5 flex w-full justify-between">
