@@ -2,6 +2,7 @@
 	import { onMount, onDestroy, tick } from 'svelte';
 	import { getContext } from 'svelte';
 	import { toast } from 'svelte-sonner';
+	import { browser } from '$app/environment';
 	import Modal from '$lib/components/common/Modal.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import { getEmbeddingsVisualization } from '$lib/apis/metrics';
@@ -12,24 +13,46 @@
 	export let show = false;
 
 	let loading = false;
-	let plotlyLoaded = false;
-	let plotly: any = null;
+	let deckLoaded = false;
+	let deck: any = null;
 	let plotDiv: HTMLDivElement;
 	let plotData: any = null;
+	let deckInstance: any = null;
+	let isDark = false;
+	let darkModeObserver: MutationObserver | null = null;
+	let tooltip: HTMLDivElement;
 
-	// Dynamically import Plotly.js
-	const loadPlotly = async () => {
-		if (plotlyLoaded) return;
+	// Check if dark mode is active
+	const checkDarkMode = () => {
+		if (!browser) return false;
+		return document.documentElement.classList.contains('dark');
+	};
+
+	// Dynamically import deck.gl
+	const loadDeckGL = async () => {
+		if (deckLoaded) return;
 
 		try {
-			// Dynamic import - @vite-ignore tells Vite to skip analyzing this import
-			// This allows the import to work even if the package isn't installed at build time
-			const plotlyModule = await import(/* @vite-ignore */ 'plotly.js-dist-min');
-			plotly = plotlyModule.default || plotlyModule;
-			plotlyLoaded = true;
+			// Dynamic imports - @vite-ignore tells Vite to skip analyzing these imports
+			const [deckCore, deckLayers] = await Promise.all([
+				import(/* @vite-ignore */ '@deck.gl/core'),
+				import(/* @vite-ignore */ '@deck.gl/layers')
+			]);
+
+			deck = {
+				Deck: deckCore.Deck,
+				ScatterplotLayer: deckLayers.ScatterplotLayer,
+				OrbitView: deckCore.OrbitView,
+				COORDINATE_SYSTEM: deckCore.COORDINATE_SYSTEM
+			};
+			deckLoaded = true;
 		} catch (error: any) {
-			console.error('Error loading Plotly.js:', error);
-			toast.error($i18n.t('Failed to load visualization library. Please install: npm install plotly.js-dist-min'));
+			console.error('Error loading deck.gl:', error);
+			toast.error(
+				$i18n.t(
+					'Failed to load visualization library. Please install: npm install @deck.gl/core @deck.gl/layers'
+				)
+			);
 			throw error;
 		}
 	};
@@ -39,26 +62,13 @@
 
 		loading = true;
 		try {
-			// Load Plotly first
-			console.log('[EmbeddingsVisualizer] Loading Plotly...');
-			await loadPlotly();
-			console.log('[EmbeddingsVisualizer] Plotly loaded:', !!plotly);
+			isDark = checkDarkMode();
+			await loadDeckGL();
 
-			// Fetch data from API
 			const token = localStorage.token;
-			console.log('[EmbeddingsVisualizer] Fetching data from API...');
 			const data = await getEmbeddingsVisualization(token);
-			console.log('[EmbeddingsVisualizer] Data received:', {
-				hasData: !!data,
-				xLength: data?.x?.length,
-				yLength: data?.y?.length,
-				zLength: data?.z?.length,
-				labelsLength: data?.labels?.length,
-				collectionsLength: data?.collection_names?.length
-			});
 
 			if (!data || data.x.length === 0) {
-				console.error('[EmbeddingsVisualizer] No data or empty x array');
 				toast.error($i18n.t('No embeddings found to visualize'));
 				loading = false;
 				plotData = null;
@@ -66,126 +76,183 @@
 			}
 
 			plotData = data;
-			
-			// Set loading to false FIRST so the conditional renders the plotDiv
 			loading = false;
-			
-			// Wait for Svelte to update the DOM and render the plotDiv
+
+			// Wait for DOM to render
 			await tick();
-			
-			// Wait a bit more for the modal to fully render the div
+
+			// Wait for modal to fully render
 			let attempts = 0;
-			while (!plotDiv && attempts < 20) {
+			while ((!plotDiv || !tooltip) && attempts < 20) {
 				await new Promise((resolve) => setTimeout(resolve, 50));
 				attempts++;
 			}
-			
-			// Double-check plotDiv is available
-			if (!plotDiv) {
-				console.error('[EmbeddingsVisualizer] plotDiv not available after wait, attempts:', attempts);
+
+			if (!plotDiv || !tooltip) {
+				console.error('[EmbeddingsVisualizer] DOM elements not available');
 				return;
 			}
-			
-			console.log('[EmbeddingsVisualizer] DOM ready, plotDiv:', {
-				exists: !!plotDiv,
-				width: plotDiv.offsetWidth,
-				height: plotDiv.offsetHeight,
-				plotly: !!plotly,
-				attempts
-			});
 
-			// Create 3D scatter plot
-			if (plotDiv && plotly) {
-				console.log('[EmbeddingsVisualizer] Creating plot...');
+			// Ensure modal is visible and has dimensions
+			await new Promise((resolve) => setTimeout(resolve, 100));
+			if (plotDiv.offsetWidth === 0 || plotDiv.offsetHeight === 0) {
+				await new Promise((resolve) => setTimeout(resolve, 200));
+			}
+
+			if (plotDiv && deck) {
+				// Clean up old instance if it exists
+				if (deckInstance) {
+					try {
+						deckInstance.finalize();
+					} catch (e) {
+						// Ignore cleanup errors
+					}
+					deckInstance = null;
+				}
+
 				// Group by collection for color coding
 				const uniqueCollections = [...new Set(data.collection_names)];
-				// Use a simple color palette (Plotly's default colors)
+
+				// Color palette - works well in both light and dark mode
 				const colors = [
-					'#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
-					'#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'
+					[31, 119, 180], // Blue
+					[255, 127, 14], // Orange
+					[44, 160, 44], // Green
+					[214, 39, 40], // Red
+					[148, 103, 189], // Purple
+					[140, 86, 75], // Brown
+					[227, 119, 194], // Pink
+					[127, 127, 127], // Gray
+					[188, 189, 34], // Yellow-green
+					[23, 190, 207] // Cyan
 				];
-				
-				const traces = uniqueCollections.map((collection, idx) => {
-					const indices = data.collection_names
-						.map((name, i) => name === collection ? i : -1)
-						.filter(i => i !== -1);
 
-					return {
-						x: indices.map(i => data.x[i]),
-						y: indices.map(i => data.y[i]),
-						z: indices.map(i => data.z[i]),
-						mode: 'markers',
-						type: 'scatter3d',
-						name: collection,
-						text: indices.map(i => data.labels[i]),
-						hovertemplate: '<b>%{text}</b><br>' +
-							'Collection: ' + collection + '<br>' +
-							'X: %{x}<br>Y: %{y}<br>Z: %{z}<extra></extra>',
-						marker: {
-							size: 5,
-							color: colors[idx % colors.length],
-							opacity: 0.7
-						}
-					};
+				// Normalize data to center around origin
+				const minX = Math.min(...data.x);
+				const maxX = Math.max(...data.x);
+				const minY = Math.min(...data.y);
+				const maxY = Math.max(...data.y);
+				const minZ = Math.min(...data.z);
+				const maxZ = Math.max(...data.z);
+
+				const centerX = (minX + maxX) / 2;
+				const centerY = (minY + maxY) / 2;
+				const centerZ = (minZ + maxZ) / 2;
+				const range = Math.max(maxX - minX, maxY - minY, maxZ - minZ);
+				const scale = range > 0 ? 2 / range : 1;
+
+				// Prepare data points with normalized positions
+				const normalizedPoints = data.x.map((x: number, i: number) => ({
+					position: [
+						(x - centerX) * scale,
+						(data.y[i] - centerY) * scale,
+						(data.z[i] - centerZ) * scale
+					],
+					label: data.labels[i],
+					collection: data.collection_names[i],
+					collectionIdx: uniqueCollections.indexOf(data.collection_names[i])
+				}));
+
+				// Create layers grouped by collection
+				const normalizedLayers = uniqueCollections.map((collection, idx) => {
+					const collectionPoints = normalizedPoints.filter((p) => p.collection === collection);
+					const color = colors[idx % colors.length];
+					const adjustedColor = isDark ? color.map((c) => Math.min(255, c + 30)) : color;
+
+					return new deck.ScatterplotLayer({
+						id: `scatter-${idx}`,
+						data: collectionPoints,
+						pickable: true,
+						opacity: 0.8,
+						stroked: false,
+						filled: true,
+						radiusScale: 1,
+						radiusMinPixels: 4,
+						radiusMaxPixels: 8,
+						radiusUnits: 'pixels',
+						coordinateSystem: deck.COORDINATE_SYSTEM.IDENTITY,
+						getPosition: (d: any) => d.position,
+						getRadius: 1,
+						getFillColor: adjustedColor
+					});
 				});
 
-				const layout = {
-					title: {
-						text: 'Embeddings 3D Visualization (t-SNE)',
-						font: { size: 16 }
+				// Create deck instance
+				deckInstance = new deck.Deck({
+					parent: plotDiv,
+					width: plotDiv.offsetWidth,
+					height: plotDiv.offsetHeight,
+					initialViewState: {
+						target: [0, 0, 0],
+						rotationX: 30,
+						rotationOrbit: 0,
+						orbitAxis: 'Y',
+						fov: 50,
+						zoom: 8.0
 					},
-					scene: {
-						xaxis: { title: 'X' },
-						yaxis: { title: 'Y' },
-						zaxis: { title: 'Z' },
-						camera: {
-							eye: { x: 1.5, y: 1.5, z: 1.5 }
+					controller: true,
+					views: new deck.OrbitView({
+						fov: 50,
+						orbitAxis: 'Y'
+					}),
+					layers: normalizedLayers,
+					style: {
+						backgroundColor: 'transparent'
+					},
+					onHover: (info: any) => {
+						if (info.object && tooltip) {
+							plotDiv.style.cursor = 'pointer';
+							tooltip.style.display = 'block';
+							tooltip.textContent = info.object.label;
+							if (info.x !== undefined && info.y !== undefined) {
+								tooltip.style.left = `${info.x + 15}px`;
+								tooltip.style.top = `${info.y - 35}px`;
+							}
+						} else {
+							plotDiv.style.cursor = 'default';
+							tooltip.style.display = 'none';
 						}
-					},
-					margin: { l: 0, r: 0, t: 40, b: 0 },
-					height: 600,
-					showlegend: true,
-					legend: {
-						x: 0,
-						y: 1,
-						bgcolor: 'rgba(255, 255, 255, 0.8)'
 					}
-				};
-
-				const config = {
-					responsive: true,
-					displayModeBar: true,
-					displaylogo: false,
-					modeBarButtonsToRemove: ['lasso2d', 'select2d']
-				};
-
-				console.log('[EmbeddingsVisualizer] Calling plotly.newPlot with', {
-					tracesCount: traces.length,
-					totalPoints: traces.reduce((sum, t) => sum + (t.x?.length || 0), 0),
-					layout,
-					config
 				});
 
-				await plotly.newPlot(plotDiv, traces, layout, config);
-				console.log('[EmbeddingsVisualizer] Plot created successfully');
-			} else {
-				console.error('[EmbeddingsVisualizer] Missing plotDiv or plotly:', {
-					plotDiv: !!plotDiv,
-					plotly: !!plotly
+				// Trigger initial render by simulating a tiny user interaction
+				await tick();
+				requestAnimationFrame(() => {
+					requestAnimationFrame(() => {
+						if (deckInstance && plotDiv) {
+							deckInstance.setProps({ layers: normalizedLayers });
+							setTimeout(() => {
+								const canvas = plotDiv.querySelector('canvas');
+								if (canvas) {
+									const wheelEvent = new WheelEvent('wheel', {
+										bubbles: true,
+										cancelable: true,
+										clientX: plotDiv.offsetWidth / 2,
+										clientY: plotDiv.offsetHeight / 2,
+										deltaY: 0.1,
+										deltaMode: 0
+									});
+									canvas.dispatchEvent(wheelEvent);
+								}
+							}, 100);
+						}
+					});
 				});
 			}
 		} catch (error: any) {
-			console.error('[EmbeddingsVisualizer] Error visualizing embeddings:', error);
-			toast.error(error?.detail || error?.message || $i18n.t('Failed to load embeddings visualization'));
+			console.error('[EmbeddingsVisualizer] Error:', error);
+			toast.error(
+				error?.detail || error?.message || $i18n.t('Failed to load embeddings visualization')
+			);
 			loading = false;
 		}
 	};
 
-	// Clean up Plotly on close
 	const cleanup = () => {
-		if (plotDiv && plotly) {
+		if (deckInstance) {
 			try {
-				plotly.purge(plotDiv);
+				deckInstance.finalize();
+				deckInstance = null;
 			} catch (e) {
 				// Ignore cleanup errors
 			}
@@ -199,14 +266,34 @@
 		cleanup();
 	}
 
+	onMount(() => {
+		if (!browser) return;
+
+		darkModeObserver = new MutationObserver(() => {
+			const newIsDark = checkDarkMode();
+			if (newIsDark !== isDark && deckInstance && plotData) {
+				isDark = newIsDark;
+				fetchAndVisualize();
+			}
+		});
+
+		darkModeObserver.observe(document.documentElement, {
+			attributes: true,
+			attributeFilter: ['class']
+		});
+	});
+
 	onDestroy(() => {
+		if (darkModeObserver) {
+			darkModeObserver.disconnect();
+			darkModeObserver = null;
+		}
 		cleanup();
 	});
 </script>
 
 <Modal bind:show size="xl" className="bg-white dark:bg-gray-900 rounded-2xl p-6">
 	<div class="flex flex-col h-full">
-		<!-- Header -->
 		<div class="flex justify-between items-center mb-4">
 			<h2 class="text-xl font-semibold dark:text-gray-200">
 				{$i18n.t('Embeddings Visualizer')}
@@ -215,11 +302,18 @@
 				class="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition"
 				on:click={() => (show = false)}
 			>
-				<XMark className="w-5 h-5" />
+				<XMark className="w-5 h-5 text-gray-500 dark:text-gray-400" />
 			</button>
 		</div>
+		<span
+			class="text-xs text-gray-500 dark:text-gray-400 ml-1 mt-0.5"
+			style="margin-top: -0.5rem; display: block;"
+		>
+			{$i18n.t(
+				'Each point represents a chunk of text, so you may see multiple points from the same document.'
+			)}
+		</span>
 
-		<!-- Content -->
 		<div class="flex-1 min-h-0" style="min-height: 600px;">
 			{#if loading}
 				<div class="flex flex-col items-center justify-center h-full">
@@ -232,14 +326,24 @@
 					</p>
 				</div>
 			{:else if plotData && plotData.x.length > 0}
-				<!-- Plot container - always render when we have data -->
-				<div bind:this={plotDiv} class="w-full" style="height: 600px; min-height: 600px; display: block;"></div>
+				<div
+					class="relative w-full rounded-lg overflow-hidden"
+					style="height: 600px; min-height: 600px;"
+				>
+					<div bind:this={plotDiv} class="w-full h-full"></div>
+					<div
+						bind:this={tooltip}
+						class="absolute pointer-events-none z-10 px-2 py-1 text-xs rounded shadow-lg bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 hidden whitespace-nowrap"
+						style="left: 0; top: 0;"
+					></div>
+				</div>
 			{:else}
-				<div class="flex flex-col items-center justify-center h-full text-gray-500 dark:text-gray-400">
+				<div
+					class="flex flex-col items-center justify-center h-full text-gray-500 dark:text-gray-400"
+				>
 					<p class="text-sm">{$i18n.t('No embeddings data available')}</p>
 				</div>
 			{/if}
 		</div>
 	</div>
 </Modal>
-
