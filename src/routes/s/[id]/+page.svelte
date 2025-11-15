@@ -108,19 +108,25 @@
 						? chatContent.models
 						: [chatContent.models ?? ''];
 
-				// Handle messages array without content (JOIN with history.messages if available)
+				// Handle messages array without content, sources, or files (JOIN with history.messages if available)
 				if (chatContent.messages && Array.isArray(chatContent.messages) && chatContent.history?.messages) {
 					const messagesMap = chatContent.history.messages;
 					for (const message of chatContent.messages) {
 						if (message && message.id) {
 							const messageId = String(message.id);
-							// If message lacks content, look it up from history.messages
-							if (!message.content && messageId in messagesMap && messagesMap[messageId].content) {
-								message.content = messagesMap[messageId].content;
-							}
-							// Also merge any other missing fields
 							if (messageId in messagesMap) {
 								const historyMsg = messagesMap[messageId];
+								// If message lacks content, sources, or files, look them up from history.messages
+								if (!message.content && historyMsg.content) {
+									message.content = historyMsg.content;
+								}
+								if (!message.sources && historyMsg.sources) {
+									message.sources = historyMsg.sources;
+								}
+								if (!message.files && historyMsg.files) {
+									message.files = historyMsg.files;
+								}
+								// Also merge any other missing fields
 								for (const key in historyMsg) {
 									if (key !== 'id' && (message[key] === undefined || message[key] === null)) {
 										message[key] = historyMsg[key];

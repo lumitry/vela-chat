@@ -586,18 +586,22 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
                 msg_dict = messages_dict.get(msg_id_str, {}) if msg_id_str else {}
 
                 # Build message entry for messages array - should match history.messages structure
-                # Strip content field to reduce bandwidth (frontend will JOIN with history.messages)
-                # Exception: Keep content for exports (embed_files_as_base64=True) for portability
+                # Strip content, sources, and files fields to reduce bandwidth (frontend will JOIN with history.messages)
+                # Exception: Keep these fields for exports (embed_files_as_base64=True) for portability
                 msg_entry = {
                     "id": msg_dict.get("id"),
                     "role": msg_dict.get("role"),
                     "timestamp": msg_dict.get("timestamp"),
                 }
                 
-                # Only include content for exports
+                # Only include content, sources, and files for exports
                 if embed_files_as_base64:
                     if "content" in msg_dict:
                         msg_entry["content"] = msg_dict["content"]
+                    if "sources" in msg_dict:
+                        msg_entry["sources"] = msg_dict["sources"]
+                    if "files" in msg_dict:
+                        msg_entry["files"] = msg_dict["files"]
 
                 # Add all fields that are in history.messages
                 if "parentId" in msg_dict:
@@ -618,15 +622,11 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
                     msg_entry["lastSentence"] = msg_dict["lastSentence"]
                 if "models" in msg_dict:
                     msg_entry["models"] = msg_dict["models"]
-                if "files" in msg_dict:
-                    msg_entry["files"] = msg_dict["files"]
 
                 # Usage goes into "usage" field
                 if msg_dict.get("usage"):
                     msg_entry["usage"] = msg_dict["usage"]
 
-                if msg_dict.get("sources"):
-                    msg_entry["sources"] = msg_dict["sources"]
                 if msg_dict.get("merged"):
                     msg_entry["merged"] = msg_dict["merged"]
 
@@ -690,11 +690,18 @@ def legacy_to_normalized_format(chat_id: str, legacy_chat: Dict, regenerate_ids:
             for msg in legacy_chat["messages"]:
                 if isinstance(msg, dict) and "id" in msg:
                     msg_id = str(msg["id"])
-                    # If message lacks content, try to get it from history.messages
-                    if "content" not in msg or msg.get("content") is None:
-                        if msg_id in history_messages_dict and "content" in history_messages_dict[msg_id]:
-                            msg["content"] = history_messages_dict[msg_id]["content"]
+                    # If message lacks content, sources, or files, try to get them from history.messages
+                    if msg_id in history_messages_dict:
+                        history_msg = history_messages_dict[msg_id]
+                        if ("content" not in msg or msg.get("content") is None) and "content" in history_msg:
+                            msg["content"] = history_msg["content"]
                             log.debug(f"legacy_to_normalized_format: Looked up content for message {msg_id} from history.messages")
+                        if ("sources" not in msg or msg.get("sources") is None) and "sources" in history_msg:
+                            msg["sources"] = history_msg["sources"]
+                            log.debug(f"legacy_to_normalized_format: Looked up sources for message {msg_id} from history.messages")
+                        if ("files" not in msg or msg.get("files") is None) and "files" in history_msg:
+                            msg["files"] = history_msg["files"]
+                            log.debug(f"legacy_to_normalized_format: Looked up files for message {msg_id} from history.messages")
                     messages[msg_id] = msg
             # Use the last message's ID as current_id if not set
             if not current_id and legacy_chat["messages"]:
@@ -787,12 +794,19 @@ def legacy_to_normalized_format(chat_id: str, legacy_chat: Dict, regenerate_ids:
             error_count += 1
             continue
 
-        # If message lacks content, try to look it up from history.messages
-        # This handles the case where frontend sends messages array without content
-        if "content" not in msg_data or msg_data.get("content") is None:
-            if original_id_str in history_messages_dict and "content" in history_messages_dict[original_id_str]:
-                msg_data["content"] = history_messages_dict[original_id_str]["content"]
+        # If message lacks content, sources, or files, try to look them up from history.messages
+        # This handles the case where frontend sends messages array without these fields
+        if original_id_str in history_messages_dict:
+            history_msg = history_messages_dict[original_id_str]
+            if ("content" not in msg_data or msg_data.get("content") is None) and "content" in history_msg:
+                msg_data["content"] = history_msg["content"]
                 log.debug(f"legacy_to_normalized_format: Looked up content for message {msg_id_str} from history.messages")
+            if ("sources" not in msg_data or msg_data.get("sources") is None) and "sources" in history_msg:
+                msg_data["sources"] = history_msg["sources"]
+                log.debug(f"legacy_to_normalized_format: Looked up sources for message {msg_id_str} from history.messages")
+            if ("files" not in msg_data or msg_data.get("files") is None) and "files" in history_msg:
+                msg_data["files"] = history_msg["files"]
+                log.debug(f"legacy_to_normalized_format: Looked up files for message {msg_id_str} from history.messages")
 
         # Check if message exists
         existing = None if regenerate_ids else ChatMessages.get_message_by_id(msg_id_str)

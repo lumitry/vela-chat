@@ -1086,21 +1086,26 @@
 						const messagesMap = fullChat.chat.history.messages;
 						let currentId = fullChat.chat.history.currentId || null;
 
-						// JOIN operation: Populate content in messages array from history.messages
-						// This handles the case where backend strips content from messages array to reduce bandwidth
+						// JOIN operation: Populate content, sources, and files in messages array from history.messages
+						// This handles the case where backend strips these fields from messages array to reduce bandwidth
 						if (fullChat.chat.messages && Array.isArray(fullChat.chat.messages)) {
 							for (const message of fullChat.chat.messages) {
 								if (message && message.id) {
 									const messageId = String(message.id);
-									// If message lacks content, look it up from history.messages
-									if (!message.content && messageId in messagesMap && messagesMap[messageId].content) {
-										message.content = messagesMap[messageId].content;
-									}
-									// Also merge any other missing fields that might be in history.messages
-									// but preserve fields that are already in the message (like childrenIds, modelIdx, etc.)
 									if (messageId in messagesMap) {
 										const historyMsg = messagesMap[messageId];
-										// Only merge fields that are missing in message but present in history
+										// If message lacks content, sources, or files, look them up from history.messages
+										if (!message.content && historyMsg.content) {
+											message.content = historyMsg.content;
+										}
+										if (!message.sources && historyMsg.sources) {
+											message.sources = historyMsg.sources;
+										}
+										if (!message.files && historyMsg.files) {
+											message.files = historyMsg.files;
+										}
+										// Also merge any other missing fields that might be in history.messages
+										// but preserve fields that are already in the message (like childrenIds, modelIdx, etc.)
 										for (const key in historyMsg) {
 											if (key !== 'id' && (message[key] === undefined || message[key] === null)) {
 												message[key] = historyMsg[key];
@@ -1242,9 +1247,9 @@
 
 		if ($chatId == chatId) {
 			if (!$temporaryChatEnabled) {
-				// Strip content from messages array to reduce bandwidth (backend will look it up from history.messages)
+				// Strip content, sources, and files from messages array to reduce bandwidth (backend will look them up from history.messages)
 				const messagesWithoutContent = messages.map((m) => {
-					const { content, ...rest } = m;
+					const { content, sources, files, ...rest } = m;
 					return rest;
 				});
 				chat = await updateChatById(localStorage.token, chatId, {
