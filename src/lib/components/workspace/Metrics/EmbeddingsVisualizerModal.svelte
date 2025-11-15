@@ -21,11 +21,106 @@
 	let isDark = false;
 	let darkModeObserver: MutationObserver | null = null;
 	let tooltip: HTMLDivElement;
+	let searchQuery = '';
 
-	// Check if dark mode is active
+	const COLOR_PALETTE = [
+		[31, 119, 180],
+		[255, 127, 14],
+		[44, 160, 44],
+		[214, 39, 40],
+		[148, 103, 189],
+		[140, 86, 75],
+		[227, 119, 194],
+		[127, 127, 127],
+		[188, 189, 34],
+		[23, 190, 207]
+	];
+
+	const OPACITY_ALPHA = {
+		MATCH: 230, // 0.9 opacity
+		NO_MATCH: 80, // ~0.31 opacity
+		DEFAULT: 204 // 0.8 opacity
+	};
+
 	const checkDarkMode = () => {
 		if (!browser) return false;
 		return document.documentElement.classList.contains('dark');
+	};
+
+	const normalizeData = (data: any) => {
+		const minX = Math.min(...data.x);
+		const maxX = Math.max(...data.x);
+		const minY = Math.min(...data.y);
+		const maxY = Math.max(...data.y);
+		const minZ = Math.min(...data.z);
+		const maxZ = Math.max(...data.z);
+		const centerX = (minX + maxX) / 2;
+		const centerY = (minY + maxY) / 2;
+		const centerZ = (minZ + maxZ) / 2;
+		const range = Math.max(maxX - minX, maxY - minY, maxZ - minZ);
+		const scale = range > 0 ? 2 / range : 1;
+
+		return data.x.map((x: number, i: number) => ({
+			position: [
+				(x - centerX) * scale,
+				(data.y[i] - centerY) * scale,
+				(data.z[i] - centerZ) * scale
+			],
+			label: data.labels[i],
+			collection: data.collection_names[i]
+		}));
+	};
+
+	const createLayers = (normalizedPoints: any[], uniqueCollections: any[], queryLower: string) => {
+		return uniqueCollections.map((collection, idx) => {
+			const collectionPoints = normalizedPoints.filter((p: any) => p.collection === collection);
+			const color = COLOR_PALETTE[idx % COLOR_PALETTE.length];
+			const adjustedColor = isDark ? color.map((c) => Math.min(255, c + 30)) : color;
+
+			const getFillColorWithOpacity = queryLower
+				? (d: any) => {
+						const labelMatch = d.label?.toLowerCase().includes(queryLower);
+						const alpha = labelMatch ? OPACITY_ALPHA.MATCH : OPACITY_ALPHA.NO_MATCH;
+						return [...adjustedColor, alpha];
+					}
+				: [...adjustedColor, OPACITY_ALPHA.DEFAULT];
+
+			return new deck.ScatterplotLayer({
+				id: `scatter-${idx}`,
+				data: collectionPoints,
+				pickable: true,
+				opacity: 1.0,
+				stroked: false,
+				filled: true,
+				radiusScale: 1,
+				radiusMinPixels: 4,
+				radiusMaxPixels: 8,
+				radiusUnits: 'pixels',
+				coordinateSystem: deck.COORDINATE_SYSTEM.IDENTITY,
+				getPosition: (d: any) => d.position,
+				getRadius: 1,
+				getFillColor: getFillColorWithOpacity,
+				updateTriggers: {
+					getFillColor: queryLower
+				}
+			});
+		});
+	};
+
+	const triggerRender = () => {
+		if (!deckInstance || !plotDiv) return;
+		const canvas = plotDiv.querySelector('canvas');
+		if (canvas) {
+			const wheelEvent = new WheelEvent('wheel', {
+				bubbles: true,
+				cancelable: true,
+				clientX: plotDiv.offsetWidth / 2,
+				clientY: plotDiv.offsetHeight / 2,
+				deltaY: 0.1,
+				deltaMode: 0
+			});
+			canvas.dispatchEvent(wheelEvent);
+		}
 	};
 
 	// Dynamically import deck.gl
@@ -100,7 +195,6 @@
 			}
 
 			if (plotDiv && deck) {
-				// Clean up old instance if it exists
 				if (deckInstance) {
 					try {
 						deckInstance.finalize();
@@ -110,72 +204,10 @@
 					deckInstance = null;
 				}
 
-				// Group by collection for color coding
 				const uniqueCollections = [...new Set(data.collection_names)];
-
-				// Color palette - works well in both light and dark mode
-				const colors = [
-					[31, 119, 180], // Blue
-					[255, 127, 14], // Orange
-					[44, 160, 44], // Green
-					[214, 39, 40], // Red
-					[148, 103, 189], // Purple
-					[140, 86, 75], // Brown
-					[227, 119, 194], // Pink
-					[127, 127, 127], // Gray
-					[188, 189, 34], // Yellow-green
-					[23, 190, 207] // Cyan
-				];
-
-				// Normalize data to center around origin
-				const minX = Math.min(...data.x);
-				const maxX = Math.max(...data.x);
-				const minY = Math.min(...data.y);
-				const maxY = Math.max(...data.y);
-				const minZ = Math.min(...data.z);
-				const maxZ = Math.max(...data.z);
-
-				const centerX = (minX + maxX) / 2;
-				const centerY = (minY + maxY) / 2;
-				const centerZ = (minZ + maxZ) / 2;
-				const range = Math.max(maxX - minX, maxY - minY, maxZ - minZ);
-				const scale = range > 0 ? 2 / range : 1;
-
-				// Prepare data points with normalized positions
-				const normalizedPoints = data.x.map((x: number, i: number) => ({
-					position: [
-						(x - centerX) * scale,
-						(data.y[i] - centerY) * scale,
-						(data.z[i] - centerZ) * scale
-					],
-					label: data.labels[i],
-					collection: data.collection_names[i],
-					collectionIdx: uniqueCollections.indexOf(data.collection_names[i])
-				}));
-
-				// Create layers grouped by collection
-				const normalizedLayers = uniqueCollections.map((collection, idx) => {
-					const collectionPoints = normalizedPoints.filter((p) => p.collection === collection);
-					const color = colors[idx % colors.length];
-					const adjustedColor = isDark ? color.map((c) => Math.min(255, c + 30)) : color;
-
-					return new deck.ScatterplotLayer({
-						id: `scatter-${idx}`,
-						data: collectionPoints,
-						pickable: true,
-						opacity: 0.8,
-						stroked: false,
-						filled: true,
-						radiusScale: 1,
-						radiusMinPixels: 4,
-						radiusMaxPixels: 8,
-						radiusUnits: 'pixels',
-						coordinateSystem: deck.COORDINATE_SYSTEM.IDENTITY,
-						getPosition: (d: any) => d.position,
-						getRadius: 1,
-						getFillColor: adjustedColor
-					});
-				});
+				const normalizedPoints = normalizeData(data);
+				const queryLower = searchQuery.toLowerCase().trim();
+				const normalizedLayers = createLayers(normalizedPoints, uniqueCollections, queryLower);
 
 				// Create deck instance
 				deckInstance = new deck.Deck({
@@ -201,7 +233,7 @@
 					},
 					onHover: (info: any) => {
 						if (info.object && tooltip) {
-							plotDiv.style.cursor = 'pointer';
+							// plotDiv.style.cursor = 'pointer';
 							tooltip.style.display = 'block';
 							tooltip.textContent = info.object.label;
 							if (info.x !== undefined && info.y !== undefined) {
@@ -209,32 +241,18 @@
 								tooltip.style.top = `${info.y - 35}px`;
 							}
 						} else {
-							plotDiv.style.cursor = 'default';
+							// plotDiv.style.cursor = 'default';
 							tooltip.style.display = 'none';
 						}
 					}
 				});
 
-				// Trigger initial render by simulating a tiny user interaction
 				await tick();
 				requestAnimationFrame(() => {
 					requestAnimationFrame(() => {
-						if (deckInstance && plotDiv) {
+						if (deckInstance) {
 							deckInstance.setProps({ layers: normalizedLayers });
-							setTimeout(() => {
-								const canvas = plotDiv.querySelector('canvas');
-								if (canvas) {
-									const wheelEvent = new WheelEvent('wheel', {
-										bubbles: true,
-										cancelable: true,
-										clientX: plotDiv.offsetWidth / 2,
-										clientY: plotDiv.offsetHeight / 2,
-										deltaY: 0.1,
-										deltaMode: 0
-									});
-									canvas.dispatchEvent(wheelEvent);
-								}
-							}, 100);
+							setTimeout(triggerRender, 100);
 						}
 					});
 				});
@@ -248,6 +266,18 @@
 		}
 	};
 
+	const updateLayersForSearch = () => {
+		if (!deckInstance || !plotData || !deck) return;
+
+		const uniqueCollections = [...new Set(plotData.collection_names)];
+		const normalizedPoints = normalizeData(plotData);
+		const queryLower = searchQuery.toLowerCase().trim();
+		const updatedLayers = createLayers(normalizedPoints, uniqueCollections, queryLower);
+
+		deckInstance.setProps({ layers: updatedLayers });
+		requestAnimationFrame(triggerRender);
+	};
+
 	const cleanup = () => {
 		if (deckInstance) {
 			try {
@@ -258,12 +288,17 @@
 			}
 		}
 		plotData = null;
+		searchQuery = '';
 	};
 
 	$: if (show) {
 		fetchAndVisualize();
 	} else {
 		cleanup();
+	}
+
+	$: if (deckInstance && plotData && deck && searchQuery !== undefined) {
+		updateLayersForSearch();
 	}
 
 	onMount(() => {
@@ -314,6 +349,32 @@
 			)}
 		</span>
 
+		<div class="mt-3 mb-3">
+			<div class="relative">
+				<div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+					<svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+						/>
+					</svg>
+				</div>
+				<input
+					type="text"
+					bind:value={searchQuery}
+					on:input={() => {
+						if (deckInstance && plotData && deck) {
+							updateLayersForSearch();
+						}
+					}}
+					placeholder={$i18n.t('Search documents by name...')}
+					class="w-full pl-10 pr-4 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
+				/>
+			</div>
+		</div>
+
 		<div class="flex-1 min-h-0" style="min-height: 600px;">
 			{#if loading}
 				<div class="flex flex-col items-center justify-center h-full">
@@ -326,10 +387,7 @@
 					</p>
 				</div>
 			{:else if plotData && plotData.x.length > 0}
-				<div
-					class="relative w-full rounded-lg overflow-hidden"
-					style="height: 600px; min-height: 600px;"
-				>
+				<div class="relative w-full rounded-lg overflow-hidden" style="height: 600px;">
 					<div bind:this={plotDiv} class="w-full h-full"></div>
 					<div
 						bind:this={tooltip}
