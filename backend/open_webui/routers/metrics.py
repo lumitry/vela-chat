@@ -1439,22 +1439,22 @@ async def get_embeddings_visualization(
     request: Request,
     user: UserModel = Depends(get_verified_user),
 ):
-    """Get embeddings visualization data (3D t-SNE projection)
+    """Get embeddings visualization data (3D UMAP projection)
     
-    Fetches all embeddings from user's knowledge bases, runs t-SNE to reduce to 3D,
+    Fetches all embeddings from user's knowledge bases, runs UMAP to reduce to 3D,
     and returns coordinates for 3D visualization.
     
     Note: Currently only supports ChromaDB. Other vector DBs may need additional implementation.
     """
     endpoint_start = time.time()
     try:
-        # Check if sklearn is available
+        # Check if umap is available
         try:
-            from sklearn.manifold import TSNE
+            import umap
         except ImportError:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="scikit-learn is required for embeddings visualization. Please install it: pip install scikit-learn"
+                detail="umap-learn is required for embeddings visualization. Please install it: pip install umap-learn"
             )
         
         # Check if we're using ChromaDB (for now, this is the only supported DB)
@@ -1578,27 +1578,48 @@ async def get_embeddings_visualization(
         
         log.info(f"Total embeddings to process: {len(all_embeddings)}")
         
-        # Convert to numpy array for t-SNE
+        # Convert to numpy array for UMAP
         embeddings_array = np.array(all_embeddings)
         
-        # Run t-SNE to reduce to 3D
-        log.info(f"Running t-SNE on {len(embeddings_array)} embeddings (dimension: {embeddings_array.shape[1]})...")
-        tsne_start = time.time()
+        # Run UMAP to reduce to 3D
+        log.info(f"Running UMAP on {len(embeddings_array)} embeddings (dimension: {embeddings_array.shape[1]})...")
+        umap_start = time.time()
         
-        # Use a reasonable perplexity based on sample size
-        perplexity = min(30, max(5, len(embeddings_array) - 1))
+        # Temporarily suppress numba debug logging to speed up first-time compilation
+        # Numba's JIT compilation can be very verbose and slow down execution
+        import logging as std_logging
+        numba_logger = std_logging.getLogger('numba')
+        original_level = numba_logger.level
+        numba_logger.setLevel(std_logging.WARNING)  # Only show warnings and errors
         
-        tsne = TSNE(
-            n_components=3,
-            random_state=42,
-            perplexity=perplexity,
-            max_iter=1000,
-            verbose=1 if log.level <= logging.DEBUG else 0
-        )
-        projections = tsne.fit_transform(embeddings_array)
+        try:
+            # UMAP parameters optimized for speed
+            # For small datasets, use smaller n_neighbors for faster computation
+            # n_neighbors should be ~5-15% of dataset size, but capped for speed
+            n_neighbors = min(10, max(5, len(embeddings_array) // 20))
+            if n_neighbors >= len(embeddings_array):
+                n_neighbors = max(2, len(embeddings_array) - 1)
+            
+            # Use euclidean metric - much faster than cosine
+            # Euclidean works well for normalized embeddings (which most embedding models produce)
+            reducer = umap.UMAP(
+                n_components=3,
+                # random_state=42, # cannot be used with n_jobs=-1
+                n_neighbors=n_neighbors,
+                min_dist=0.1,
+                metric='euclidean',  # Much faster than cosine
+                n_epochs=150,  # Reduced from default 500 for speed
+                low_memory=False,  # Use more memory for speed
+                verbose=False,  # Disable verbose output
+                n_jobs=-1 # parallel processing
+            )
+            projections = reducer.fit_transform(embeddings_array)
+        finally:
+            # Restore original logging level
+            numba_logger.setLevel(original_level)
         
-        tsne_time = time.time() - tsne_start
-        log.info(f"t-SNE completed in {tsne_time:.2f}s")
+        umap_time = time.time() - umap_start
+        log.info(f"UMAP completed in {umap_time:.2f}s")
         
         # Extract x, y, z coordinates
         x_coords = projections[:, 0].tolist()
@@ -1606,7 +1627,7 @@ async def get_embeddings_visualization(
         z_coords = projections[:, 2].tolist()
         
         total_time = (time.time() - endpoint_start) * 1000
-        log.info(f"[PERF] /embeddings/visualize: total time {total_time:.2f}ms (t-SNE: {tsne_time*1000:.2f}ms)")
+        log.info(f"[PERF] /embeddings/visualize: total time {total_time:.2f}ms (UMAP: {umap_time*1000:.2f}ms)")
         
         return EmbeddingVisualizationResponse(
             x=x_coords,
