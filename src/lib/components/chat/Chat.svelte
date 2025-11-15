@@ -1086,6 +1086,31 @@
 						const messagesMap = fullChat.chat.history.messages;
 						let currentId = fullChat.chat.history.currentId || null;
 
+						// JOIN operation: Populate content in messages array from history.messages
+						// This handles the case where backend strips content from messages array to reduce bandwidth
+						if (fullChat.chat.messages && Array.isArray(fullChat.chat.messages)) {
+							for (const message of fullChat.chat.messages) {
+								if (message && message.id) {
+									const messageId = String(message.id);
+									// If message lacks content, look it up from history.messages
+									if (!message.content && messageId in messagesMap && messagesMap[messageId].content) {
+										message.content = messagesMap[messageId].content;
+									}
+									// Also merge any other missing fields that might be in history.messages
+									// but preserve fields that are already in the message (like childrenIds, modelIdx, etc.)
+									if (messageId in messagesMap) {
+										const historyMsg = messagesMap[messageId];
+										// Only merge fields that are missing in message but present in history
+										for (const key in historyMsg) {
+											if (key !== 'id' && (message[key] === undefined || message[key] === null)) {
+												message[key] = historyMsg[key];
+											}
+										}
+									}
+								}
+							}
+						}
+
 						// Validate that currentId exists in messagesMap, or find a valid currentId
 						if (currentId && !messagesMap[currentId]) {
 							console.warn(
@@ -1217,9 +1242,14 @@
 
 		if ($chatId == chatId) {
 			if (!$temporaryChatEnabled) {
+				// Strip content from messages array to reduce bandwidth (backend will look it up from history.messages)
+				const messagesWithoutContent = messages.map((m) => {
+					const { content, ...rest } = m;
+					return rest;
+				});
 				chat = await updateChatById(localStorage.token, chatId, {
 					models: selectedModels,
-					messages: messages,
+					messages: messagesWithoutContent,
 					history: history,
 					params: params,
 					files: chatFiles

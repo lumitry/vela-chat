@@ -586,12 +586,18 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
                 msg_dict = messages_dict.get(msg_id_str, {}) if msg_id_str else {}
 
                 # Build message entry for messages array - should match history.messages structure
+                # Strip content field to reduce bandwidth (frontend will JOIN with history.messages)
+                # Exception: Keep content for exports (embed_files_as_base64=True) for portability
                 msg_entry = {
                     "id": msg_dict.get("id"),
                     "role": msg_dict.get("role"),
-                    "content": msg_dict.get("content"),
                     "timestamp": msg_dict.get("timestamp"),
                 }
+                
+                # Only include content for exports
+                if embed_files_as_base64:
+                    if "content" in msg_dict:
+                        msg_entry["content"] = msg_dict["content"]
 
                 # Add all fields that are in history.messages
                 if "parentId" in msg_dict:
@@ -665,6 +671,9 @@ def legacy_to_normalized_format(chat_id: str, legacy_chat: Dict, regenerate_ids:
     history = legacy_chat.get("history", {})
     messages = history.get("messages", {})
     current_id = history.get("currentId")
+    
+    # Store history.messages for content lookups (in case messages array lacks content)
+    history_messages_dict = messages if isinstance(messages, dict) else {}
 
     log.debug(f"legacy_to_normalized_format: history keys: {list(history.keys()) if isinstance(history, dict) else 'not a dict'}")
     log.debug(f"legacy_to_normalized_format: messages type: {type(messages)}, length: {len(messages) if isinstance(messages, (dict, list)) else 'N/A'}")
@@ -676,10 +685,17 @@ def legacy_to_normalized_format(chat_id: str, legacy_chat: Dict, regenerate_ids:
         if "messages" in legacy_chat and isinstance(legacy_chat["messages"], list) and len(legacy_chat["messages"]) > 0:
             log.debug(f"legacy_to_normalized_format: Converting messages list to dict format (found {len(legacy_chat['messages'])} messages in list)")
             # Convert flat messages list to history.messages dict format
+            # If messages array lacks content, try to look it up from history.messages if available
             messages = {}
             for msg in legacy_chat["messages"]:
                 if isinstance(msg, dict) and "id" in msg:
-                    messages[str(msg["id"])] = msg
+                    msg_id = str(msg["id"])
+                    # If message lacks content, try to get it from history.messages
+                    if "content" not in msg or msg.get("content") is None:
+                        if msg_id in history_messages_dict and "content" in history_messages_dict[msg_id]:
+                            msg["content"] = history_messages_dict[msg_id]["content"]
+                            log.debug(f"legacy_to_normalized_format: Looked up content for message {msg_id} from history.messages")
+                    messages[msg_id] = msg
             # Use the last message's ID as current_id if not set
             if not current_id and legacy_chat["messages"]:
                 last_msg = legacy_chat["messages"][-1]
@@ -770,6 +786,13 @@ def legacy_to_normalized_format(chat_id: str, legacy_chat: Dict, regenerate_ids:
             log.warning(f"legacy_to_normalized_format: Skipping message {msg_id_str} - msg_data is not a dict: {type(msg_data)}")
             error_count += 1
             continue
+
+        # If message lacks content, try to look it up from history.messages
+        # This handles the case where frontend sends messages array without content
+        if "content" not in msg_data or msg_data.get("content") is None:
+            if original_id_str in history_messages_dict and "content" in history_messages_dict[original_id_str]:
+                msg_data["content"] = history_messages_dict[original_id_str]["content"]
+                log.debug(f"legacy_to_normalized_format: Looked up content for message {msg_id_str} from history.messages")
 
         # Check if message exists
         existing = None if regenerate_ids else ChatMessages.get_message_by_id(msg_id_str)

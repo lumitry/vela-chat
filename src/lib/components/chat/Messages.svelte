@@ -114,10 +114,15 @@
 		if (!$temporaryChatEnabled) {
 			history = history;
 			await tick();
+			// Strip content from messages array to reduce bandwidth (backend will look it up from history.messages)
+			const messagesWithoutContent = messages.map((m) => {
+				const { content, ...rest } = m;
+				return rest;
+			});
 			await updateChatById(localStorage.token, chatId, {
 				chat: {
 					history: history,
-					messages: messages
+					messages: messagesWithoutContent
 				}
 			});
 
