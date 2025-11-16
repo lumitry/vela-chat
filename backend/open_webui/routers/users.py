@@ -159,6 +159,9 @@ async def update_user_role(form_data: UserRoleUpdateForm, user=Depends(get_admin
 
 @router.get("/user/settings", response_model=Optional[UserSettings])
 async def get_user_settings_by_session_user(request: Request, user=Depends(get_verified_user)):
+    import time
+    start_time = time.time()
+    
     user = Users.get_user_by_id(user.id)
     if user:
         settings = user.settings
@@ -175,6 +178,9 @@ async def get_user_settings_by_session_user(request: Request, user=Depends(get_v
                         from open_webui.utils.model_images import convert_file_url_to_absolute
                         ui['backgroundImageUrl'] = convert_file_url_to_absolute(request, background_image_url)
                         settings_dict['ui'] = ui
+            
+            total_time = time.time()
+            log.debug(f"[PERF] get_user_settings_by_session_user: took {(total_time - start_time) * 1000:.2f}ms")
             
             # Return as UserSettings model
             return UserSettings(**settings_dict) if settings_dict else settings

@@ -47,8 +47,10 @@
 		createNewFolder,
 		getFolders,
 		updateFolderParentIdById,
-		updateFolderIsExpandedById
+		updateFolderIsExpandedById,
+		batchUpdateFolderIsExpanded
 	} from '$lib/apis/folders';
+	import { setBatchUpdateFunction } from '$lib/utils/folderBatch';
 	import { WEBUI_BASE_URL } from '$lib/constants';
 	import { sidebarNavigationCommand, type SidebarNavigationCommand } from '$lib/stores/sidebar';
 	import { getTimeRange } from '$lib/utils';
@@ -322,34 +324,45 @@
 			currentFolder = currentFolder.parent_id ? folderMap[currentFolder.parent_id] : null;
 		}
 
-		// Expand each folder in the hierarchy from root to target
+		// Collect folders that need backend updates (batch them)
+		const foldersToUpdate = [];
 		for (const folderIdToExpand of foldersToExpand) {
 			const folder = folderMap[folderIdToExpand];
-			if (folder) {
-				try {
-					// Update backend if not already expanded
-					if (!folder.is_expanded) {
-						await updateFolderIsExpandedById(localStorage.token, folderIdToExpand, true);
+			if (folder && !folder.is_expanded) {
+				foldersToUpdate.push({ id: folderIdToExpand, isExpanded: true });
+			}
+
+			// Always update local state to trigger UI expansion
+			folders = {
+				...folders,
+				[folderIdToExpand]: {
+					...folders[folderIdToExpand],
+					is_expanded: true,
+					expansionTimestamp: Date.now() // Force UI expansion regardless of previous state
+				}
+			};
+		}
+
+		// Batch update all folders that need backend updates
+		if (foldersToUpdate.length > 0) {
+			try {
+				await batchUpdateFolderIsExpanded(localStorage.token, foldersToUpdate);
+			} catch (error) {
+				console.error('Failed to batch update folder expanded states:', error);
+				// Fallback to individual updates if batch fails
+				for (const update of foldersToUpdate) {
+					try {
+						await updateFolderIsExpandedById(localStorage.token, update.id, update.isExpanded);
+					} catch (err) {
+						console.error(`Failed to update folder ${update.id}:`, err);
 					}
-
-					// Always update local state to trigger UI expansion
-					folders = {
-						...folders,
-						[folderIdToExpand]: {
-							...folders[folderIdToExpand],
-							is_expanded: true,
-							expansionTimestamp: Date.now() // Force UI expansion regardless of previous state
-						}
-					};
-
-					// Wait for DOM to update
-					await tick();
-					await new Promise((resolve) => setTimeout(resolve, 50));
-				} catch (error) {
-					console.error(`Failed to expand folder ${folderIdToExpand}:`, error);
 				}
 			}
 		}
+
+		// Wait for DOM to update
+		await tick();
+		await new Promise((resolve) => setTimeout(resolve, 50));
 	};
 
 	const scrollToFolder = async (folderId: string) => {
@@ -635,6 +648,23 @@
 	};
 
 	onMount(async () => {
+		// Initialize shared folder batching service
+		setBatchUpdateFunction(async (updates) => {
+			try {
+				await batchUpdateFolderIsExpanded(localStorage.token, updates);
+			} catch (error) {
+				console.error('Failed to batch update folder expanded states:', error);
+				// Fallback to individual updates if batch fails
+				for (const update of updates) {
+					try {
+						await updateFolderIsExpandedById(localStorage.token, update.id, update.isExpanded);
+					} catch (err) {
+						console.error(`Failed to update folder ${update.id}:`, err);
+					}
+				}
+			}
+		});
+
 		showPinnedChat = localStorage?.showPinnedChat ? localStorage.showPinnedChat === 'true' : true;
 
 		mobile.subscribe((value) => {
@@ -674,7 +704,7 @@
 			}
 		});
 
-		await initChannels();
+		// await initChannels();
 		await initChatList();
 
 		// Listen for navigation commands from other components

@@ -1,3 +1,5 @@
+import logging
+import time
 from fastapi import APIRouter, Depends, Request, HTTPException
 from pydantic import BaseModel, ConfigDict
 
@@ -6,9 +8,12 @@ from typing import Optional
 from open_webui.utils.auth import get_admin_user, get_verified_user
 from open_webui.config import get_config, save_config
 from open_webui.config import BannerModel
+from open_webui.env import SRC_LOG_LEVELS
 
 from open_webui.utils.tools import get_tool_server_data, get_tool_servers_data
 
+log = logging.getLogger(__name__)
+log.setLevel(SRC_LOG_LEVELS["MODELS"])
 
 router = APIRouter()
 
@@ -319,4 +324,9 @@ async def get_banners(
     request: Request,
     user=Depends(get_verified_user),
 ):
-    return request.app.state.config.BANNERS
+    import time
+    start_time = time.time()
+    banners = request.app.state.config.BANNERS
+    total_time = time.time()
+    log.debug(f"[PERF] get_banners: took {(total_time - start_time) * 1000:.2f}ms")
+    return banners

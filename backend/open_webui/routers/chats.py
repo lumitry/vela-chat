@@ -280,19 +280,20 @@ async def get_user_pinned_chats_metadata(user=Depends(get_verified_user)):
     """
     Returns a lean list of pinned chats with only essential fields.
     Excludes full chat JSON and other heavy fields to reduce payload size.
+    Uses optimized query that avoids loading chat.chat JSON blobs.
     """
-    pinned_chats = Chats.get_pinned_chats_by_user_id(user.id)
+    import time
+    start_time = time.time()
+    
+    # Use fast metadata-only query that avoids loading chat.chat JSON blobs
+    pinned_chats_metadata = Chats.get_pinned_chats_metadata_by_user_id(user.id)
+    
+    total_time = time.time()
+    log.debug(f"[PERF] get_user_pinned_chats_metadata: took {(total_time - start_time) * 1000:.2f}ms for {len(pinned_chats_metadata)} chats")
     
     return [
-        ChatMetadataResponse(
-            id=chat.id,
-            title=chat.title,
-            updated_at=chat.updated_at,
-            created_at=chat.created_at,
-            pinned=chat.pinned,
-            folder_id=chat.folder_id,
-        )
-        for chat in pinned_chats
+        ChatMetadataResponse(**chat_meta)
+        for chat_meta in pinned_chats_metadata
     ]
 
 
@@ -363,8 +364,12 @@ async def get_user_archived_chats(user=Depends(get_verified_user), export: bool 
 
 @router.get("/all/tags", response_model=list[TagModel])
 async def get_all_user_tags(user=Depends(get_verified_user)):
+    import time
+    start_time = time.time()
     try:
         tags = Tags.get_tags_by_user_id(user.id)
+        total_time = time.time()
+        log.debug(f"[PERF] get_all_user_tags: took {(total_time - start_time) * 1000:.2f}ms, returned {len(tags)} tags")
         return tags
     except Exception as e:
         log.exception(e)
@@ -542,21 +547,24 @@ class ChatMetaResponse(BaseModel):
 
 @router.get("/{id}/meta", response_model=Optional[ChatMetaResponse])
 async def get_chat_meta_by_id(id: str, user=Depends(get_verified_user)):
-    # TODO make this quicker. idk how but it takes WAY too long right now
-    chat = Chats.get_chat_by_id_and_user_id(id, user.id)
-    if not chat:
+    import time
+    start_time = time.time()
+    
+    chat_metadata = Chats.get_chat_metadata_by_id_and_user_id(id, user.id)
+    if not chat_metadata:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
         )
-
-    # Extract minimal fields without returning the full chat JSON
-    chat_content = chat.chat or {}
+    
+    metadata_time = time.time()
+    log.debug(f"[PERF] get_chat_meta_by_id: metadata query took {(metadata_time - start_time) * 1000:.2f}ms")
     
     # Check if this chat uses normalized storage (has messages in chat_message table)
     from open_webui.models.chat_messages import ChatMessage
     models = None
-    params = chat_content.get("params")
+    params = chat_metadata.get("params")
+    files = None
     
     with get_db() as db:
         has_normalized = db.query(ChatMessage).filter_by(chat_id=id).first() is not None
@@ -576,29 +584,89 @@ async def get_chat_meta_by_id(id: str, user=Depends(get_verified_user)):
                     models = msg_meta["models"]
         
         # For normalized chats, params are stored in chat.params column, not chat.chat.params
-        if chat.params:
-            params = chat.params
+        if chat_metadata.get("params"):
+            params = chat_metadata["params"]
+        
+        # For normalized chats, files are stored in chat.chat.files
+        # Try to extract just the files field using PostgreSQL JSON path extraction for performance
+        # This avoids loading the entire chat.chat JSON blob
+        with get_db() as db:
+            from open_webui.models.chats import Chat
+            try:
+                dialect_name = db.bind.dialect.name
+            except (AttributeError, Exception):
+                dialect_name = None
+            
+            if dialect_name == "postgresql":
+                # Use PostgreSQL JSON path extraction to get only the files field
+                try:
+                    from sqlalchemy import text
+                    result = db.execute(
+                        text("SELECT chat->>'files' as files FROM chat WHERE id = :chat_id AND user_id = :user_id"),
+                        {"chat_id": id, "user_id": user.id}
+                    ).first()
+                    if result and result.files:
+                        import json
+                        files = json.loads(result.files) if isinstance(result.files, str) else result.files
+                    else:
+                        files = None
+                except Exception as e:
+                    log.debug(f"Failed to extract files using JSON path, falling back to full blob: {e}")
+                    # Fall back to loading the blob if JSON extraction fails
+                    chat_json = db.query(Chat.chat).filter_by(id=id, user_id=user.id).first()
+                    if chat_json and chat_json.chat and isinstance(chat_json.chat, dict):
+                        files = chat_json.chat.get("files")
+                    else:
+                        files = None
+            else:
+                # For SQLite or other databases, we need to load the blob
+                # SQLite doesn't support efficient JSON path extraction
+                chat_json = db.query(Chat.chat).filter_by(id=id, user_id=user.id).first()
+                if chat_json and chat_json.chat and isinstance(chat_json.chat, dict):
+                    files = chat_json.chat.get("files")
+                else:
+                    files = None
     else:
-        # Legacy chat, use existing chat.chat blob
-        models = chat_content.get("models")
-        if not params:
-            params = chat_content.get("params")
+        # Legacy chat - we need to load chat.chat to get models/files, but only if absolutely necessary
+        # Try to get minimal info from meta first
+        meta = chat_metadata.get("meta", {})
+        if isinstance(meta, dict):
+            # Some legacy chats might store models in meta
+            if "models" in meta:
+                models = meta["models"]
+        
+        # If we still don't have models/files, we need to load chat.chat (unavoidable for legacy)
+        # But only load a small portion if possible
+        if models is None or files is None:
+            with get_db() as db:
+                from open_webui.models.chats import Chat
+                # Use SQL to extract just the fields we need from the JSON blob
+                chat_json = db.query(Chat.chat).filter_by(id=id, user_id=user.id).first()
+                if chat_json and chat_json.chat:
+                    chat_content = chat_json.chat if isinstance(chat_json.chat, dict) else {}
+                    if models is None:
+                        models = chat_content.get("models")
+                    if files is None:
+                        files = chat_content.get("files")
+                    if params is None:
+                        params = chat_content.get("params")
+    
+    total_time = time.time()
+    log.debug(f"[PERF] get_chat_meta_by_id: total took {(total_time - start_time) * 1000:.2f}ms")
     
     return ChatMetaResponse(
-        **{
-            "id": chat.id,
-            "title": chat.title,
-            "created_at": chat.created_at,
-            "updated_at": chat.updated_at,
-            "share_id": chat.share_id,
-            "archived": chat.archived,
-            "pinned": chat.pinned,
-            "folder_id": chat.folder_id,
-            "active_message_id": getattr(chat, 'active_message_id', None),
-            "models": models,
-            "params": params,
-            "files": chat_content.get("files"),
-        }
+        id=chat_metadata["id"],
+        title=chat_metadata["title"],
+        created_at=chat_metadata["created_at"],
+        updated_at=chat_metadata["updated_at"],
+        share_id=chat_metadata["share_id"],
+        archived=chat_metadata["archived"],
+        pinned=chat_metadata["pinned"],
+        folder_id=chat_metadata["folder_id"],
+        active_message_id=chat_metadata["active_message_id"],
+        models=models,
+        params=params,
+        files=files,
     )
 
 
@@ -1314,14 +1382,26 @@ async def update_chat_folder_id_by_id(
 
 @router.get("/{id}/tags", response_model=list[TagModel])
 async def get_chat_tags_by_id(id: str, user=Depends(get_verified_user)):
-    chat = Chats.get_chat_by_id_and_user_id(id, user.id)
-    if chat:
-        tags = chat.meta.get("tags", [])
-        return Tags.get_tags_by_ids_and_user_id(tags, user.id)
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail=ERROR_MESSAGES.NOT_FOUND
-        )
+    import time
+    start_time = time.time()
+    
+    from open_webui.models.chats import Chat
+    with get_db() as db:
+        chat_meta = db.query(Chat.meta).filter_by(id=id, user_id=user.id).first()
+        if not chat_meta:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail=ERROR_MESSAGES.NOT_FOUND
+            )
+        
+        meta = chat_meta.meta if chat_meta.meta and isinstance(chat_meta.meta, dict) else {}
+        tags = meta.get("tags", [])
+    
+    tags_result = Tags.get_tags_by_ids_and_user_id(tags, user.id)
+    
+    total_time = time.time()
+    log.debug(f"[PERF] get_chat_tags_by_id: took {(total_time - start_time) * 1000:.2f}ms")
+    
+    return tags_result
 
 
 ############################

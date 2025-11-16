@@ -197,6 +197,60 @@ async def update_folder_parent_id_by_id(
             detail=ERROR_MESSAGES.NOT_FOUND,
         )
 
+############################
+# Batch Update Folder Is Expanded
+# this one has to be up here to avoid 422 unprocessable entity error. no clue why, it just does.
+############################
+
+
+class FolderExpandedUpdate(BaseModel):
+    id: str
+    is_expanded: bool
+
+
+class BatchFolderExpandedForm(BaseModel):
+    updates: list[FolderExpandedUpdate]
+
+
+@router.post("/batch/update/expanded")
+async def batch_update_folder_is_expanded(
+    form_data: BatchFolderExpandedForm, user=Depends(get_verified_user)
+):
+    """
+    Batch update folder expanded states. More efficient than individual calls.
+    """
+    import time
+    start_time = time.time()
+    
+    results = []
+    errors = []
+    
+    for update in form_data.updates:
+        try:
+            folder = Folders.get_folder_by_id_and_user_id(update.id, user.id)
+            if folder:
+                updated_folder = Folders.update_folder_is_expanded_by_id_and_user_id(
+                    update.id, user.id, update.is_expanded
+                )
+                if updated_folder:
+                    results.append(updated_folder)
+                else:
+                    errors.append({"id": update.id, "error": "Failed to update"})
+            else:
+                errors.append({"id": update.id, "error": "Folder not found"})
+        except Exception as e:
+            log.exception(f"Error updating folder {update.id}: {e}")
+            errors.append({"id": update.id, "error": str(e)})
+    
+    total_time = time.time()
+    log.debug(f"[PERF] batch_update_folder_is_expanded: took {(total_time - start_time) * 1000:.2f}ms for {len(form_data.updates)} folders")
+    
+    return {
+        "updated": results,
+        "errors": errors,
+        "success_count": len(results),
+        "error_count": len(errors),
+    }
 
 ############################
 # Update Folder Is Expanded By Id

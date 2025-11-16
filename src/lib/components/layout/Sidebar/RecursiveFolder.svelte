@@ -20,8 +20,10 @@
 		updateFolderIsExpandedById,
 		updateFolderNameById,
 		updateFolderParentIdById,
-		createNewFolder
+		createNewFolder,
+		batchUpdateFolderIsExpanded
 	} from '$lib/apis/folders';
+	import { scheduleFolderUpdate } from '$lib/utils/folderBatch';
 	import { toast } from 'svelte-sonner';
 	import {
 		getChatById,
@@ -303,25 +305,10 @@
 		}
 	};
 
-	const isExpandedUpdateHandler = async () => {
-		const res = await updateFolderIsExpandedById(localStorage.token, folderId, open).catch(
-			(error) => {
-				toast.error(`${error}`);
-				return null;
-			}
-		);
-	};
-
-	let isExpandedUpdateTimeout;
-
-	const isExpandedUpdateDebounceHandler = (open) => {
-		clearTimeout(isExpandedUpdateTimeout);
-		isExpandedUpdateTimeout = setTimeout(() => {
-			isExpandedUpdateHandler();
-		}, 500);
-	};
-
-	$: isExpandedUpdateDebounceHandler(open);
+	// Use shared batching service for folder expanded updates
+	$: if (open !== undefined) {
+		scheduleFolderUpdate(folderId, open);
+	}
 
 	const editHandler = async () => {
 		console.log('Edit');

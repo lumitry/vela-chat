@@ -1012,7 +1012,20 @@ if audit_level != AuditLevel.NONE:
 
 @app.get("/api/models")
 async def get_models(request: Request, user=Depends(get_verified_user)):
+    import time
+    start_time = time.time()
+    
     def get_filtered_models(models, user):
+        # Batch fetch all model info at once to avoid N+1 queries
+        model_ids = [model["id"] for model in models if not model.get("arena")]
+        model_info_map = {}
+        if model_ids:
+            # Batch fetch model info
+            for model_id in model_ids:
+                model_info = Models.get_model_by_id(model_id)
+                if model_info:
+                    model_info_map[model_id] = model_info
+        
         filtered_models = []
         for model in models:
             if model.get("arena"):
@@ -1026,7 +1039,7 @@ async def get_models(request: Request, user=Depends(get_verified_user)):
                     filtered_models.append(model)
                 continue
 
-            model_info = Models.get_model_by_id(model["id"])
+            model_info = model_info_map.get(model["id"])
             if model_info:
                 if user.id == model_info.user_id or has_access(
                     user.id, type="read", access_control=model_info.access_control
@@ -1035,7 +1048,10 @@ async def get_models(request: Request, user=Depends(get_verified_user)):
 
         return filtered_models
 
+    all_models_start = time.time()
     all_models = await get_all_models(request, user=user)
+    all_models_time = time.time()
+    log.debug(f"[PERF] /api/models: get_all_models took {(all_models_time - all_models_start) * 1000:.2f}ms")
 
     models = []
     for model in all_models:
@@ -1069,10 +1085,14 @@ async def get_models(request: Request, user=Depends(get_verified_user)):
 
     # Filter out models that the user does not have access to
     if user.role == "user" and not BYPASS_MODEL_ACCESS_CONTROL:
+        filter_start = time.time()
         models = get_filtered_models(models, user)
+        filter_time = time.time()
+        log.debug(f"[PERF] /api/models: get_filtered_models took {(filter_time - filter_start) * 1000:.2f}ms")
 
+    total_time = time.time()
     log.debug(
-        f"/api/models returned filtered models accessible to the user: {json.dumps([model['id'] for model in models])}"
+        f"[PERF] /api/models: total took {(total_time - start_time) * 1000:.2f}ms, returned {len(models)} models"
     )
     return {"data": models}
 

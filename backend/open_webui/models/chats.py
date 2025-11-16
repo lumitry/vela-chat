@@ -623,6 +623,85 @@ class ChatTable:
         except Exception:
             return None
 
+    def get_chat_metadata_by_id_and_user_id(self, id: str, user_id: str) -> Optional[dict]:
+        """
+        Fast metadata-only query that avoids loading the huge chat.chat JSON blob.
+        Returns only the fields needed for ChatMetaResponse.
+        """
+        try:
+            with get_db() as db:
+                # Select only the columns we need, excluding the huge chat.chat JSON blob
+                chat_row = db.query(
+                    Chat.id,
+                    Chat.title,
+                    Chat.created_at,
+                    Chat.updated_at,
+                    Chat.share_id,
+                    Chat.archived,
+                    Chat.pinned,
+                    Chat.folder_id,
+                    Chat.active_message_id,
+                    Chat.params,
+                    Chat.meta
+                ).filter_by(id=id, user_id=user_id).first()
+                
+                if not chat_row:
+                    return None
+                
+                # Convert Row to dict
+                return {
+                    "id": str(chat_row.id) if chat_row.id else id,
+                    "title": str(chat_row.title) if chat_row.title else "New Chat",
+                    "created_at": int(chat_row.created_at) if chat_row.created_at else 0,
+                    "updated_at": int(chat_row.updated_at) if chat_row.updated_at else 0,
+                    "share_id": str(chat_row.share_id) if chat_row.share_id else None,
+                    "archived": bool(chat_row.archived) if chat_row.archived is not None else False,
+                    "pinned": bool(chat_row.pinned) if chat_row.pinned is not None else False,
+                    "folder_id": str(chat_row.folder_id) if chat_row.folder_id else None,
+                    "active_message_id": str(chat_row.active_message_id) if chat_row.active_message_id else None,
+                    "params": chat_row.params if chat_row.params and isinstance(chat_row.params, dict) else None,
+                    "meta": chat_row.meta if chat_row.meta and isinstance(chat_row.meta, dict) else {},
+                }
+        except Exception as e:
+            log.exception(f"Error getting chat metadata: {e}")
+            return None
+
+    def get_pinned_chats_metadata_by_user_id(self, user_id: str) -> list[dict]:
+        """
+        Fast metadata-only query for pinned chats that avoids loading chat.chat JSON blobs.
+        Returns only essential fields for ChatMetadataResponse.
+        """
+        try:
+            with get_db() as db:
+                # Select only the columns we need, excluding the huge chat.chat JSON blob
+                chat_rows = db.query(
+                    Chat.id,
+                    Chat.title,
+                    Chat.created_at,
+                    Chat.updated_at,
+                    Chat.pinned,
+                    Chat.folder_id
+                ).filter_by(
+                    user_id=user_id,
+                    pinned=True,
+                    archived=False
+                ).order_by(Chat.updated_at.desc()).all()
+                
+                return [
+                    {
+                        "id": str(row.id) if row.id else "",
+                        "title": str(row.title) if row.title else "New Chat",
+                        "created_at": int(row.created_at) if row.created_at else 0,
+                        "updated_at": int(row.updated_at) if row.updated_at else 0,
+                        "pinned": bool(row.pinned) if row.pinned is not None else False,
+                        "folder_id": str(row.folder_id) if row.folder_id else None,
+                    }
+                    for row in chat_rows
+                ]
+        except Exception as e:
+            log.exception(f"Error getting pinned chats metadata: {e}")
+            return []
+
     def has_chat_access(self, chat_id: str, user_id: str, db=None) -> bool:
         """
         Fast access check: verifies if a user has access to a chat.
