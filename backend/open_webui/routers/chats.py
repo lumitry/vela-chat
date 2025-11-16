@@ -542,6 +542,7 @@ class ChatMetaResponse(BaseModel):
 
 @router.get("/{id}/meta", response_model=Optional[ChatMetaResponse])
 async def get_chat_meta_by_id(id: str, user=Depends(get_verified_user)):
+    # TODO make this quicker. idk how but it takes WAY too long right now
     chat = Chats.get_chat_by_id_and_user_id(id, user.id)
     if not chat:
         raise HTTPException(
@@ -598,6 +599,239 @@ async def get_chat_meta_by_id(id: str, user=Depends(get_verified_user)):
             "params": params,
             "files": chat_content.get("files"),
         }
+    )
+
+
+############################
+# GetChatSync (lightweight with cache keys for differential sync)
+############################
+
+
+class MessageMetadata(BaseModel):
+    """Lightweight message metadata with cache key (no content/sources/files)"""
+    id: str
+    cache_key: str
+    parent_id: Optional[str] = None
+    role: str
+    model_id: Optional[str] = None
+    position: Optional[int] = None
+    created_at: int
+    updated_at: int
+    children_ids: list[str] = []
+
+
+class ChatSyncResponse(BaseModel):
+    id: str
+    title: str
+    models: list[str] | None = None
+    params: dict | None = None
+    files: list[dict] | None = None
+    history: dict  # { messages: { id: MessageMetadata }, currentId: str }
+    messages: list[dict]  # Array of message IDs with cache_keys (current branch, no content/sources/files)
+
+
+@router.get("/{id}/sync", response_model=Optional[ChatSyncResponse])
+async def get_chat_sync(id: str, user=Depends(get_verified_user)):
+    """
+    Get lightweight chat metadata with message cache keys for differential sync.
+    Returns message metadata (no content/sources/files) so client can determine what needs to be fetched.
+    """
+    from open_webui.models.chat_messages import ChatMessage, compute_cache_key
+    from open_webui.models.chats import Chat
+    
+    # Optimized: Only load minimal Chat fields (id, title, params, active_message_id) - skip huge chat.chat JSON blob
+    # All chats are normalized now, so we don't need the legacy fallback
+    # Use with_entities to select only specific columns (avoids loading chat.chat JSON blob)
+    with get_db() as db:
+        chat_row = db.query(
+            Chat.id,
+            Chat.title,
+            Chat.params,
+            Chat.user_id,
+            Chat.active_message_id
+        ).filter_by(id=id, user_id=user.id).first()
+        
+        if not chat_row:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
+            )
+        
+        # Extract only what we need (chat_row is a tuple-like Row object)
+        chat_id = str(chat_row.id) if chat_row.id else id
+        chat_title = str(chat_row.title) if chat_row.title else "New Chat"
+        chat_params = chat_row.params if chat_row.params and isinstance(chat_row.params, dict) else {}
+        chat_active_message_id = str(chat_row.active_message_id) if chat_row.active_message_id else None
+    
+    # Get all messages for this chat - only load columns we actually need!
+    # Use SQL LENGTH() function to get content length without loading the full content_text
+    # This avoids loading large JSON fields (meta, status, etc.) and huge TEXT fields
+    with get_db() as db:
+        from sqlalchemy import func
+        # Query with content_length computed in SQL to avoid loading huge content_text
+        messages_with_length = db.query(
+            ChatMessage.id,
+            ChatMessage.parent_id,
+            ChatMessage.role,
+            ChatMessage.model_id,
+            ChatMessage.position,
+            ChatMessage.created_at,
+            ChatMessage.updated_at,
+            func.coalesce(func.length(ChatMessage.content_text), 0).label('content_length')
+        ).filter_by(chat_id=id).order_by(ChatMessage.created_at.asc()).all()
+        
+        # Convert to a format we can work with
+        class MessageData:
+            def __init__(self, row):
+                self.id = row.id
+                self.parent_id = row.parent_id
+                self.role = row.role
+                self.model_id = row.model_id
+                self.position = row.position
+                self.created_at = row.created_at
+                self.updated_at = row.updated_at
+                self.content_length = row.content_length
+        
+        all_messages = [MessageData(row) for row in messages_with_length]
+    
+    # Batch fetch all children relationships at once (much faster than per-message queries)
+    # Only load id and parent_id columns
+    message_ids = [str(m.id) for m in all_messages if m.id]
+    children_map: dict[str, list[str]] = {}
+    if message_ids:
+        with get_db() as db:
+            all_children = db.query(
+                ChatMessage.id,
+                ChatMessage.parent_id,
+                ChatMessage.position,
+                ChatMessage.created_at
+            ).filter(
+                ChatMessage.parent_id.in_([m.id for m in all_messages if m.id])
+            ).order_by(
+                ChatMessage.position.asc(),
+                ChatMessage.created_at.asc()
+            ).all()
+            # Group children by parent_id (all_children is now Row objects with .id, .parent_id, etc.)
+            for child in all_children:
+                if child.parent_id:
+                    parent_id_str = str(child.parent_id)
+                    if parent_id_str not in children_map:
+                        children_map[parent_id_str] = []
+                    if child.id:
+                        children_map[parent_id_str].append(str(child.id))
+    
+    # Compute cache keys in parallel for better performance
+    from concurrent.futures import ThreadPoolExecutor
+    
+    def compute_cache_key_sync(msg) -> tuple[str, str]:
+        """Compute cache key for a message (synchronous version for ThreadPoolExecutor)"""
+        msg_id_str = str(msg.id) if msg.id else None
+        cache_key = compute_cache_key(msg)
+        return msg_id_str, cache_key
+    
+    # Use ThreadPoolExecutor to compute cache keys in parallel
+    cache_keys_map: dict[str, str] = {}
+    with ThreadPoolExecutor(max_workers=min(10, len(all_messages))) as executor:
+        futures = [executor.submit(compute_cache_key_sync, msg) for msg in all_messages if msg.id]
+        for future in futures:
+            msg_id_str, cache_key = future.result()
+            if msg_id_str:
+                cache_keys_map[msg_id_str] = cache_key
+    
+    # Build history.messages dict with metadata only (no content/sources/files)
+    messages_metadata: dict[str, MessageMetadata] = {}
+    for msg in all_messages:
+        msg_id_str = str(msg.id) if msg.id else None
+        if not msg_id_str:
+            continue
+        
+        # Get children IDs from pre-computed map
+        children_ids = children_map.get(msg_id_str, [])
+        
+        # Get cache key from pre-computed map
+        cache_key = cache_keys_map.get(msg_id_str, "")
+        
+        messages_metadata[msg_id_str] = MessageMetadata(
+            id=msg_id_str,
+            cache_key=cache_key,
+            parent_id=str(msg.parent_id) if msg.parent_id else None,
+            role=msg.role or "",
+            model_id=msg.model_id,
+            position=msg.position,
+            created_at=int(msg.created_at) if msg.created_at else 0,
+            updated_at=int(msg.updated_at) if msg.updated_at else 0,
+            children_ids=children_ids
+        )
+    
+    # Build messages array (current branch) with only IDs and cache_keys
+    current_id = chat_active_message_id
+    if not current_id and all_messages:
+        # Find the deepest leaf message
+        parent_ids = {str(c.parent_id) for c in all_messages if c.parent_id}
+        leaves = [m for m in all_messages if str(m.id) not in parent_ids]
+        if leaves:
+            leaves.sort(key=lambda m: int(m.created_at) if m.created_at else 0, reverse=True)
+            current_id = str(leaves[0].id) if leaves[0].id else None
+    
+    messages_list = []
+    if current_id:
+        # Walk back from currentId to build the branch
+        msg_map = {str(m.id): m for m in all_messages if m.id}
+        cur = msg_map.get(str(current_id))
+        branch = []
+        while cur:
+            branch.append(cur)
+            if cur.parent_id:
+                cur = msg_map.get(str(cur.parent_id))
+            else:
+                break
+        branch.reverse()
+        
+        for msg in branch:
+            msg_id_str = str(msg.id) if msg.id else None
+            if msg_id_str and msg_id_str in messages_metadata:
+                # Reuse cache key from messages_metadata instead of recomputing
+                cache_key = messages_metadata[msg_id_str].cache_key
+                messages_list.append({
+                    "id": msg_id_str,
+                    "cache_key": cache_key
+                })
+    
+    # Get models from first user message's meta
+    # Note: We need to query this separately since we didn't load meta in the main query
+    models = None
+    first_user_msg = next((m for m in all_messages if m.role == "user"), None)
+    if first_user_msg:
+        # Load meta only for the first user message
+        with get_db() as db:
+            first_user_msg_with_meta = db.query(ChatMessage.meta).filter_by(id=first_user_msg.id).first()
+            if first_user_msg_with_meta and first_user_msg_with_meta.meta and isinstance(first_user_msg_with_meta.meta, dict) and "models" in first_user_msg_with_meta.meta:
+                models = first_user_msg_with_meta.meta["models"]
+    
+    # Get params (already loaded above)
+    params = chat_params
+    
+    # Get files - for normalized chats, files are stored in chat.chat.files
+    # But we don't want to load the entire chat.chat JSON blob just for files
+    # For now, we'll skip files in sync endpoint (they're not needed for differential sync)
+    # If files are needed, we can add a separate lightweight query or store them elsewhere
+    files = None
+    
+    # Convert messages_metadata to dict format for response
+    history_messages_dict = {k: v.model_dump() for k, v in messages_metadata.items()}
+    
+    # Build response
+    return ChatSyncResponse(
+        id=chat_id,
+        title=chat_title,
+        models=models,
+        params=params,
+        files=files,  # None for now - files not needed for sync
+        history={
+            "messages": history_messages_dict,
+            "currentId": current_id
+        },
+        messages=messages_list
     )
 
 

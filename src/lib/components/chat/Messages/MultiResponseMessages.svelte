@@ -51,11 +51,111 @@
 	let parentMessage;
 	let groupedMessageIds = {};
 	let groupedMessageIdsIdx = {};
+	
+	// Force reactivity by tracking a version number that changes when groupedMessageIds updates
+	let groupedMessageIdsVersion = 0;
 
 	let message = JSON.parse(JSON.stringify(history.messages[messageId]));
 	$: if (history.messages) {
 		if (JSON.stringify(message) !== JSON.stringify(history.messages[messageId])) {
 			message = JSON.parse(JSON.stringify(history.messages[messageId]));
+		}
+	}
+
+	// Reactively watch for changes to parent message's childrenIds AND history.messages
+	// This ensures new assistant responses in side-by-side chats are detected immediately
+	// We need to watch both childrenIds changes AND when messages are actually added to history.messages
+	// Force reactivity by watching history.messages object reference changes
+	$: _historyMessagesKeys = history.messages ? Object.keys(history.messages).length : 0;
+	$: if (history.messages && history.messages[messageId]?.parentId) {
+		const currentParentId = history.messages[messageId].parentId;
+		const updatedParent = history.messages[currentParentId];
+		
+		// Also check if any of the parent's children are now in history.messages (race condition fix)
+		const childrenInHistory = updatedParent?.childrenIds?.filter(id => history.messages[id]) || [];
+		const actualChildrenCount = childrenInHistory.length;
+		
+		if (updatedParent && updatedParent.models && updatedParent.childrenIds) {
+			// Get previous valid children count (messages that exist in history.messages)
+			const previousValidChildren = parentMessage?.childrenIds?.filter(id => history.messages[id]) || [];
+			const previousValidCount = previousValidChildren.length;
+			
+			// Check if childrenIds array changed (new IDs added)
+			const childrenIdsChanged = 
+				!parentMessage || 
+				parentMessage.id !== currentParentId ||
+				!parentMessage.childrenIds || 
+				parentMessage.childrenIds.length !== updatedParent.childrenIds.length ||
+				parentMessage.childrenIds.some((id, idx) => id !== updatedParent.childrenIds[idx]);
+			
+			// Check if we have more valid children now than before (messages were added to history.messages)
+			const moreChildrenAvailable = actualChildrenCount > previousValidCount;
+			
+			// Also check if the set of valid children IDs changed (even if count is same, IDs might be different)
+			const previousValidIds = new Set(previousValidChildren);
+			const currentValidIds = new Set(childrenInHistory);
+			const validChildrenChanged = 
+				previousValidIds.size !== currentValidIds.size ||
+				[...previousValidIds].some(id => !currentValidIds.has(id)) ||
+				[...currentValidIds].some(id => !previousValidIds.has(id));
+			
+			// Check if grouping is incomplete - we have children but they're not all grouped
+			const totalGroupedMessages = Object.values(groupedMessageIds || {}).reduce((sum, g) => sum + (g.messageIds?.length || 0), 0);
+			const groupingIncomplete = actualChildrenCount > 0 && totalGroupedMessages < actualChildrenCount;
+			
+			if (childrenIdsChanged || moreChildrenAvailable || validChildrenChanged || groupingIncomplete) {
+				// Update parentMessage reference
+				parentMessage = updatedParent;
+				
+				// Re-group messages by modelIdx
+				// Filter out any children that don't exist in history.messages yet (race condition)
+				const validChildrenIds = parentMessage.childrenIds.filter(id => history.messages[id]);
+				
+				groupedMessageIds = parentMessage.models.reduce((a, model, modelIdx) => {
+					let modelMessageIds = validChildrenIds
+						.map((id) => history.messages[id])
+						.filter((m) => m && m.modelIdx === modelIdx)
+						.map((m) => m.id);
+
+					// Legacy support
+					if (modelMessageIds.length === 0) {
+						let modelMessages = validChildrenIds
+							.map((id) => history.messages[id])
+							.filter((m) => m && m.model === model);
+
+						modelMessages.forEach((m) => {
+							m.modelIdx = modelIdx;
+						});
+
+						modelMessageIds = modelMessages.map((m) => m.id);
+					}
+
+					return {
+						...a,
+						[modelIdx]: { messageIds: modelMessageIds }
+					};
+				}, {});
+
+				// Update indices to maintain current selection if possible
+				groupedMessageIdsIdx = parentMessage.models.reduce((a, model, modelIdx) => {
+					const idx = groupedMessageIds[modelIdx]?.messageIds.findIndex((id) => id === messageId);
+					if (idx !== -1) {
+						return {
+							...a,
+							[modelIdx]: idx
+						};
+					} else {
+						// Default to last message for this model
+						return {
+							...a,
+							[modelIdx]: Math.max(0, (groupedMessageIds[modelIdx]?.messageIds.length || 1) - 1)
+						};
+					}
+				}, {});
+				
+				// Force reactivity by incrementing version
+				groupedMessageIdsVersion++;
+			}
 		}
 	}
 
@@ -132,7 +232,6 @@
 	};
 
 	const initHandler = async () => {
-		console.log('multiresponse:initHandler');
 		await tick();
 
 		currentMessageId = messageId;
@@ -140,19 +239,22 @@
 			? history.messages[history.messages[messageId].parentId]
 			: null;
 
+		// Filter out any children that don't exist in history.messages yet (race condition)
+		const validChildrenIds = parentMessage?.childrenIds?.filter(id => history.messages[id]) || [];
+		
 		groupedMessageIds = parentMessage?.models.reduce((a, model, modelIdx) => {
 			// Find all messages that are children of the parent message and have the same model
-			let modelMessageIds = parentMessage?.childrenIds
+			let modelMessageIds = validChildrenIds
 				.map((id) => history.messages[id])
-				.filter((m) => m?.modelIdx === modelIdx)
+				.filter((m) => m && m.modelIdx === modelIdx)
 				.map((m) => m.id);
 
 			// Legacy support for messages that don't have a modelIdx
 			// Find all messages that are children of the parent message and have the same model
 			if (modelMessageIds.length === 0) {
-				let modelMessages = parentMessage?.childrenIds
+				let modelMessages = validChildrenIds
 					.map((id) => history.messages[id])
-					.filter((m) => m?.model === model);
+					.filter((m) => m && m.model === model);
 
 				modelMessages.forEach((m) => {
 					m.modelIdx = modelIdx;
@@ -182,7 +284,8 @@
 			}
 		}, {});
 
-		console.log(groupedMessageIds, groupedMessageIdsIdx);
+		// Force reactivity
+		groupedMessageIdsVersion++;
 
 		await tick();
 	};
@@ -214,8 +317,9 @@
 			class="flex snap-x snap-mandatory overflow-x-auto scrollbar-hidden"
 			id="responses-container-{chatId}-{parentMessage.id}"
 		>
-			{#each Object.keys(groupedMessageIds) as modelIdx}
-				{#if groupedMessageIdsIdx[modelIdx] !== undefined && groupedMessageIds[modelIdx].messageIds.length > 0}
+			{#key groupedMessageIdsVersion}
+				{#each Object.keys(groupedMessageIds) as modelIdx}
+					{#if groupedMessageIdsIdx[modelIdx] !== undefined && groupedMessageIds[modelIdx].messageIds.length > 0}
 					<!-- svelte-ignore a11y-no-static-element-interactions -->
 					<!-- svelte-ignore a11y-click-events-have-key-events -->
 					{@const _messageId =
@@ -277,8 +381,9 @@
 							{/if}
 						{/key}
 					</div>
-				{/if}
-			{/each}
+					{/if}
+				{/each}
+			{/key}
 		</div>
 
 		{#if !readOnly}

@@ -815,7 +815,7 @@ def legacy_to_normalized_format(chat_id: str, legacy_chat: Dict, regenerate_ids:
 
         # Extract attachments/files and handle base64 embedded files
         attachments = []
-        files = msg_data.get("files", [])
+        files = msg_data.get("files") or []  # Handle None case explicitly
         log.debug(f"legacy_to_normalized_format: Processing {len(files)} file attachments for message {msg_id_str}")
         for idx, file_item in enumerate(files):
             log.debug(f"legacy_to_normalized_format: Processing file attachment {idx+1}/{len(files)}: type={file_item.get('type')}, has_url={'url' in file_item}, has_base64={'base64' in file_item}")

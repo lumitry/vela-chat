@@ -64,9 +64,30 @@
 		getTagsById,
 		updateChatById,
 		getChatMetaById,
-		getChatById
+		getChatById,
+		getChatSync,
+		getMessagesBatch
 	} from '$lib/apis/chats';
+	import {
+		initMessageDB,
+		getMessagesByChatId,
+		getMessagesByIds,
+		bulkPutMessages,
+		deleteMessagesByChatId,
+		isIndexedDBAvailable
+	} from '$lib/utils/indexeddb';
+	import xxhashWasm from 'xxhash-wasm';
 	import { generateOpenAIChatCompletion } from '$lib/apis/openai';
+
+	// Initialize XXHash (async, but we'll await it when needed)
+	let xxhash64: ((data: string) => bigint) | null = null;
+	const getXXHash = async () => {
+		if (!xxhash64) {
+			const { h64 } = await xxhashWasm();
+			xxhash64 = (data: string) => h64(data);
+		}
+		return xxhash64;
+	};
 	import { processWeb, processWebSearch, processYoutubeVideo } from '$lib/apis/retrieval';
 	import { createOpenAITextStream } from '$lib/apis/streaming';
 	import { queryMemory } from '$lib/apis/memories';
@@ -117,6 +138,74 @@
 	let loading = false;
 
 	const eventTarget = new EventTarget();
+
+	// Helper function to cache a message in IndexedDB
+	const cacheMessage = async (message: any, chatId: string) => {
+		if (!isIndexedDBAvailable() || !message?.id) {
+			return;
+		}
+
+		try {
+			// Compute cache key (same as backend - uses content length for performance)
+			// Use Array.from() to count Unicode code points (like Python len()), not UTF-16 code units
+			// Use XXHash for fast non-cryptographic hashing (much faster than SHA-256)
+			const content = message.content || '';
+			const content_length = Array.from(content).length; // Count code points, not UTF-16 units
+			const updated_at = String(message.timestamp || message.updated_at || Date.now());
+			const role = message.role || '';
+			const model_id = message.model || message.model_id || '';
+			const combined = `${content_length}${updated_at}${role}${model_id}`;
+			const hasher = await getXXHash();
+			const cache_key = hasher(combined).toString(16).padStart(16, '0');
+
+			const cachedMessage = {
+				id: message.id,
+				chat_id: chatId,
+				parent_id: message.parentId || null,
+				role: message.role,
+				model_id: message.model || message.model_id || null,
+				position: message.position || null,
+				content: message.content || '',
+				content_json: message.content_json || null,
+				status: message.status || null,
+				usage: message.usage || null,
+				meta: message.meta || null,
+				annotation: message.annotation || null,
+				feedback_id: message.feedbackId || message.feedback_id || null,
+				selected_model_id: message.selectedModelId || message.selected_model_id || null,
+				files: message.files || null,
+				sources: message.sources || null,
+				created_at: message.timestamp || message.created_at || Math.floor(Date.now() / 1000),
+				updated_at: message.timestamp || message.updated_at || Math.floor(Date.now() / 1000),
+				cache_key: cache_key,
+				cached_at: Date.now(),
+				modelIdx: message.modelIdx ?? null, // Root-level property, not in meta
+				modelName: message.modelName ?? null, // Root-level property, not in meta
+				models: message.models ?? null, // Root-level property for side-by-side chats
+				children_ids: message.childrenIds || [] // CRITICAL: Store children IDs for message tree structure
+			};
+
+			await bulkPutMessages([cachedMessage]);
+
+			// Broadcast to other tabs via BroadcastChannel
+			if (typeof BroadcastChannel !== 'undefined') {
+				try {
+					const channel = new BroadcastChannel('vela-chat-messages');
+					channel.postMessage({
+						type: 'message_updated',
+						chat_id: chatId,
+						message_id: message.id
+					});
+					channel.close();
+				} catch (e) {
+					// BroadcastChannel not available, that's okay
+				}
+			}
+		} catch (error) {
+			console.warn('Failed to cache message in IndexedDB:', error);
+			// Don't throw - caching failure shouldn't break the app
+		}
+	};
 	let controlPane;
 	let controlPaneComponent;
 
@@ -299,10 +388,6 @@
 			selectedModels = newSelectedModels;
 		}
 		modelSelectionInProgress = false;
-	}
-
-	$: if (selectedModels) {
-		setToolIds();
 	}
 
 	$: if (atSelectedModel || selectedModels) {
@@ -557,7 +642,30 @@
 		}
 	}
 
+	// BroadcastChannel for multi-tab cache consistency
+	let broadcastChannel: BroadcastChannel | null = null;
+
 	onMount(async () => {
+		// Set up BroadcastChannel listener for multi-tab cache consistency
+		if (typeof BroadcastChannel !== 'undefined') {
+			try {
+				broadcastChannel = new BroadcastChannel('vela-chat-messages');
+				broadcastChannel.onmessage = async (event) => {
+					const { type, chat_id, message_id } = event.data;
+					if (type === 'message_updated' && chat_id === $chatId) {
+						// Another tab updated a message in this chat
+						// TODO Invalidate cache for this message or refresh if chat is currently loaded
+						// TODO For now, we'll just log it - full refresh would require reloading the chat
+						console.log(`Message ${message_id} updated in another tab for chat ${chat_id}`);
+						// TODO Optionally, we could trigger a refresh of the specific message
+						// TODO or reload the entire chat if it's currently open
+						// TODO also why does this trigger on multi-response messages? weird bug. probably bc we can only have one message at a time in this handler? i think?
+					}
+				};
+			} catch (e) {
+				console.warn('BroadcastChannel not available:', e);
+			}
+		}
 		window.addEventListener('chat-model-updated', handleModelUpdate as EventListener);
 		console.log('mounted');
 		window.addEventListener('message', onMessageHandler);
@@ -630,6 +738,11 @@
 		chatIdUnsubscriber?.();
 		window.removeEventListener('message', onMessageHandler);
 		$socket?.off('chat-events', chatEventHandler);
+		// Close BroadcastChannel
+		if (broadcastChannel) {
+			broadcastChannel.close();
+			broadcastChannel = null;
+		}
 	});
 
 	// File upload functions
@@ -1068,78 +1181,449 @@
 						? chatContent.models
 						: [chatContent.models ?? ''];
 
-				// Use cached data if available, otherwise fetch
+				// Differential sync: Use IndexedDB cache if available, otherwise fall back to full fetch
 				try {
-					if (!fullChat) {
-						fullChat = await getChatById(localStorage.token, $chatId);
-						// Cache the fetched data (LRU will evict oldest if at max size)
-						if (fullChat) {
-							chatCache.update((cache) => {
-								cache.set($chatId, fullChat);
-								return cache;
-							});
+					let useDifferentialSync = isIndexedDBAvailable();
+					let syncData = null;
+					let cachedMessages: any[] = [];
+					let messagesToFetch: string[] = [];
+
+					if (useDifferentialSync) {
+						try {
+							// Try differential sync
+							syncData = await getChatSync(localStorage.token, $chatId);
+
+							if (syncData && syncData.history && syncData.history.messages) {
+								// Get cached messages from IndexedDB
+								cachedMessages = await getMessagesByChatId($chatId);
+
+								// Build map of cached messages by ID
+								const cachedMap = new Map(cachedMessages.map((m) => [m.id, m]));
+
+								// Compare cache_keys to find missing/outdated messages
+								const serverMessages = syncData.history.messages;
+								const serverMessageIds = Object.keys(serverMessages);
+
+								// Check if server has fewer messages than cache (trust server)
+								if (serverMessageIds.length < cachedMessages.length) {
+									console.warn(
+										`Server has fewer messages (${serverMessageIds.length}) than cache (${cachedMessages.length}), clearing cache for chat ${$chatId}`
+									);
+									await deleteMessagesByChatId($chatId);
+									cachedMessages = [];
+									cachedMap.clear();
+								}
+
+								// Find messages that need to be fetched
+								for (const msgId of serverMessageIds) {
+									const serverMsg = serverMessages[msgId];
+									const cachedMsg = cachedMap.get(msgId);
+
+									if (!cachedMsg || cachedMsg.cache_key !== serverMsg.cache_key) {
+										messagesToFetch.push(msgId);
+									}
+								}
+
+								// Fetch missing messages in batches
+								if (messagesToFetch.length > 0) {
+									console.log(
+										`Fetching ${messagesToFetch.length} missing/outdated messages for chat ${$chatId}`
+									);
+									const batchResponse = await getMessagesBatch(
+										localStorage.token,
+										$chatId,
+										messagesToFetch
+									);
+
+									if (batchResponse && batchResponse.messages) {
+										// Convert batch messages to cached format
+										const messagesToCache = batchResponse.messages.map((msg: any) => {
+											// Extract modelIdx, modelName, and models from meta if present (backend stores them in meta)
+											// but frontend expects them at root level
+											let modelIdx = msg.modelIdx ?? null;
+											let modelName = msg.modelName ?? null;
+											let models = msg.models ?? null;
+											if (msg.meta && typeof msg.meta === 'object') {
+												if (modelIdx === null && 'modelIdx' in msg.meta) {
+													modelIdx = msg.meta.modelIdx;
+												}
+												if (modelName === null && 'modelName' in msg.meta) {
+													modelName = msg.meta.modelName;
+												}
+												if (models === null && 'models' in msg.meta) {
+													models = msg.meta.models;
+												}
+											}
+
+											// Extract statusHistory from status.statusHistory if present
+											// We store status as-is (with statusHistory inside it), but also need to handle
+											// the case where statusHistory might already be at root level from backend
+											let status = msg.status || null;
+											if (status && typeof status === 'object' && status.statusHistory) {
+												// status already has statusHistory inside it, which is what we want to store
+												// The extraction to root level happens when restoring from cache
+											}
+
+											return {
+												id: msg.id,
+												chat_id: $chatId,
+												parent_id: msg.parent_id,
+												role: msg.role,
+												model_id: msg.model_id,
+												position: msg.position ?? null,
+												content: msg.content_text || msg.content || '',
+												content_json: msg.content_json || null,
+												status: status, // Store status as-is (may contain statusHistory inside it)
+												usage: msg.usage || null,
+												meta: msg.meta || null,
+												annotation: msg.annotation || null,
+												feedback_id: msg.feedback_id || null,
+												selected_model_id: msg.selected_model_id || null,
+												files: msg.files || null,
+												sources: msg.sources || null,
+												created_at: msg.created_at || 0,
+												updated_at: msg.updated_at || 0,
+												cache_key: msg.cache_key,
+												cached_at: Date.now(),
+												modelIdx: modelIdx, // Root-level property
+												modelName: modelName, // Root-level property
+												models: models, // Root-level property for side-by-side chats
+												children_ids: syncData?.history?.messages?.[msg.id]?.children_ids || [] // Get children_ids from sync data
+											};
+										});
+
+										// Bulk insert/update in IndexedDB
+										await bulkPutMessages(messagesToCache);
+
+										// Update cached messages map
+										for (const msg of messagesToCache) {
+											cachedMap.set(msg.id, msg);
+										}
+									}
+								}
+
+								// Load all messages from IndexedDB (now up to date)
+								cachedMessages = await getMessagesByChatId($chatId);
+							} else {
+								// Sync endpoint returned legacy format or no messages, fall back
+								useDifferentialSync = false;
+							}
+						} catch (syncError) {
+							console.warn('Differential sync failed, falling back to full fetch:', syncError);
+							// If quota exceeded, clear cache and retry once
+							if (syncError instanceof DOMException && syncError.name === 'QuotaExceededError') {
+								console.warn('IndexedDB quota exceeded, clearing cache...');
+								try {
+									const { clearAllMessages } = await import('$lib/utils/indexeddb');
+									await clearAllMessages();
+								} catch (clearError) {
+									console.error('Failed to clear cache:', clearError);
+								}
+							}
+							useDifferentialSync = false;
 						}
 					}
 
-					if (fullChat?.chat?.history?.messages) {
-						// Convert legacy format to frontend history structure
-						const messagesMap = fullChat.chat.history.messages;
-						let currentId = fullChat.chat.history.currentId || null;
+					// If differential sync didn't work, fall back to full fetch
+					if (!useDifferentialSync || cachedMessages.length === 0) {
+						if (!fullChat) {
+							fullChat = await getChatById(localStorage.token, $chatId);
+							// Cache the fetched data (LRU will evict oldest if at max size)
+							if (fullChat) {
+								chatCache.update((cache) => {
+									cache.set($chatId, fullChat);
+									return cache;
+								});
+							}
+						}
 
-						// JOIN operation: Populate content, sources, and files in messages array from history.messages
-						// This handles the case where backend strips these fields from messages array to reduce bandwidth
-						if (fullChat.chat.messages && Array.isArray(fullChat.chat.messages)) {
-							for (const message of fullChat.chat.messages) {
-								if (message && message.id) {
-									const messageId = String(message.id);
-									if (messageId in messagesMap) {
-										const historyMsg = messagesMap[messageId];
-										// If message lacks content, sources, or files, look them up from history.messages
-										if (!message.content && historyMsg.content) {
-											message.content = historyMsg.content;
-										}
-										if (!message.sources && historyMsg.sources) {
-											message.sources = historyMsg.sources;
-										}
-										if (!message.files && historyMsg.files) {
-											message.files = historyMsg.files;
-										}
-										// Also merge any other missing fields that might be in history.messages
-										// but preserve fields that are already in the message (like childrenIds, modelIdx, etc.)
-										for (const key in historyMsg) {
-											if (key !== 'id' && (message[key] === undefined || message[key] === null)) {
-												message[key] = historyMsg[key];
+						if (fullChat?.chat?.history?.messages) {
+							// Convert legacy format to frontend history structure
+							const messagesMap = fullChat.chat.history.messages;
+							let currentId = fullChat.chat.history.currentId || null;
+
+							// JOIN operation: Populate content, sources, and files in messages array from history.messages
+							if (fullChat.chat.messages && Array.isArray(fullChat.chat.messages)) {
+								for (const message of fullChat.chat.messages) {
+									if (message && message.id) {
+										const messageId = String(message.id);
+										if (messageId in messagesMap) {
+											const historyMsg = messagesMap[messageId];
+											if (!message.content && historyMsg.content) {
+												message.content = historyMsg.content;
+											}
+											if (!message.sources && historyMsg.sources) {
+												message.sources = historyMsg.sources;
+											}
+											if (!message.files && historyMsg.files) {
+												message.files = historyMsg.files;
+											}
+											for (const key in historyMsg) {
+												if (key !== 'id' && (message[key] === undefined || message[key] === null)) {
+													message[key] = historyMsg[key];
+												}
 											}
 										}
 									}
 								}
 							}
+
+							// Sort childrenIds for all messages (by position, then created_at - same as backend)
+							// This ensures sibling messages are displayed in the correct order
+							for (const msgId in messagesMap) {
+								const msg = messagesMap[msgId];
+								if (msg.childrenIds && msg.childrenIds.length > 0) {
+									msg.childrenIds = [...msg.childrenIds].sort((id1, id2) => {
+										const child1 = messagesMap[id1];
+										const child2 = messagesMap[id2];
+										if (!child1 || !child2) return 0;
+
+										// Sort by position first (ASC), then by created_at (ASC)
+										// Backend: order_by(ChatMessage.position.asc(), ChatMessage.created_at.asc())
+										// For legacy messages with null positions, treat null as coming before numeric positions
+										// This ensures older messages (with null) come before newer messages (with 0)
+										const pos1 = child1.position;
+										const pos2 = child2.position;
+
+										// Handle null positions: null comes before all numeric positions (for legacy compatibility)
+										if (pos1 === null && pos2 === null) {
+											// Both null - sort by created_at
+											const created1 = child1.timestamp || child1.created_at || 0;
+											const created2 = child2.timestamp || child2.created_at || 0;
+											return created1 - created2;
+										} else if (pos1 === null) {
+											return -1; // pos1 is null, comes before pos2 (legacy message)
+										} else if (pos2 === null) {
+											return 1; // pos2 is null, comes before pos1 (legacy message)
+										} else {
+											// Both are numeric
+											if (pos1 !== pos2) {
+												return pos1 - pos2;
+											}
+											// If positions are equal, sort by created_at
+											const created1 = child1.timestamp || child1.created_at || 0;
+											const created2 = child2.timestamp || child2.created_at || 0;
+											return created1 - created2;
+										}
+									});
+								}
+							}
+
+							// Validate currentId
+							if (currentId && !messagesMap[currentId]) {
+								console.warn(
+									`currentId ${currentId} not found in messages, finding valid leaf message`
+								);
+								const leafMessages = Object.values(messagesMap).filter((msg: any) => {
+									if (!msg.childrenIds || msg.childrenIds.length === 0) return true;
+									return !msg.childrenIds.some((childId: string) => messagesMap[childId]);
+								});
+								if (leafMessages.length > 0) {
+									leafMessages.sort((a: any, b: any) => (b.timestamp || 0) - (a.timestamp || 0));
+									currentId = leafMessages[0].id;
+								} else {
+									const allMessages = Object.values(messagesMap) as any[];
+									if (allMessages.length > 0) {
+										allMessages.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+										currentId = allMessages[0].id;
+									} else {
+										currentId = null;
+									}
+								}
+							}
+
+							history = {
+								messages: messagesMap,
+								currentId: currentId
+							};
+
+							// Cache messages in IndexedDB if available (for next time)
+							if (isIndexedDBAvailable() && messagesMap) {
+								try {
+									const hasher = await getXXHash();
+									const messagesToCache = await Promise.all(
+										Object.values(messagesMap).map(async (msg: any) => {
+											// Compute cache key (same as backend - uses content length for performance)
+											// Use Array.from() to count Unicode code points (like Python len()), not UTF-16 code units
+											// Use XXHash for fast non-cryptographic hashing (much faster than SHA-256)
+											const content = msg.content || '';
+											const content_length = Array.from(content).length; // Count code points, not UTF-16 units
+											const updated_at = String(msg.timestamp || msg.updated_at || 0);
+											const role = msg.role || '';
+											const model_id = msg.model || msg.model_id || '';
+											const combined = `${content_length}${updated_at}${role}${model_id}`;
+											const cache_key = hasher(combined).toString(16).padStart(16, '0');
+
+											return {
+												id: msg.id,
+												chat_id: $chatId,
+												parent_id: msg.parentId || null,
+												role: msg.role,
+												model_id: msg.model || msg.model_id || null,
+												position: msg.position || null,
+												content: msg.content || '',
+												content_json: msg.content_json || null,
+												status: msg.status || null,
+												usage: msg.usage || null,
+												meta: msg.meta || null,
+												annotation: msg.annotation || null,
+												feedback_id: msg.feedbackId || msg.feedback_id || null,
+												selected_model_id: msg.selectedModelId || msg.selected_model_id || null,
+												files: msg.files || null,
+												sources: msg.sources || null,
+												created_at: msg.timestamp || msg.created_at || 0,
+												updated_at: msg.timestamp || msg.updated_at || 0,
+												cache_key: cache_key,
+												cached_at: Date.now(),
+												modelIdx: msg.modelIdx ?? null, // Root-level property
+												modelName: msg.modelName ?? null, // Root-level property
+												models: msg.models ?? null, // Root-level property for side-by-side chats
+												children_ids: msg.childrenIds || [] // CRITICAL: Store children IDs for message tree structure
+											};
+										})
+									);
+
+									await bulkPutMessages(messagesToCache);
+								} catch (cacheError) {
+									console.warn('Failed to cache messages in IndexedDB:', cacheError);
+								}
+							}
+						} else {
+							history = convertMessagesToHistory([]);
+						}
+					} else {
+						// Build history from IndexedDB cached messages
+						const messagesMap: Record<string, any> = {};
+
+						for (const cachedMsg of cachedMessages) {
+							// Extract statusHistory from status.statusHistory and put at root level
+							// Frontend expects both status and statusHistory at root level
+							let statusHistory = null;
+							let status = null;
+
+							if (cachedMsg.status && typeof cachedMsg.status === 'object') {
+								// Extract statusHistory if present
+								if (cachedMsg.status.statusHistory !== undefined) {
+									statusHistory = cachedMsg.status.statusHistory;
+								}
+
+								// Only set status if it has meaningful content
+								// If status only has statusHistory: null, treat it as null
+								const statusKeys = Object.keys(cachedMsg.status);
+								const hasMeaningfulContent = statusKeys.some((key) => {
+									const value = cachedMsg.status[key];
+									// Check if value is not null/undefined and not an empty array
+									if (value === null || value === undefined) return false;
+									if (Array.isArray(value) && value.length === 0) return false;
+									// statusHistory can be null, but if it's the only key, status should be null
+									if (key === 'statusHistory' && value === null && statusKeys.length === 1)
+										return false;
+									return true;
+								});
+
+								if (hasMeaningfulContent) {
+									status = cachedMsg.status;
+								}
+							}
+
+							// Convert cached message to frontend format
+							// Use cached children_ids if available, fall back to sync data
+							let childrenIds =
+								cachedMsg.children_ids && cachedMsg.children_ids.length > 0
+									? cachedMsg.children_ids
+									: syncData?.history?.messages?.[cachedMsg.id]?.children_ids || [];
+
+							// Sort childrenIds by position and created_at (same as backend)
+							// This ensures sibling messages are displayed in the correct order
+							// Backend orders by: position ASC, then created_at ASC
+							if (childrenIds.length > 0) {
+								// Create a map for faster lookups
+								const cachedMsgMap = new Map(cachedMessages.map((m) => [m.id, m]));
+
+								childrenIds = [...childrenIds].sort((id1, id2) => {
+									const msg1 = cachedMsgMap.get(id1);
+									const msg2 = cachedMsgMap.get(id2);
+									if (!msg1 || !msg2) return 0;
+
+									// Sort by position first (ASC), then by created_at (ASC)
+									// Backend: order_by(ChatMessage.position.asc(), ChatMessage.created_at.asc())
+									// For legacy messages with null positions, treat null as coming before numeric positions
+									// This ensures older messages (with null) come before newer messages (with 0)
+									const pos1 = msg1.position;
+									const pos2 = msg2.position;
+
+									// Handle null positions: null comes before all numeric positions (for legacy compatibility)
+									if (pos1 === null && pos2 === null) {
+										// Both null - sort by created_at
+										const created1 = msg1.created_at || 0;
+										const created2 = msg2.created_at || 0;
+										return created1 - created2;
+									} else if (pos1 === null) {
+										return -1; // pos1 is null, comes before pos2 (legacy message)
+									} else if (pos2 === null) {
+										return 1; // pos2 is null, comes before pos1 (legacy message)
+									} else {
+										// Both are numeric
+										if (pos1 !== pos2) {
+											return pos1 - pos2;
+										}
+										// If positions are equal, sort by created_at
+										const created1 = msg1.created_at || 0;
+										const created2 = msg2.created_at || 0;
+										return created1 - created2;
+									}
+								});
+							}
+
+							messagesMap[cachedMsg.id] = {
+								id: cachedMsg.id,
+								parentId: cachedMsg.parent_id,
+								childrenIds: childrenIds,
+								role: cachedMsg.role,
+								content: cachedMsg.content,
+								content_json: cachedMsg.content_json,
+								model: cachedMsg.model_id,
+								timestamp: cachedMsg.created_at,
+								status: status, // Only set if status has meaningful content
+								statusHistory: statusHistory, // Duplicate statusHistory at root level for frontend compatibility
+								usage: cachedMsg.usage || null,
+								meta: cachedMsg.meta || null,
+								annotation: cachedMsg.annotation,
+								feedbackId: cachedMsg.feedback_id,
+								selectedModelId: cachedMsg.selected_model_id,
+								files: cachedMsg.files,
+								sources: cachedMsg.sources,
+								updated_at: cachedMsg.updated_at,
+								position: cachedMsg.position,
+								modelIdx: cachedMsg.modelIdx ?? null, // Root-level property, not in meta
+								modelName: cachedMsg.modelName ?? null, // Root-level property, not in meta
+								models: cachedMsg.models ?? null // Root-level property for side-by-side chats
+							};
 						}
 
-						// Validate that currentId exists in messagesMap, or find a valid currentId
-						if (currentId && !messagesMap[currentId]) {
-							console.warn(
-								`currentId ${currentId} not found in messages, finding valid leaf message`
-							);
-							// Find a leaf message (one with no children or no children that exist)
-							const leafMessages = Object.values(messagesMap).filter((msg: any) => {
-								if (!msg.childrenIds || msg.childrenIds.length === 0) return true;
-								// Check if any children exist
-								return !msg.childrenIds.some((childId: string) => messagesMap[childId]);
+						// Get currentId from sync data
+						let currentId = syncData?.history?.currentId || null;
+
+						// Validate currentId - if it's null or doesn't exist, find a valid leaf message
+						if (!currentId || !messagesMap[currentId]) {
+							if (currentId && !messagesMap[currentId]) {
+								console.warn(`currentId ${currentId} not found in cached messages`);
+							}
+							// Find leaf messages (messages with no children or children that don't exist)
+							const leafMessages = cachedMessages.filter((msg) => {
+								const children = syncData?.history?.messages?.[msg.id]?.children_ids || [];
+								if (children.length === 0) return true;
+								// Check if all children exist in messagesMap
+								return !children.some((childId: string) => messagesMap[childId]);
 							});
 							if (leafMessages.length > 0) {
-								// Use the most recent leaf message
-								leafMessages.sort((a: any, b: any) => (b.timestamp || 0) - (a.timestamp || 0));
+								leafMessages.sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0));
 								currentId = leafMessages[0].id;
+							} else if (cachedMessages.length > 0) {
+								cachedMessages.sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0));
+								currentId = cachedMessages[0].id;
 							} else {
-								// Fallback: use the message with the highest timestamp
-								const allMessages = Object.values(messagesMap) as any[];
-								if (allMessages.length > 0) {
-									allMessages.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-									currentId = allMessages[0].id;
-								} else {
-									currentId = null;
-								}
+								currentId = null;
 							}
 						}
 
@@ -1147,8 +1631,6 @@
 							messages: messagesMap,
 							currentId: currentId
 						};
-					} else {
-						history = convertMessagesToHistory([]);
 					}
 				} catch (e) {
 					console.warn('Failed to load chat:', e);
@@ -1239,6 +1721,8 @@
 							: {}),
 						...message
 					};
+					// Cache message in IndexedDB
+					await cacheMessage(history.messages[message.id], chatId);
 				}
 			}
 		}
@@ -1376,9 +1860,12 @@
 			if (parentMessage) {
 				parentMessage.childrenIds.push(userMessageId);
 				history.messages[parentMessage.id] = parentMessage;
+				await cacheMessage(parentMessage, $chatId);
 			}
 			history.messages[userMessageId] = userMessage;
 			history.messages[responseMessageId] = responseMessage;
+			await cacheMessage(userMessage, $chatId);
+			await cacheMessage(responseMessage, $chatId);
 
 			history.currentId = responseMessageId;
 
@@ -1691,6 +2178,9 @@
 		history.messages[message.id] = message;
 
 		if (done) {
+			// Cache message in IndexedDB only when streaming is complete (for performance)
+			await cacheMessage(message, chatId);
+
 			message.done = true;
 
 			if ($settings.responseAutoCopy) {
@@ -1772,7 +2262,34 @@
 			parentId = history.currentId;
 		} else if (messages.length !== 0) {
 			// Standard chat: use the last message in the chain
-			parentId = messages.at(-1).id;
+			const lastMessage = messages.at(-1);
+			if (lastMessage && lastMessage.id) {
+				parentId = lastMessage.id;
+			}
+		}
+
+		// Fallback: if parentId is still null, find the most recent leaf message
+		// This can happen if currentId is invalid or messages list is empty
+		if (parentId === null && Object.keys(history.messages).length > 0) {
+			const allMessages = Object.values(history.messages) as any[];
+			// Find leaf messages (messages with no children or children that don't exist)
+			const leafMessages = allMessages.filter((msg) => {
+				if (!msg.childrenIds || msg.childrenIds.length === 0) return true;
+				return !msg.childrenIds.some((childId: string) => history.messages[childId]);
+			});
+			if (leafMessages.length > 0) {
+				// Sort by timestamp descending and use the most recent
+				leafMessages.sort(
+					(a, b) => (b.timestamp || b.updated_at || 0) - (a.timestamp || a.updated_at || 0)
+				);
+				parentId = leafMessages[0].id;
+			} else if (allMessages.length > 0) {
+				// If no leaf messages found, use the most recent message overall
+				allMessages.sort(
+					(a, b) => (b.timestamp || b.updated_at || 0) - (a.timestamp || a.updated_at || 0)
+				);
+				parentId = allMessages[0].id;
+			}
 		}
 
 		if (messages.length != 0) {
@@ -1851,10 +2368,13 @@
 		// Add message to history and Set currentId to messageId
 		history.messages[userMessageId] = userMessage;
 		history.currentId = userMessageId;
+		// Cache message in IndexedDB
+		await cacheMessage(userMessage, $chatId);
 
 		// Append messageId to childrenIds of parent message
 		if (parentId !== null && history.messages[parentId]) {
 			history.messages[parentId].childrenIds.push(userMessageId);
+			await cacheMessage(history.messages[parentId], $chatId);
 		}
 
 		// focus on chat input
@@ -1916,6 +2436,9 @@
 				history.messages[responseMessageId] = responseMessage;
 				history.currentId = responseMessageId;
 
+				// Cache message in IndexedDB
+				await cacheMessage(responseMessage, _chatId || $chatId);
+
 				// Append messageId to childrenIds of parent message
 				if (parentId !== null && history.messages[parentId]) {
 					// Add null check before accessing childrenIds
@@ -1923,6 +2446,7 @@
 						...history.messages[parentId].childrenIds,
 						responseMessageId
 					];
+					await cacheMessage(history.messages[parentId], _chatId || $chatId);
 				}
 
 				responseMessageIds[`${modelId}-${modelIdx ? modelIdx : _modelIdx}`] = responseMessageId;

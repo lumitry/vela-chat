@@ -969,8 +969,9 @@ app.include_router(users.router, prefix="/api/v1/users", tags=["users"])
 
 
 app.include_router(channels.router, prefix="/api/v1/channels", tags=["channels"])
-app.include_router(chats.router, prefix="/api/v1/chats", tags=["chats"])
+# Register chat_messages BEFORE chats to avoid route conflicts (batch must match before /{id}/messages/{message_id})
 app.include_router(chat_messages.router, prefix="/api/v1/chats", tags=["chat_messages"])
+app.include_router(chats.router, prefix="/api/v1/chats", tags=["chats"])
 
 app.include_router(models.router, prefix="/api/v1/models", tags=["models"])
 app.include_router(knowledge.router, prefix="/api/v1/knowledge", tags=["knowledge"])
@@ -1237,8 +1238,7 @@ async def list_tasks_endpoint(user=Depends(get_verified_user)):
 
 @app.get("/api/tasks/chat/{chat_id}")
 async def list_tasks_by_chat_id_endpoint(chat_id: str, user=Depends(get_verified_user)):
-    chat = Chats.get_chat_by_id(chat_id)
-    if chat is None or chat.user_id != user.id:
+    if not Chats.has_chat_access(chat_id, user.id):
         return {"task_ids": []}
 
     task_ids = list_task_ids_by_chat_id(chat_id)

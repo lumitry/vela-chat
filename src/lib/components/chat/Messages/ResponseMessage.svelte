@@ -626,7 +626,7 @@
 													<!-- $i18n.t("No search query generated") -->
 
 													<!-- $i18n.t('Searched {{count}} sites') -->
-													{#if status?.description.includes('{{count}}')}
+													{#if status?.description && status.description.includes('{{count}}')}
 														{$i18n.t(status?.description, {
 															count: status?.urls.length
 														})}
@@ -660,7 +660,7 @@
 													: ''} text-gray-500 dark:text-gray-500 text-base line-clamp-1 text-wrap"
 											>
 												<!-- $i18n.t(`Searching "{{searchQuery}}"`) -->
-												{#if status?.description.includes('{{searchQuery}}')}
+												{#if status?.description && status.description.includes('{{searchQuery}}')}
 													{$i18n.t(status?.description, {
 														searchQuery: status?.query
 													})}

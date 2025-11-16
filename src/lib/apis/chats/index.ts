@@ -359,86 +359,75 @@ export const getAllUserChats = async (token: string) => {
 };
 
 // New normalized messages API helpers
-export const fetchChatBranch = async (
-    token: string,
-    chatId: string,
-    leafId: string | null
-) => {
-    const params = new URLSearchParams();
-    if (leafId) params.append('leaf_id', leafId);
+export const fetchChatBranch = async (token: string, chatId: string, leafId: string | null) => {
+	const params = new URLSearchParams();
+	if (leafId) params.append('leaf_id', leafId);
 
-    const res = await fetch(`${WEBUI_API_BASE_URL}/chats/${chatId}/messages?${params.toString()}`, {
-        method: 'GET',
-        headers: {
-            Accept: 'application/json',
-            'Content-Type': 'application/json',
-            ...(token && { authorization: `Bearer ${token}` })
-        }
-    });
-    if (!res.ok) throw await res.json();
-    return res.json(); // { messages: [...] }
+	const res = await fetch(`${WEBUI_API_BASE_URL}/chats/${chatId}/messages?${params.toString()}`, {
+		method: 'GET',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json',
+			...(token && { authorization: `Bearer ${token}` })
+		}
+	});
+	if (!res.ok) throw await res.json();
+	return res.json(); // { messages: [...] }
 };
 
-export const fetchChatChildren = async (
-    token: string,
-    chatId: string,
-    parentId: string | null
-) => {
-    const params = new URLSearchParams();
-    if (parentId) params.append('parent_id', parentId);
+export const fetchChatChildren = async (token: string, chatId: string, parentId: string | null) => {
+	const params = new URLSearchParams();
+	if (parentId) params.append('parent_id', parentId);
 
-    const res = await fetch(`${WEBUI_API_BASE_URL}/chats/${chatId}/messages?${params.toString()}`, {
-        method: 'GET',
-        headers: {
-            Accept: 'application/json',
-            'Content-Type': 'application/json',
-            ...(token && { authorization: `Bearer ${token}` })
-        }
-    });
-    if (!res.ok) throw await res.json();
-    return res.json();
+	const res = await fetch(`${WEBUI_API_BASE_URL}/chats/${chatId}/messages?${params.toString()}`, {
+		method: 'GET',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json',
+			...(token && { authorization: `Bearer ${token}` })
+		}
+	});
+	if (!res.ok) throw await res.json();
+	return res.json();
 };
 
 export const createChatMessage = async (
-    token: string,
-    chatId: string,
-    payload: {
-        parent_id?: string | null;
-        role: string;
-        content_text?: string | null;
-        content_json?: Record<string, any> | null;
-        model_id?: string | null;
-        attachments?: Array<Record<string, any>> | null;
-        meta?: Record<string, any> | null;
-    }
+	token: string,
+	chatId: string,
+	payload: {
+		parent_id?: string | null;
+		role: string;
+		content_text?: string | null;
+		content_json?: Record<string, any> | null;
+		model_id?: string | null;
+		attachments?: Array<Record<string, any>> | null;
+		meta?: Record<string, any> | null;
+	}
 ) => {
-    const res = await fetch(`${WEBUI_API_BASE_URL}/chats/${chatId}/messages`, {
-        method: 'POST',
-        headers: {
-            Accept: 'application/json',
-            'Content-Type': 'application/json',
-            ...(token && { authorization: `Bearer ${token}` })
-        },
-        body: JSON.stringify(payload)
-    });
-    if (!res.ok) throw await res.json();
-    return res.json();
+	const res = await fetch(`${WEBUI_API_BASE_URL}/chats/${chatId}/messages`, {
+		method: 'POST',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json',
+			...(token && { authorization: `Bearer ${token}` })
+		},
+		body: JSON.stringify(payload)
+	});
+	if (!res.ok) throw await res.json();
+	return res.json();
 };
 
-export const fetchAllChatMessages = async (
-    token: string,
-    chatId: string
-) => {
-    const res = await fetch(`${WEBUI_API_BASE_URL}/chats/${chatId}/messages/all`, {
-        method: 'GET',
-        headers: {
-            Accept: 'application/json',
-            'Content-Type': 'application/json',
-            ...(token && { authorization: `Bearer ${token}` })
-        }
-    });
-    if (!res.ok) throw await res.json();
-    return res.json(); // { messages: [...] }
+export const fetchAllChatMessages = async (token: string, chatId: string) => {
+	const res = await fetch(`${WEBUI_API_BASE_URL}/chats/${chatId}/messages/all`, {
+		method: 'GET',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json',
+			...(token && { authorization: `Bearer ${token}` })
+		}
+	});
+	if (!res.ok) throw await res.json();
+	return res.json(); // { messages: [...] }
 };
 
 export const getAllTags = async (token: string) => {
@@ -577,7 +566,12 @@ export const getChatListByTagName = async (token: string = '', tagName: string) 
 	}));
 };
 
-export const getChatById = async (token: string, id: string, signal?: AbortSignal, forExport: boolean = false) => {
+export const getChatById = async (
+	token: string,
+	id: string,
+	signal?: AbortSignal,
+	forExport: boolean = false
+) => {
 	let error = null;
 
 	const url = new URL(`${WEBUI_API_BASE_URL}/chats/${id}`);
@@ -620,30 +614,89 @@ export const getChatById = async (token: string, id: string, signal?: AbortSigna
 };
 
 export const getChatMetaById = async (token: string, id: string) => {
-    let error = null;
+	let error = null;
 
-    const res = await fetch(`${WEBUI_API_BASE_URL}/chats/${id}/meta`, {
-        method: 'GET',
-        headers: {
-            Accept: 'application/json',
-            'Content-Type': 'application/json',
-            ...(token && { authorization: `Bearer ${token}` })
-        }
-    })
-        .then(async (res) => {
-            if (!res.ok) throw await res.json();
-            return res.json();
-        })
-        .catch((err) => {
-            error = err.detail ?? err;
-            return null;
-        });
+	const res = await fetch(`${WEBUI_API_BASE_URL}/chats/${id}/meta`, {
+		method: 'GET',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json',
+			...(token && { authorization: `Bearer ${token}` })
+		}
+	})
+		.then(async (res) => {
+			if (!res.ok) throw await res.json();
+			return res.json();
+		})
+		.catch((err) => {
+			error = err.detail ?? err;
+			return null;
+		});
 
-    if (error) {
-        throw error;
-    }
+	if (error) {
+		throw error;
+	}
 
-    return res;
+	return res;
+};
+
+export const getChatSync = async (token: string, id: string) => {
+	let error = null;
+
+	const res = await fetch(`${WEBUI_API_BASE_URL}/chats/${id}/sync`, {
+		method: 'GET',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json',
+			...(token && { authorization: `Bearer ${token}` })
+		}
+	})
+		.then(async (res) => {
+			if (!res.ok) throw await res.json();
+			return res.json();
+		})
+		.catch((err) => {
+			error = err.detail ?? err;
+			console.log(err);
+			return null;
+		});
+
+	if (error) {
+		throw error;
+	}
+
+	return res;
+};
+
+export const getMessagesBatch = async (token: string, chatId: string, messageIds: string[]) => {
+	let error = null;
+
+	const res = await fetch(`${WEBUI_API_BASE_URL}/chats/${chatId}/messages/batch`, {
+		method: 'POST',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json',
+			...(token && { authorization: `Bearer ${token}` })
+		},
+		body: JSON.stringify({
+			message_ids: messageIds
+		})
+	})
+		.then(async (res) => {
+			if (!res.ok) throw await res.json();
+			return res.json();
+		})
+		.catch((err) => {
+			error = err.detail ?? err;
+			console.log(err);
+			return null;
+		});
+
+	if (error) {
+		throw error;
+	}
+
+	return res;
 };
 
 export const getChatByShareId = async (token: string, share_id: string) => {

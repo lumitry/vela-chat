@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
 	import { onDestroy, onMount, tick, getContext } from 'svelte';
-	import { openDB, deleteDB } from 'idb';
 	import fileSaver from 'file-saver';
 	const { saveAs } = fileSaver;
 	import mermaid from 'mermaid';
@@ -140,26 +139,6 @@
 			// Defer non-critical data loading to after initial render
 			// Use requestIdleCallback if available, otherwise setTimeout
 			const loadDeferredData = () => {
-				// Load IndexedDB check
-				openDB('Chats', 1)
-					.then((db) => {
-						DB = db;
-						if (DB) {
-							return DB.getAllFromIndex('chats', 'timestamp');
-						}
-						return [];
-					})
-					.then((chats) => {
-						if (chats.length > 0) {
-							localDBChats = chats.map((item, idx) => chats[chats.length - 1 - idx]);
-						} else if (DB) {
-							deleteDB('Chats');
-						}
-					})
-					.catch(() => {
-						// IndexedDB Not Found or error - ignore
-					});
-
 				// Load banners, tools, and toolServers in parallel
 				Promise.all([
 					getBanners(localStorage.token).catch(() => []),

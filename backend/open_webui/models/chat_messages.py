@@ -1,5 +1,6 @@
 import time
 import uuid
+import xxhash
 from typing import Optional, List, Tuple
 
 from pydantic import BaseModel, ConfigDict
@@ -109,6 +110,32 @@ class ChatMessageModel(BaseModel):
     selected_model_id: Optional[str] = None
     created_at: int
     updated_at: int
+
+
+def compute_cache_key(message) -> str:
+    """
+    Compute cache key for a message using XXHash of content_length + updated_at + role + model_id.
+    Uses content length instead of full content for performance (O(1) vs O(L) for large messages).
+    XXHash is much faster than SHA-256 for non-cryptographic use cases like cache keys.
+    The likelihood of an edit resulting in identical length is extremely low, and updated_at ensures
+    cache invalidation on any change.
+    
+    Supports both ChatMessage objects and simple objects with content_length attribute.
+    """
+    # Support both ChatMessage objects and simple MessageData objects
+    if hasattr(message, 'content_length'):
+        # MessageData object from optimized query
+        content_length = message.content_length
+    else:
+        # ChatMessage object - compute length from content_text
+        content = str(message.content_text) if message.content_text else ""
+        content_length = len(content)
+    
+    updated_at = str(message.updated_at) if message.updated_at else "0"
+    role = str(message.role) if message.role else ""
+    model_id = str(message.model_id) if message.model_id else ""
+    combined = f"{content_length}{updated_at}{role}{model_id}"
+    return xxhash.xxh64(combined.encode()).hexdigest()
 
 
 class ChatMessageAttachmentModel(BaseModel):
@@ -248,8 +275,11 @@ class ChatMessagesTable:
                     position = form.meta.get("modelIdx", 0)
                 else:
                     # Find the maximum position among siblings with the same parent_id
+                    # Use COALESCE to handle NULL positions - treat NULL as -1 for max calculation
+                    # This ensures that if all siblings have NULL positions, we start at 0
+                    # If some have numeric positions, we increment from the max
                     max_position_result = db.query(
-                        func.max(ChatMessage.position)
+                        func.max(func.coalesce(ChatMessage.position, -1))
                     ).filter_by(
                         chat_id=chat_id,
                         parent_id=form.parent_id

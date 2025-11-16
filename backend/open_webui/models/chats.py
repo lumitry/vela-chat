@@ -623,6 +623,40 @@ class ChatTable:
         except Exception:
             return None
 
+    def has_chat_access(self, chat_id: str, user_id: str, db=None) -> bool:
+        """
+        Fast access check: verifies if a user has access to a chat.
+        Much faster than get_chat_by_id_and_user_id since it only checks existence
+        without loading the full ChatModel.
+        
+        Args:
+            chat_id: The chat ID to check
+            user_id: The user ID to verify access for
+            db: Optional database session. If provided, uses existing session.
+                If None, creates a new session.
+        
+        Returns:
+            True if the user has access to the chat, False otherwise.
+        """
+        if db is not None:
+            # Use provided session (for transaction efficiency)
+            chat_id_check = db.query(Chat.id).filter(
+                Chat.id == chat_id,
+                Chat.user_id == user_id
+            ).first()
+            return chat_id_check is not None
+        else:
+            # Create new session
+            try:
+                with get_db() as db:
+                    chat_id_check = db.query(Chat.id).filter(
+                        Chat.id == chat_id,
+                        Chat.user_id == user_id
+                    ).first()
+                    return chat_id_check is not None
+            except Exception:
+                return False
+
     def get_chats(self, skip: int = 0, limit: int = 50) -> list[ChatModel]:
         with get_db() as db:
             all_chats = (
