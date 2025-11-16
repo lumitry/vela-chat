@@ -46,9 +46,11 @@ import {
 	folders as foldersStore,
 	models as modelsStore,
 	chatCache,
-	theme
+	theme,
+	settings
 } from '$lib/stores';
 import { createMessagesList } from '$lib/utils';
+import { resetToDefaultGrayColors, applyCustomThemeColors } from '$lib/utils/theme';
 import type { SubmenuItem } from '$lib/utils/commandPalette/types';
 import { createSettingsCommands } from './settingsCommands';
 import { registerCommands, registerCommand } from '$lib/utils/commandPalette/registry';
@@ -61,6 +63,100 @@ let chatRegistered = false;
 const NAVIGATION_PRIORITY = 60;
 const ACTION_PRIORITY = 90;
 const CHAT_PRIORITY = 80;
+
+function applyThemeCommand(_theme: string): void {
+	if (typeof window === 'undefined' || typeof document === 'undefined') {
+		return;
+	}
+
+	try {
+		const $settings = get(settings);
+		let themeToApply = _theme === 'oled-dark' ? 'dark' : _theme;
+
+		if (_theme === 'system') {
+			themeToApply = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+		}
+
+		// Reset all CSS custom properties first
+		resetToDefaultGrayColors();
+
+		if (themeToApply === 'dark' && !_theme.includes('oled') && _theme !== 'custom') {
+			document.documentElement.style.setProperty('--color-gray-800', '#333');
+			document.documentElement.style.setProperty('--color-gray-850', '#262626');
+			document.documentElement.style.setProperty('--color-gray-900', '#171717');
+			document.documentElement.style.setProperty('--color-gray-950', '#0d0d0d');
+		}
+
+		// Remove all theme classes first
+		['dark', 'light', 'rose-pine', 'rose-pine-dawn', 'oled-dark', 'her', 'custom'].forEach(
+			(cls) => {
+				document.documentElement.classList.remove(cls);
+			}
+		);
+
+		// Handle custom theme
+		if (_theme === 'custom') {
+			document.documentElement.classList.add('dark');
+			document.documentElement.classList.add('custom');
+			if ($settings?.customThemeColor) {
+				applyCustomThemeColors($settings.customThemeColor);
+			}
+		} else {
+			// Add the new theme classes
+			themeToApply.split(' ').forEach((e) => {
+				document.documentElement.classList.add(e);
+			});
+
+			// Add dark class for special themes
+			if (['her'].includes(_theme)) {
+				document.documentElement.classList.add('dark');
+			}
+		}
+
+		const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+		if (metaThemeColor) {
+			if (_theme.includes('system')) {
+				const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches
+					? 'dark'
+					: 'light';
+				metaThemeColor.setAttribute('content', systemTheme === 'light' ? '#ffffff' : '#171717');
+			} else {
+				metaThemeColor.setAttribute(
+					'content',
+					_theme === 'dark'
+						? '#171717'
+						: _theme === 'oled-dark'
+							? '#000000'
+							: _theme === 'her'
+								? '#983724'
+								: _theme === 'custom'
+									? '#171717' // Will be overridden by custom color
+									: '#ffffff'
+				);
+			}
+		}
+
+		if (typeof window !== 'undefined' && (window as any).applyTheme) {
+			(window as any).applyTheme();
+		}
+
+		if (_theme.includes('oled')) {
+			document.documentElement.style.setProperty('--color-gray-800', '#101010');
+			document.documentElement.style.setProperty('--color-gray-850', '#050505');
+			document.documentElement.style.setProperty('--color-gray-900', '#000000');
+			document.documentElement.style.setProperty('--color-gray-950', '#000000');
+			document.documentElement.classList.add('dark');
+		}
+
+		// Update theme store and localStorage
+		theme.set(_theme);
+		if (typeof localStorage !== 'undefined') {
+			localStorage.setItem('theme', _theme);
+		}
+	} catch (error) {
+		console.error('Failed to apply theme:', error);
+	}
+}
 
 const coreCommands: Command[] = [
 	{
@@ -111,6 +207,50 @@ const coreCommands: Command[] = [
 		icon: MenuLines,
 		execute: () => {
 			showSidebar.update((value) => !value);
+		}
+	},
+	{
+		id: 'core:switch-theme',
+		type: 'submenu',
+		label: 'Switch Theme',
+		keywords: ['theme', 'appearance', 'dark', 'light', 'mode', 'color'],
+		priority: ACTION_PRIORITY - 8,
+		icon: AdjustmentsHorizontal,
+		getSubmenuItems: async (query: string, context?: CommandContext): Promise<SubmenuItem[]> => {
+			const currentTheme =
+				get(theme) ||
+				(typeof localStorage !== 'undefined' ? localStorage.getItem('theme') : null) ||
+				'system';
+			const lowerQuery = query.toLowerCase();
+
+			const themes: Array<{ value: string; label: string; emoji: string }> = [
+				{ value: 'system', label: 'System', emoji: '⚙️' },
+				{ value: 'dark', label: 'Dark', emoji: '🌑' },
+				{ value: 'oled-dark', label: 'OLED Dark', emoji: '🌃' },
+				{ value: 'light', label: 'Light', emoji: '☀️' },
+				{ value: 'her', label: 'Her', emoji: '🌷' },
+				{ value: 'custom', label: 'Custom', emoji: '🎨' }
+			];
+
+			const themeItems: SubmenuItem[] = themes
+				.filter((themeOption) => {
+					return (
+						!query ||
+						themeOption.label.toLowerCase().includes(lowerQuery) ||
+						themeOption.value.toLowerCase().includes(lowerQuery)
+					);
+				})
+				.map((themeOption) => ({
+					id: `theme:${themeOption.value}`,
+					label: `${themeOption.emoji} ${themeOption.label}`,
+					description: currentTheme === themeOption.value ? 'Current theme' : undefined,
+					execute: async () => {
+						applyThemeCommand(themeOption.value);
+						toast.success(`Theme switched to ${themeOption.label}`);
+					}
+				}));
+
+			return themeItems;
 		}
 	},
 	{
@@ -213,12 +353,17 @@ export function registerCoreCommands(): void {
 	if (coreRegistered) return;
 	coreRegistered = true;
 
-	for (const command of coreCommands) {
-		registerCommand(command);
-	}
+	try {
+		for (const command of coreCommands) {
+			registerCommand(command);
+		}
 
-	registerCommands(createSettingsCommands(), { replace: true });
-	registerChatCommands();
+		registerCommands(createSettingsCommands(), { replace: true });
+		registerChatCommands();
+	} catch (error) {
+		console.error('Failed to register core commands:', error);
+		throw error;
+	}
 }
 
 const requiresPersistentChat = (context: CommandContext) =>
@@ -234,11 +379,7 @@ async function getSaveAs(): Promise<SaveAsFn> {
 	if (typeof mod.default === 'function') {
 		return mod.default as SaveAsFn;
 	}
-	if (
-		mod.default &&
-		typeof mod.default === 'object' &&
-		typeof mod.default.saveAs === 'function'
-	) {
+	if (mod.default && typeof mod.default === 'object' && typeof mod.default.saveAs === 'function') {
 		return mod.default.saveAs as SaveAsFn;
 	}
 	throw new Error('file-saver module did not expose saveAs');
@@ -426,13 +567,13 @@ const chatCommands: Command[] = [
 							return cache;
 						});
 						await refreshChats();
-						
+
 						// Dispatch event to update current chat view if we're viewing this chat
 						const event = new CustomEvent('chat-model-updated', {
 							detail: { chatId: currentChatId, models: [model.id] }
 						});
 						window.dispatchEvent(event);
-						
+
 						toast.success('Model updated.');
 					}
 				}));
@@ -529,10 +670,11 @@ const chatCommands: Command[] = [
 				}
 			];
 
-			return exportTypes.filter(item => 
-				!query || 
-				item.label.toLowerCase().includes(lowerQuery) ||
-				item.description?.toLowerCase().includes(lowerQuery)
+			return exportTypes.filter(
+				(item) =>
+					!query ||
+					item.label.toLowerCase().includes(lowerQuery) ||
+					item.description?.toLowerCase().includes(lowerQuery)
 			);
 		}
 	},
@@ -650,4 +792,3 @@ export function registerChatCommands(): void {
 		registerCommand(command);
 	}
 }
-
