@@ -75,8 +75,8 @@
 		system: ''
 	};
 	let capabilities = {
-		vision: true,
-		usage: undefined,
+		vision: false,
+		usage: true,
 		citations: true,
 		verbosity: false
 	};
