@@ -426,9 +426,9 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
             }
 
             # Debug: Log ID conversion to help track down ID mismatches
-            if log.isEnabledFor(logging.DEBUG):
-                log.debug(f"Converting message: db_id={msg.id}, db_parent_id={msg.parent_id}, "
-                          f"converted_id={msg_id}, converted_parent_id={msg_parent_id}")
+            # if log.isEnabledFor(logging.DEBUG):
+                # log.debug(f"Converting message: db_id={msg.id}, db_parent_id={msg.parent_id}, "
+                        #   f"converted_id={msg_id}, converted_parent_id={msg_parent_id}")
 
             # Add modelName for assistant messages (lookup from model_id)
             if msg_role == "assistant" and msg_model_id:

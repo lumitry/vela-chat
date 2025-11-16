@@ -3,6 +3,8 @@ import logging
 import mimetypes
 import os
 import shutil
+import time
+import asyncio
 
 import uuid
 from datetime import datetime, timezone
@@ -1663,13 +1665,17 @@ def search_web(request: Request, engine: str, query: str) -> list[SearchResult]:
 async def process_web_search(
     request: Request, form_data: SearchForm, user=Depends(get_verified_user)
 ):
+    process_start = time.perf_counter()
     try:
         logging.info(
             f"trying to web search with {request.app.state.config.WEB_SEARCH_ENGINE, form_data.query}"
         )
+        search_start = time.perf_counter()
         web_results = search_web(
             request, request.app.state.config.WEB_SEARCH_ENGINE, form_data.query
         )
+        search_time = time.perf_counter() - search_start
+        log.debug(f"PERF: process_web_search search_web() took {search_time:.3f}s, got {len(web_results)} results")
     except Exception as e:
         log.exception(e)
 
@@ -1682,6 +1688,7 @@ async def process_web_search(
 
     try:
         urls = [result.link for result in web_results]
+        loader_start = time.perf_counter()
         loader = get_web_loader(
             urls,
             verify_ssl=request.app.state.config.ENABLE_WEB_LOADER_SSL_VERIFICATION,
@@ -1689,11 +1696,15 @@ async def process_web_search(
             trust_env=request.app.state.config.WEB_SEARCH_TRUST_ENV,
         )
         docs = await loader.aload()
+        loader_time = time.perf_counter() - loader_start
+        log.debug(f"PERF: process_web_search loader.aload() took {loader_time:.3f}s, loaded {len(docs)} docs from {len(urls)} URLs")
         urls = [
             doc.metadata["source"] for doc in docs
         ]  # only keep URLs which could be retrieved
 
         if request.app.state.config.BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL:
+            process_total_time = time.perf_counter() - process_start
+            log.debug(f"PERF: process_web_search total time (bypass mode): {process_total_time:.3f}s (query='{form_data.query[:50]}...', docs={len(docs)})")
             return {
                 "status": True,
                 "collection_name": None,
@@ -1716,44 +1727,66 @@ async def process_web_search(
             # Track embedding info for rollup update
             embedding_info = None
 
+            embedding_start = time.perf_counter()
+            # Prepare all save tasks first
+            save_tasks = []
             for doc_idx, doc in enumerate(docs):
                 if doc and doc.page_content:
                     collection_name = f"web-search-{calculate_sha256_string(form_data.query + '-' + urls[doc_idx])}"[
                         :63
                     ]
-
                     collection_names.append(collection_name)
-                    await run_in_threadpool(
-                        save_docs_to_vector_db,
-                        request,
-                        [doc],
+                    
+                    # Prepare save task (don't await yet)
+                    save_tasks.append((
                         collection_name,
-                        overwrite=True,
-                        user=user,
-                        use_web_search_embedding=True,
-                        embedding_type=str(EMBEDDING_TYPES.WEB_SEARCH_EMBEDDING),
-                        chat_id=chat_id,
-                        message_id=message_id,
-                        skip_rollup_update=True,  # Skip individual rollup updates, aggregate at end
-                    )
+                        run_in_threadpool(
+                            save_docs_to_vector_db,
+                            request,
+                            [doc],
+                            collection_name,
+                            overwrite=True,
+                            user=user,
+                            use_web_search_embedding=True,
+                            embedding_type=str(EMBEDDING_TYPES.WEB_SEARCH_EMBEDDING),
+                            chat_id=chat_id,
+                            message_id=message_id,
+                            skip_rollup_update=True,  # Skip individual rollup updates, aggregate at end
+                        )
+                    ))
+            
+            # Execute all save tasks in parallel
+            if save_tasks:
+                log.debug(f"PERF: process_web_search saving {len(save_tasks)} documents in parallel")
+                save_results = await asyncio.gather(*[task[1] for task in save_tasks], return_exceptions=True)
+                
+                # Log individual save times (approximate since they run in parallel)
+                for (collection_name, _), result in zip(save_tasks, save_results):
+                    if isinstance(result, Exception):
+                        log.exception(f"Error saving document to {collection_name}: {result}")
+                    else:
+                        log.debug(f"PERF: process_web_search save_docs_to_vector_db({collection_name}) completed")
+            
+            embedding_total_time = time.perf_counter() - embedding_start
+            log.debug(f"PERF: process_web_search total embedding/saving time: {embedding_total_time:.3f}s for {len(collection_names)} collections (parallelized)")
 
-                    # Capture embedding info from the first doc for rollup update
-                    if embedding_info is None and user:
-                        # Determine embedding engine and model
-                        if request.app.state.config.WEB_SEARCH_EMBEDDING_ENGINE and request.app.state.config.WEB_SEARCH_EMBEDDING_ENGINE != "":
-                            embedding_engine = request.app.state.config.WEB_SEARCH_EMBEDDING_ENGINE
-                            embedding_model = request.app.state.config.WEB_SEARCH_EMBEDDING_MODEL or request.app.state.config.RAG_EMBEDDING_MODEL
-                        else:
-                            embedding_engine = request.app.state.config.RAG_EMBEDDING_ENGINE
-                            embedding_model = request.app.state.config.RAG_EMBEDDING_MODEL
+            # Capture embedding info from the first doc for rollup update
+            if embedding_info is None and user and save_tasks:
+                # Determine embedding engine and model
+                if request.app.state.config.WEB_SEARCH_EMBEDDING_ENGINE and request.app.state.config.WEB_SEARCH_EMBEDDING_ENGINE != "":
+                    embedding_engine = request.app.state.config.WEB_SEARCH_EMBEDDING_ENGINE
+                    embedding_model = request.app.state.config.WEB_SEARCH_EMBEDDING_MODEL or request.app.state.config.RAG_EMBEDDING_MODEL
+                else:
+                    embedding_engine = request.app.state.config.RAG_EMBEDDING_ENGINE
+                    embedding_model = request.app.state.config.RAG_EMBEDDING_MODEL
 
-                        embedding_model_type = "internal" if (embedding_engine == "" or embedding_engine == "ollama") else "external"
-                        embedding_info = {
-                            "user_id": user.id,
-                            "embedding_type": str(EMBEDDING_TYPES.WEB_SEARCH_EMBEDDING),
-                            "model_id": embedding_model,
-                            "embedding_model_type": embedding_model_type,
-                        }
+                embedding_model_type = "internal" if (embedding_engine == "" or embedding_engine == "ollama") else "external"
+                embedding_info = {
+                    "user_id": user.id,
+                    "embedding_type": str(EMBEDDING_TYPES.WEB_SEARCH_EMBEDDING),
+                    "model_id": embedding_model,
+                    "embedding_model_type": embedding_model_type,
+                }
 
             # Update rollup table after all embeddings are complete
             if embedding_info:
@@ -1766,6 +1799,8 @@ async def process_web_search(
                     embedding_model_type=embedding_info["embedding_model_type"],
                 )
 
+            process_total_time = time.perf_counter() - process_start
+            log.debug(f"PERF: process_web_search total time: {process_total_time:.3f}s (query='{form_data.query[:50]}...', collections={len(collection_names)}, docs={len(docs)})")
             return {
                 "status": True,
                 "collection_names": collection_names,

@@ -298,6 +298,7 @@ async def chat_completion_tools_handler(
 async def chat_web_search_handler(
     request: Request, form_data: dict, extra_params: dict, user
 ):
+    handler_start = time.perf_counter()
     event_emitter = extra_params["__event_emitter__"]
     await event_emitter(
         {
@@ -328,6 +329,7 @@ async def chat_web_search_handler(
             log.debug(f"Could not get message_id for query generation: {e}")
 
     queries = []
+    query_gen_start = time.perf_counter()
     try:
         res = await generate_queries(
             request,
@@ -360,6 +362,9 @@ async def chat_web_search_handler(
     except Exception as e:
         log.exception(e)
         queries = [user_message]
+    
+    query_gen_time = time.perf_counter() - query_gen_start
+    log.debug(f"PERF: chat_web_search_handler query generation took {query_gen_time:.3f}s, generated {len(queries)} queries")
 
     if len(queries) == 0:
         await event_emitter(
@@ -376,6 +381,7 @@ async def chat_web_search_handler(
 
     all_results = []
 
+    # Emit status for all searches starting
     for searchQuery in queries:
         await event_emitter(
             {
@@ -389,22 +395,75 @@ async def chat_web_search_handler(
             }
         )
 
-        try:
-            results = await process_web_search(
-                request,
-                SearchForm(
-                    **{
-                        "query": searchQuery,
-                        "chat_id": chat_id,
-                        "message_id": message_id,
+    # Execute all searches in parallel with rate limiting
+    # Use a semaphore to limit concurrent API calls (max 2 at a time to avoid rate limits)
+    search_semaphore = asyncio.Semaphore(2)
+    
+    async def execute_search(searchQuery, delay=0):
+        # Stagger requests slightly to avoid hitting rate limits
+        if delay > 0:
+            await asyncio.sleep(delay)
+        
+        async with search_semaphore:
+            search_start = time.perf_counter()
+            try:
+                results = await process_web_search(
+                    request,
+                    SearchForm(
+                        **{
+                            "query": searchQuery,
+                            "chat_id": chat_id,
+                            "message_id": message_id,
+                        }
+                    ),
+                    user=user,
+                )
+                search_time = time.perf_counter() - search_start
+                log.debug(f"PERF: process_web_search for query '{searchQuery[:50]}...' took {search_time:.3f}s")
+                return searchQuery, results, None
+            except Exception as e:
+                search_time = time.perf_counter() - search_start
+                log.exception(f"Error in parallel web search for query '{searchQuery[:50]}...': {e} (took {search_time:.3f}s)")
+                await event_emitter(
+                    {
+                        "type": "status",
+                        "data": {
+                            "action": "web_search",
+                            "description": 'Error searching "{{searchQuery}}"',
+                            "query": searchQuery,
+                            "done": True,
+                            "error": True,
+                        },
                     }
-                ),
-                user=user,
-            )
+                )
+                return searchQuery, None, e
 
+    # Run all searches in parallel with staggered delays to avoid rate limits
+    if queries:
+        log.debug(f"PERF: chat_web_search_handler executing {len(queries)} web searches in parallel (rate-limited)")
+        search_start = time.perf_counter()
+        # Stagger requests: 0s, 0.5s, 1s delays to avoid hitting API rate limits
+        search_tasks = [
+            execute_search(query, delay=i * 0.5) 
+            for i, query in enumerate(queries)
+        ]
+        search_results = await asyncio.gather(*search_tasks, return_exceptions=True)
+        search_total_time = time.perf_counter() - search_start
+        log.debug(f"PERF: chat_web_search_handler parallel web searches took {search_total_time:.3f}s for {len(queries)} queries")
+
+        # Process results
+        files = form_data.get("files", [])
+        for result in search_results:
+            if isinstance(result, Exception):
+                log.exception(f"Unexpected error in parallel web search: {result}")
+                continue
+            
+            searchQuery, results, error = result
+            if error:
+                continue  # Already logged and emitted
+            
             if results:
                 all_results.append(results)
-                files = form_data.get("files", [])
 
                 if results.get("collection_names"):
                     for col_idx, collection_name in enumerate(
@@ -445,21 +504,7 @@ async def chat_web_search_handler(
                             }
                         )
 
-                form_data["files"] = files
-        except Exception as e:
-            log.exception(e)
-            await event_emitter(
-                {
-                    "type": "status",
-                    "data": {
-                        "action": "web_search",
-                        "description": 'Error searching "{{searchQuery}}"',
-                        "query": searchQuery,
-                        "done": True,
-                        "error": True,
-                    },
-                }
-            )
+        form_data["files"] = files
 
     if all_results:
         urls = []
@@ -490,6 +535,9 @@ async def chat_web_search_handler(
                 },
             }
         )
+    
+    handler_total_time = time.perf_counter() - handler_start
+    log.debug(f"PERF: chat_web_search_handler total time: {handler_total_time:.3f}s (processed {len(queries)} queries, {len(all_results)} results)")
 
     return form_data
 

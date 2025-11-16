@@ -11,6 +11,7 @@ from typing import Optional, Union
 
 import requests
 import hashlib
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 from huggingface_hub import snapshot_download
@@ -87,8 +88,8 @@ def query_doc(
             limit=k,
         )
 
-        if result:
-            log.info(f"query_doc:result {result.ids} {result.metadatas}")
+        # if result:
+        #     log.info(f"query_doc:result {result.ids} {result.metadatas}")
 
         return result
     except Exception as e:
@@ -101,8 +102,8 @@ def get_doc(collection_name: str, user: UserModel = None):
         log.debug(f"get_doc:doc {collection_name}")
         result = VECTOR_DB_CLIENT.get(collection_name=collection_name)
 
-        if result:
-            log.info(f"query_doc:result {result.ids} {result.metadatas}")
+        # if result:
+        #     log.info(f"query_doc:result {result.ids} {result.metadatas}")
 
         return result
     except Exception as e:
@@ -261,26 +262,87 @@ def query_collection(
     queries: list[str],
     embedding_function,
     k: int,
+    precomputed_embeddings: Optional[list[list[float]]] = None,
 ) -> dict:
+    start_time = time.perf_counter()
     results = []
-    for query in queries:
-        log.debug(f"query_collection:query {query}")
-        query_embedding = embedding_function(query, prefix=RAG_EMBEDDING_QUERY_PREFIX)
-        for collection_name in collection_names:
-            if collection_name:
-                try:
-                    result = query_doc(
-                        collection_name=collection_name,
-                        k=k,
-                        query_embedding=query_embedding,
-                    )
-                    if result is not None:
-                        results.append(result.model_dump())
-                except Exception as e:
-                    log.exception(f"Error when querying the collection: {e}")
+    
+    # Batch all queries together for embedding generation (or use pre-computed embeddings)
+    if queries:
+        if precomputed_embeddings is not None:
+            log.info(f"query_collection: using {len(precomputed_embeddings)} pre-computed embeddings")
+            all_query_embeddings = precomputed_embeddings
+        else:
+            log.info(f"query_collection: batching {len(queries)} queries together")
+            embedding_start = time.perf_counter()
+            all_query_embeddings = embedding_function(queries, prefix=RAG_EMBEDDING_QUERY_PREFIX)
+            embedding_time = time.perf_counter() - embedding_start
+            log.debug(f"PERF: query_collection embedding generation took {embedding_time:.3f}s for {len(queries)} queries")
+        
+        # Ensure we got embeddings for all queries
+        # The embedding function should return a list when given a list of queries
+        if not isinstance(all_query_embeddings, list):
+            # Edge case: single query might return a single embedding instead of a list
+            all_query_embeddings = [all_query_embeddings]
+        
+        # Verify we have the right number of embeddings
+        if len(all_query_embeddings) != len(queries):
+            log.warning(f"query_collection: Expected {len(queries)} embeddings, got {len(all_query_embeddings)}. Using available embeddings.")
+            # Truncate or pad as needed to match query count
+            if len(all_query_embeddings) < len(queries):
+                log.error(f"query_collection: Not enough embeddings returned. Some queries will be skipped.")
+                # Only process queries we have embeddings for
+                queries = queries[:len(all_query_embeddings)]
             else:
-                pass
+                # Too many embeddings, truncate
+                all_query_embeddings = all_query_embeddings[:len(queries)]
+        
+        # Prepare tasks for parallel vector DB searches
+        def process_search(query_idx, query_embedding, collection_name):
+            search_start = time.perf_counter()
+            try:
+                result = query_doc(
+                    collection_name=collection_name,
+                    k=k,
+                    query_embedding=query_embedding,
+                )
+                search_time = time.perf_counter() - search_start
+                log.debug(f"PERF: query_doc({collection_name}) took {search_time:.3f}s")
+                return result.model_dump() if result is not None else None
+            except Exception as e:
+                search_time = time.perf_counter() - search_start
+                query_str = queries[query_idx] if query_idx < len(queries) else f"query_idx_{query_idx}"
+                log.exception(f"Error when querying collection {collection_name} with query {query_str}: {e} (took {search_time:.3f}s)")
+                return None
+        
+        # Use ThreadPoolExecutor to search all collections in parallel for all queries
+        tasks = []
+        for query_idx, query_embedding in enumerate(all_query_embeddings):
+            for collection_name in collection_names:
+                if collection_name:
+                    tasks.append((query_idx, query_embedding, collection_name))
+        
+        log.debug(f"PERF: query_collection preparing {len(tasks)} search tasks across {len(collection_names)} collections")
+        search_start = time.perf_counter()
+        # Execute searches in parallel
+        with ThreadPoolExecutor() as executor:
+            future_results = [
+                executor.submit(process_search, query_idx, query_embedding, collection_name)
+                for query_idx, query_embedding, collection_name in tasks
+            ]
+            task_results = [future.result() for future in future_results]
+        search_time = time.perf_counter() - search_start
+        log.debug(f"PERF: query_collection parallel vector DB searches took {search_time:.3f}s for {len(tasks)} tasks")
+        
+        # Collect valid results
+        for result in task_results:
+            if result is not None:
+                results.append(result)
+    else:
+        log.warning("query_collection: No queries provided")
 
+    total_time = time.perf_counter() - start_time
+    log.debug(f"PERF: query_collection total time: {total_time:.3f}s (queries={len(queries)}, collections={len(collection_names)}, results={len(results)})")
     return merge_and_sort_query_results(results, k=k)
 
 
@@ -384,10 +446,12 @@ def get_embedding_function(
         def generate_multiple(query, prefix, user, func):
             if isinstance(query, list):
                 embeddings = []
-                for i in range(0, len(query), embedding_batch_size):
+                # Handle maximum batch size mode: -1 or 0 means send all chunks at once
+                effective_batch_size = len(query) if (embedding_batch_size == -1 or embedding_batch_size == 0) else embedding_batch_size
+                for i in range(0, len(query), effective_batch_size):
                     embeddings.extend(
                         func(
-                            query[i: i + embedding_batch_size],
+                            query[i: i + effective_batch_size],
                             prefix=prefix,
                             user=user,
                         )
@@ -465,8 +529,10 @@ def get_embedding_function_with_usage(
                     "count": 0,
                     "usage_list": []
                 }
-                for i in range(0, len(query), embedding_batch_size):
-                    batch = query[i: i + embedding_batch_size]
+                # Handle maximum batch size mode: -1 or 0 means send all chunks at once
+                effective_batch_size = len(query) if (embedding_batch_size == -1 or embedding_batch_size == 0) else embedding_batch_size
+                for i in range(0, len(query), effective_batch_size):
+                    batch = query[i: i + effective_batch_size]
                     if embedding_engine == "ollama":
                         batch_embeddings, batch_usage = generate_ollama_batch_embeddings(
                             model=embedding_model,
@@ -573,19 +639,25 @@ def get_sources_from_files(
         except Exception:
             return False
 
-    log.info(f"RAG DEBUG get_sources_from_files: Called with {len(files)} files, {len(queries)} queries")
-    log.info(f"RAG DEBUG get_sources_from_files: full_context={full_context}, hybrid_search={hybrid_search}")
+    log.debug(f"RAG DEBUGINFO get_sources_from_files: Called with {len(files)} files, {len(queries)} queries")
+    log.debug(f"RAG DEBUGINFO get_sources_from_files: full_context={full_context}, hybrid_search={hybrid_search}")
     log.debug(f"files: {files} {queries} {embedding_function} {reranking_function} {full_context}")
 
     extracted_collections = []
     relevant_contexts = []
+    
+    # Store file contexts and query tasks for parallelization
+    file_contexts = {}  # file_idx -> context (if already available)
+    query_tasks = []  # List of query tasks to execute in parallel
 
     for file_idx, file in enumerate(files):
-        log.info(f"RAG DEBUG get_sources_from_files: Processing file {file_idx}: type={file.get('type')}, "
+        log.debug(f"RAG DEBUGINFO get_sources_from_files: Processing file {file_idx}: type={file.get('type')}, "
                  f"id={file.get('id')}, collection_name={file.get('collection_name')}, "
                  f"keys={list(file.keys())}")
 
         context = None
+        needs_query = False  # Track if this file needs a query_collection call
+        
         if file.get("docs"):
             # BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL
             context = {
@@ -663,6 +735,7 @@ def get_sources_from_files(
             collection_names = []
             meta = file.get("meta") or {}
             ftype = file.get("type")
+            needs_query = False  # Will be set to True if we need to query
             # For direct file attachments, prefer the per-file collection (file-{id})
             if ftype in ["file", "image"] and file.get("id"):
                 per_file_collection = f"file-{file['id']}"
@@ -702,54 +775,60 @@ def get_sources_from_files(
             elif ftype == "collection":
                 if file.get("legacy"):
                     collection_names = file.get("collection_names", [])
-                    log.info(f"RAG DEBUG: Collection (legacy) - collection_names={collection_names}")
+                    log.debug(f"RAG DEBUGINFO: Collection (legacy) - collection_names={collection_names}")
                 else:
                     # Prefer explicit id; otherwise try meta.collection_name
                     collection_id = file.get("id") or meta.get("collection_name")
                     if collection_id:
                         collection_names.append(collection_id)
-                        log.info(f"RAG DEBUG: Collection (non-legacy) - using id/collection_name={collection_id}")
+                        log.debug(f"RAG DEBUGINFO: Collection (non-legacy) - using id/collection_name={collection_id}")
                     else:
                         log.warning(f"RAG DEBUG: Collection type file has no id or meta.collection_name: {file}")
             elif file.get("collection_name") or meta.get("collection_name"):
                 cn = file.get("collection_name") or meta.get("collection_name")
                 collection_names.append(cn)
-                log.info(f"RAG DEBUG: File has collection_name={cn}")
+                log.debug(f"RAG DEBUGINFO: File has collection_name={cn}")
             elif file.get("id"):
                 if file.get("legacy"):
                     collection_names.append(f"{file['id']}")
-                    log.info(f"RAG DEBUG: File (legacy) - using id={file['id']}")
+                    log.debug(f"RAG DEBUGINFO: File (legacy) - using id={file['id']}")
                 else:
                     collection_name = f"file-{file['id']}"
                     collection_names.append(collection_name)
-                    log.info(f"RAG DEBUG: File (non-legacy) - constructed collection_name={collection_name}")
+                    log.debug(f"RAG DEBUGINFO: File (non-legacy) - constructed collection_name={collection_name}")
             else:
                 log.warning(f"RAG DEBUG: File has no id or collection_name: {file}")
 
             collection_names = list(set(collection_names).difference(
                 extracted_collections))
-            log.info(f"RAG DEBUG: Final collection_names for file {file_idx}: {collection_names}")
+            log.debug(f"RAG DEBUGINFO: Final collection_names for file {file_idx}: {collection_names}")
             if not collection_names:
-                log.info(f"RAG DEBUG: Skipping file {file_idx} as it has already been extracted")
+                log.debug(f"RAG DEBUGINFO: Skipping file {file_idx} as it has already been extracted")
+                # Store empty context for this file
+                file_contexts[file_idx] = None
+                # Don't extend extracted_collections since we skipped
                 continue
+
+            # Track that we'll extract these collections
+            extracted_collections.extend(collection_names)
 
             if full_context:
                 try:
-                    log.info(f"RAG DEBUG: Using full_context mode for collections: {collection_names}")
+                    log.debug(f"RAG DEBUGINFO: Using full_context mode for collections: {collection_names}")
                     context = get_all_items_from_collections(collection_names)
                     d, m = _ctx_counts(context or {})
-                    log.info(f"RAG DEBUG: Full context retrieved: docs={d}, metas={m}")
+                    log.debug(f"RAG DEBUGINFO: Full context retrieved: docs={d}, metas={m}")
                 except Exception as e:
                     log.exception(f"RAG DEBUG: Exception in get_all_items_from_collections: {e}")
 
             else:
                 try:
-                    context = None
                     if file.get("type") == "text":
-                        log.info(f"RAG DEBUG: File type is text, using content directly")
+                        log.debug(f"RAG DEBUGINFO: File type is text, using content directly")
                         context = file["content"]
                     else:
-                        log.info(f"RAG DEBUG: Querying collections: {collection_names}, hybrid_search={hybrid_search}")
+                        needs_query = True
+                        log.debug(f"RAG DEBUGINFO: Querying collections: {collection_names}, hybrid_search={hybrid_search}")
 
                         # Determine which embedding function to use for these collections
                         # If this is a web_search file and web search embedding override is active, use web search embedding function
@@ -791,9 +870,10 @@ def get_sources_from_files(
                                 ),
                                 embedding_batch_size,
                             )
-                            log.info(f"RAG DEBUG: Using web search embedding function for web search collections: engine={embedding_engine}, model={embedding_model}")
+                            log.debug(f"RAG DEBUGINFO: Using web search embedding function for web search collections: engine={embedding_engine}, model={embedding_model}")
 
                         if hybrid_search:
+                            # Hybrid search needs to run sequentially for now (more complex)
                             try:
                                 context = query_collection_with_hybrid_search(
                                     collection_names=collection_names,
@@ -805,23 +885,30 @@ def get_sources_from_files(
                                     r=r,
                                 )
                                 d, m = _ctx_counts(context or {})
-                                log.info(f"RAG DEBUG: Hybrid search returned context: docs={d}, metas={m}")
+                                log.debug(f"RAG DEBUGINFO: Hybrid search returned context: docs={d}, metas={m}")
+                                needs_query = False  # Got context from hybrid search
                             except Exception as e:
                                 log.warning(f"RAG DEBUG: Error when using hybrid search: {e}, using non hybrid search as fallback.")
+                                needs_query = True  # Will fall back to standard query
 
-                        if (not hybrid_search) or (context is None) or (not _has_results(context)):
-                            log.info(f"RAG DEBUG: Using standard query_collection (hybrid_search={hybrid_search}, context_has_results={_has_results(context) if context is not None else None})")
-                            context = query_collection(
-                                collection_names=collection_names,
-                                queries=queries,
-                                embedding_function=query_embedding_function,
-                                k=k,
-                            )
-                            d, m = _ctx_counts(context or {})
-                            log.info(f"RAG DEBUG: query_collection returned: docs={d}, metas={m}")
+                        if needs_query and ((not hybrid_search) or (context is None) or (not _has_results(context))):
+                            log.debug(f"RAG DEBUGINFO: Using standard query_collection (hybrid_search={hybrid_search}, context_has_results={_has_results(context) if context is not None else None})")
+                            # Store task info for parallel execution later
+                            query_tasks.append({
+                                "file_idx": file_idx,
+                                "file": file,
+                                "collection_names": collection_names,
+                                "query_embedding_function": query_embedding_function,
+                                "k": k,
+                                "hybrid_search": hybrid_search,
+                            })
+                            # Set context to None for now, will be filled after parallel execution
+                            context = None
+                            needs_query = False  # Task queued
 
                     # Fallback: if no results, try loading full file content directly
-                    if (context is None or not _has_results(context)) and file.get("id") and file.get("type") in ["file", "image"]:
+                    # Only run fallback if we're not waiting for a parallel query
+                    if needs_query is False and (context is None or not _has_results(context)) and file.get("id") and file.get("type") in ["file", "image"]:
                         try:
                             fobj = Files.get_file_by_id(file.get("id"))
                             if fobj and (fobj.data or {}).get("content"):
@@ -842,24 +929,118 @@ def get_sources_from_files(
                 except Exception as e:
                     log.exception(f"RAG DEBUG: Exception querying collections: {e}")
 
-            extracted_collections.extend(collection_names)
+        # Store context if available, otherwise it will be filled after parallel query execution
+        if context:
+            file_contexts[file_idx] = context
+        # If context is None and we have a query task, it will be filled after parallel execution
 
+    # Execute all query_collection calls in parallel
+    if query_tasks:
+        log.debug(f"PERF: get_sources_from_files executing {len(query_tasks)} query_collection calls in parallel")
+        query_start = time.perf_counter()
+        
+        # Group tasks by embedding function to avoid using wrong embeddings
+        # Different files might use different embedding functions (regular RAG vs web search)
+        embedding_func_to_tasks = {}
+        for task in query_tasks:
+            # Use the function object itself as the key (functions are compared by identity)
+            func_key = id(task["query_embedding_function"])
+            if func_key not in embedding_func_to_tasks:
+                embedding_func_to_tasks[func_key] = {
+                    "embedding_function": task["query_embedding_function"],
+                    "tasks": []
+                }
+            embedding_func_to_tasks[func_key]["tasks"].append(task)
+        
+        # Embed queries once per embedding function group
+        embedding_func_to_precomputed = {}
+        if queries:
+            for func_key, func_group in embedding_func_to_tasks.items():
+                embedding_func = func_group["embedding_function"]
+                try:
+                    embedding_start = time.perf_counter()
+                    precomputed_embeddings = embedding_func(queries, prefix=RAG_EMBEDDING_QUERY_PREFIX)
+                    embedding_time = time.perf_counter() - embedding_start
+                    log.debug(f"PERF: get_sources_from_files embedding {len(queries)} queries took {embedding_time:.3f}s for {len(func_group['tasks'])} collections (embedding function group)")
+                    
+                    # Ensure we got embeddings for all queries
+                    if not isinstance(precomputed_embeddings, list):
+                        precomputed_embeddings = [precomputed_embeddings]
+                    
+                    embedding_func_to_precomputed[func_key] = precomputed_embeddings
+                except Exception as e:
+                    log.exception(f"Error generating precomputed embeddings for embedding function group: {e}. Will generate embeddings individually per query_collection call.")
+                    # Don't set precomputed_embeddings for this group - query_collection will generate them individually
+        
+        def execute_query_task(task):
+            try:
+                # Get the precomputed embeddings for this task's embedding function
+                func_key = id(task["query_embedding_function"])
+                precomputed_embeddings = embedding_func_to_precomputed.get(func_key)
+                
+                return task["file_idx"], query_collection(
+                    collection_names=task["collection_names"],
+                    queries=queries,
+                    embedding_function=task["query_embedding_function"],
+                    k=task["k"],
+                    precomputed_embeddings=precomputed_embeddings,
+                )
+            except Exception as e:
+                log.exception(f"Error in parallel query_collection for file {task['file_idx']}: {e}")
+                return task["file_idx"], None
+        
+        with ThreadPoolExecutor() as executor:
+            future_results = [executor.submit(execute_query_task, task) for task in query_tasks]
+            query_results = {file_idx: context for file_idx, context in [future.result() for future in future_results]}
+        
+        query_time = time.perf_counter() - query_start
+        log.debug(f"PERF: get_sources_from_files parallel query_collection calls took {query_time:.3f}s for {len(query_tasks)} tasks")
+        
+        # Merge query results into file_contexts
+        for file_idx, context in query_results.items():
+            if context:
+                file_contexts[file_idx] = context
+            else:
+                # Query failed, try fallback for this file
+                file = files[file_idx] if file_idx < len(files) else None
+                if file and file.get("id") and file.get("type") in ["file", "image"]:
+                    try:
+                        fobj = Files.get_file_by_id(file.get("id"))
+                        if fobj and (fobj.data or {}).get("content"):
+                            content_text = fobj.data.get("content")
+                            file_contexts[file_idx] = {
+                                "documents": [[content_text]],
+                                "metadatas": [[
+                                    {
+                                        "file_id": fobj.id,
+                                        "name": fobj.filename,
+                                        "source": fobj.filename,
+                                    }
+                                ]],
+                            }
+                            log.info(f"RAG DEBUG: Fallback used for file {file_idx} - built context from raw file content")
+                    except Exception as e:
+                        log.debug(f"RAG DEBUG: Fallback failed to read file content for file {file_idx}: {e}")
+
+    # Build relevant_contexts from all file contexts
+    for file_idx, file in enumerate(files):
+        context = file_contexts.get(file_idx)
         if context:
             d, m = _ctx_counts(context if isinstance(context, dict) else {})
-            log.info(f"RAG DEBUG: File {file_idx} produced context: docs={d}, metas={m}")
+            log.debug(f"RAG DEBUGINFO: File {file_idx} produced context: docs={d}, metas={m}")
             if "data" in file:
                 del file["data"]
-
             relevant_contexts.append({**context, "file": file})
-        else:
+        elif file_idx not in [task["file_idx"] for task in query_tasks]:
+            # Only warn if this file wasn't part of the query tasks (meaning it should have had context)
             log.warning(f"RAG DEBUG: File {file_idx} produced NO context (context is None or empty)")
 
-    log.info(f"RAG DEBUG: Processing {len(relevant_contexts)} relevant contexts into sources")
+    log.debug(f"RAG DEBUGINFO: Processing {len(relevant_contexts)} relevant contexts into sources")
     sources = []
     for ctx_idx, context in enumerate(relevant_contexts):
         try:
             d, m = _ctx_counts(context)
-            log.info(f"RAG DEBUG: Processing context {ctx_idx}: docs={d}, metas={m}, file_type={context.get('file', {}).get('type')}")
+            log.debug(f"RAG DEBUGINFO: Processing context {ctx_idx}: docs={d}, metas={m}, file_type={context.get('file', {}).get('type')}")
             if "documents" in context:
                 if "metadatas" in context:
                     # Strip collections from source object to reduce payload size
@@ -879,7 +1060,7 @@ def get_sources_from_files(
                     if source["document"] and source["metadata"] and len(source["document"]) > 0 and len(source["metadata"]) > 0:
                         sources.append(source)
                     else:
-                        log.info(f"RAG DEBUG: Skipping empty source for context {ctx_idx}")
+                        log.debug(f"RAG DEBUGINFO: Skipping empty source for context {ctx_idx}")
         except Exception as e:
             log.exception(e)
 
@@ -944,6 +1125,7 @@ def generate_openai_batch_embeddings(
         - total_tokens: int
         - cost: float (if available)
     """
+    batch_start = time.perf_counter()
     try:
         log.debug(
             f"generate_openai_batch_embeddings:model {model} batch size: {len(texts)}"
@@ -952,6 +1134,7 @@ def generate_openai_batch_embeddings(
         if isinstance(RAG_EMBEDDING_PREFIX_FIELD_NAME, str) and isinstance(prefix, str):
             json_data[RAG_EMBEDDING_PREFIX_FIELD_NAME] = prefix
 
+        request_start = time.perf_counter()
         r = requests.post(
             f"{url}/embeddings",
             headers={
@@ -970,6 +1153,7 @@ def generate_openai_batch_embeddings(
             },
             json=json_data,
         )
+        request_time = time.perf_counter() - request_start
         r.raise_for_status()
         data = r.json()
         if "data" in data:
@@ -979,11 +1163,14 @@ def generate_openai_batch_embeddings(
             # Include cost if available (OpenRouter format)
             if "cost" in data.get("usage", {}):
                 usage_data["cost"] = data["usage"]["cost"]
+            batch_time = time.perf_counter() - batch_start
+            log.debug(f"PERF: generate_openai_batch_embeddings took {batch_time:.3f}s (request={request_time:.3f}s, batch_size={len(texts)}, model={model})")
             return embeddings, usage_data
         else:
             raise "Something went wrong :/"
     except Exception as e:
-        log.exception(f"Error generating openai batch embeddings: {e}")
+        batch_time = time.perf_counter() - batch_start
+        log.exception(f"Error generating openai batch embeddings: {e} (took {batch_time:.3f}s)")
         return None, None
 
 
@@ -1002,6 +1189,7 @@ def generate_ollama_batch_embeddings(
         Tuple of (embeddings, usage_data) where usage_data contains:
         - prompt_eval_count: int (from metadata)
     """
+    batch_start = time.perf_counter()
     try:
         log.debug(
             f"generate_ollama_batch_embeddings:model {model} batch size: {len(texts)}"
@@ -1010,6 +1198,7 @@ def generate_ollama_batch_embeddings(
         if isinstance(RAG_EMBEDDING_PREFIX_FIELD_NAME, str) and isinstance(prefix, str):
             json_data[RAG_EMBEDDING_PREFIX_FIELD_NAME] = prefix
 
+        request_start = time.perf_counter()
         r = requests.post(
             f"{url}/api/embed",
             headers={
@@ -1028,6 +1217,7 @@ def generate_ollama_batch_embeddings(
             },
             json=json_data,
         )
+        request_time = time.perf_counter() - request_start
         r.raise_for_status()
         data = r.json()
 
@@ -1037,11 +1227,14 @@ def generate_ollama_batch_embeddings(
             usage_data = {}
             if "prompt_eval_count" in data:
                 usage_data["prompt_eval_count"] = data["prompt_eval_count"]
+            batch_time = time.perf_counter() - batch_start
+            log.debug(f"PERF: generate_ollama_batch_embeddings took {batch_time:.3f}s (request={request_time:.3f}s, batch_size={len(texts)}, model={model})")
             return embeddings, usage_data
         else:
             raise "Something went wrong :/"
     except Exception as e:
-        log.exception(f"Error generating ollama batch embeddings: {e}")
+        batch_time = time.perf_counter() - batch_start
+        log.exception(f"Error generating ollama batch embeddings: {e} (took {batch_time:.3f}s)")
         return None, None
 
 

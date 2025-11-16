@@ -562,7 +562,9 @@
 											}}
 										>
 											<option value="">{$i18n.t('Use Documents Setting')}</option>
-											<option value="sentence-transformers">{$i18n.t('Default (SentenceTransformers)')}</option>
+											<option value="sentence-transformers"
+												>{$i18n.t('Default (SentenceTransformers)')}</option
+											>
 											<option value="ollama">{$i18n.t('Ollama')}</option>
 											<option value="openai">{$i18n.t('OpenAI')}</option>
 										</select>
@@ -578,7 +580,10 @@
 											required
 										/>
 
-										<SensitiveInput placeholder={$i18n.t('API Key')} bind:value={webSearchOpenAIKey} />
+										<SensitiveInput
+											placeholder={$i18n.t('API Key')}
+											bind:value={webSearchOpenAIKey}
+										/>
 									</div>
 								{:else if webSearchEmbeddingEngine === 'ollama'}
 									<div class="my-0.5 flex gap-2 pr-2">
@@ -589,7 +594,10 @@
 											required
 										/>
 
-										<SensitiveInput placeholder={$i18n.t('API Key')} bind:value={webSearchOllamaKey} />
+										<SensitiveInput
+											placeholder={$i18n.t('API Key')}
+											bind:value={webSearchOllamaKey}
+										/>
 									</div>
 								{/if}
 							</div>
@@ -627,8 +635,28 @@
 
 							{#if webSearchEmbeddingEngine === 'ollama' || webSearchEmbeddingEngine === 'openai' || webSearchEmbeddingEngine === 'sentence-transformers'}
 								<div class="  mb-2.5 flex w-full justify-between">
-									<div class=" self-center text-xs font-medium">
+									<div class=" self-center text-xs font-medium flex items-center gap-1">
 										{$i18n.t('Embedding Batch Size')}
+										<Tooltip
+											content={$i18n.t(
+												'Batch size for embedding generation. Use -1 to send all chunks in a single request (maximum batch size mode). This is recommended for external embedding providers for efficiency.'
+											)}
+										>
+											<svg
+												xmlns="http://www.w3.org/2000/svg"
+												class="h-4 w-4 text-gray-400 hover:text-gray-300"
+												fill="none"
+												viewBox="0 0 24 24"
+												stroke="currentColor"
+											>
+												<path
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													stroke-width="2"
+													d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+												/>
+											</svg>
+										</Tooltip>
 									</div>
 
 									<div class="">
@@ -636,7 +664,7 @@
 											bind:value={webSearchEmbeddingBatchSize}
 											type="number"
 											class=" bg-transparent text-center w-14 outline-none"
-											min="1"
+											min="-1"
 											max="16000"
 											step="1"
 										/>
