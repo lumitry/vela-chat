@@ -3,6 +3,7 @@
 	import ChevronUp from '$lib/components/icons/ChevronUp.svelte';
 	import MagnifyingGlass from '$lib/components/icons/MagnifyingGlass.svelte';
 	import Collapsible from '$lib/components/common/Collapsible.svelte';
+	import { getSiteTitleFromUrl } from '$lib/utils/index';
 
 	export let status = { urls: [], query: '' };
 	let state = false;
@@ -65,9 +66,11 @@
 				class="flex w-full items-center p-3 px-4 {urlIdx === status.urls.length - 1
 					? ''
 					: 'border-b border-gray-300/30 dark:border-gray-700/50'} group/item justify-between font-normal text-gray-800 dark:text-gray-300"
+				title={url}
 			>
 				<div class=" line-clamp-1">
 					{url}
+					<!-- {getSiteTitleFromUrl(url)} -->
 				</div>
 
 				<div

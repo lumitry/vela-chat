@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { getSiteTitleFromUrl } from '$lib/utils/index';
+
 	export let id;
 	export let token;
 	export let onClick: Function = () => {};
@@ -18,16 +20,10 @@
 		return attrs;
 	}
 
-	// Helper function to return only the domain from a URL
-	function getDomain(url: string): string {
-		const domain = url.replace('http://', '').replace('https://', '').split(/[/?#]/)[0];
-		return domain;
-	}
-
-	// Helper function to check if text is a URL and return the domain
+	// Helper function to check if text is a URL and return the site title
 	function formattedTitle(title: string): string {
 		if (title.startsWith('http')) {
-			return getDomain(title);
+			return getSiteTitleFromUrl(title);
 		}
 
 		return title;
