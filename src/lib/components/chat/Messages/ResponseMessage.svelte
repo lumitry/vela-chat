@@ -12,7 +12,6 @@
 	const dispatch = createEventDispatcher();
 
 	import { createNewFeedback, getFeedbackById, updateFeedbackById } from '$lib/apis/evaluations';
-	import { getChatById } from '$lib/apis/chats';
 	import { generateTags } from '$lib/apis';
 
 	import { config, models, settings, temporaryChatEnabled, TTSWorker, user } from '$lib/stores';
@@ -423,13 +422,6 @@
 			}
 		};
 
-		const chat = await getChatById(localStorage.token, chatId).catch((error) => {
-			toast.error(`${error}`);
-		});
-		if (!chat) {
-			return;
-		}
-
 		const messages = createMessagesList(history, message.id);
 
 		let feedbackItem = {
@@ -451,9 +443,6 @@
 				message_id: message.id,
 				message_index: messages.length,
 				chat_id: chatId
-			},
-			snapshot: {
-				chat: chat
 			}
 		};
 

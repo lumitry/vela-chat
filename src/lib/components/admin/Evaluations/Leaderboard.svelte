@@ -114,6 +114,11 @@
 		}
 
 		feedbacks.forEach((feedback) => {
+			// Skip feedbacks with missing or invalid data
+			if (!feedback.data || !feedback.data.model_id || feedback.data.rating == null) {
+				return;
+			}
+
 			const modelA = feedback.data.model_id;
 			const statsA = getOrDefaultStats(modelA);
 			let outcome: number;
