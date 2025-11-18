@@ -51,7 +51,7 @@
 	let parentMessage;
 	let groupedMessageIds = {};
 	let groupedMessageIdsIdx = {};
-	
+
 	// Force reactivity by tracking a version number that changes when groupedMessageIds updates
 	let groupedMessageIdsVersion = 0;
 
@@ -70,47 +70,58 @@
 	$: if (history.messages && history.messages[messageId]?.parentId) {
 		const currentParentId = history.messages[messageId].parentId;
 		const updatedParent = history.messages[currentParentId];
-		
+
 		// Also check if any of the parent's children are now in history.messages (race condition fix)
-		const childrenInHistory = updatedParent?.childrenIds?.filter(id => history.messages[id]) || [];
+		const childrenInHistory =
+			updatedParent?.childrenIds?.filter((id) => history.messages[id]) || [];
 		const actualChildrenCount = childrenInHistory.length;
-		
+
 		if (updatedParent && updatedParent.models && updatedParent.childrenIds) {
 			// Get previous valid children count (messages that exist in history.messages)
-			const previousValidChildren = parentMessage?.childrenIds?.filter(id => history.messages[id]) || [];
+			const previousValidChildren =
+				parentMessage?.childrenIds?.filter((id) => history.messages[id]) || [];
 			const previousValidCount = previousValidChildren.length;
-			
+
 			// Check if childrenIds array changed (new IDs added)
-			const childrenIdsChanged = 
-				!parentMessage || 
+			const childrenIdsChanged =
+				!parentMessage ||
 				parentMessage.id !== currentParentId ||
-				!parentMessage.childrenIds || 
+				!parentMessage.childrenIds ||
 				parentMessage.childrenIds.length !== updatedParent.childrenIds.length ||
 				parentMessage.childrenIds.some((id, idx) => id !== updatedParent.childrenIds[idx]);
-			
+
 			// Check if we have more valid children now than before (messages were added to history.messages)
 			const moreChildrenAvailable = actualChildrenCount > previousValidCount;
-			
+
 			// Also check if the set of valid children IDs changed (even if count is same, IDs might be different)
 			const previousValidIds = new Set(previousValidChildren);
 			const currentValidIds = new Set(childrenInHistory);
-			const validChildrenChanged = 
+			const validChildrenChanged =
 				previousValidIds.size !== currentValidIds.size ||
-				[...previousValidIds].some(id => !currentValidIds.has(id)) ||
-				[...currentValidIds].some(id => !previousValidIds.has(id));
-			
+				[...previousValidIds].some((id) => !currentValidIds.has(id)) ||
+				[...currentValidIds].some((id) => !previousValidIds.has(id));
+
 			// Check if grouping is incomplete - we have children but they're not all grouped
-			const totalGroupedMessages = Object.values(groupedMessageIds || {}).reduce((sum, g) => sum + (g.messageIds?.length || 0), 0);
-			const groupingIncomplete = actualChildrenCount > 0 && totalGroupedMessages < actualChildrenCount;
-			
-			if (childrenIdsChanged || moreChildrenAvailable || validChildrenChanged || groupingIncomplete) {
+			const totalGroupedMessages = Object.values(groupedMessageIds || {}).reduce(
+				(sum, g) => sum + (g.messageIds?.length || 0),
+				0
+			);
+			const groupingIncomplete =
+				actualChildrenCount > 0 && totalGroupedMessages < actualChildrenCount;
+
+			if (
+				childrenIdsChanged ||
+				moreChildrenAvailable ||
+				validChildrenChanged ||
+				groupingIncomplete
+			) {
 				// Update parentMessage reference
 				parentMessage = updatedParent;
-				
+
 				// Re-group messages by modelIdx
 				// Filter out any children that don't exist in history.messages yet (race condition)
-				const validChildrenIds = parentMessage.childrenIds.filter(id => history.messages[id]);
-				
+				const validChildrenIds = parentMessage.childrenIds.filter((id) => history.messages[id]);
+
 				groupedMessageIds = parentMessage.models.reduce((a, model, modelIdx) => {
 					let modelMessageIds = validChildrenIds
 						.map((id) => history.messages[id])
@@ -152,7 +163,7 @@
 						};
 					}
 				}, {});
-				
+
 				// Force reactivity by incrementing version
 				groupedMessageIdsVersion++;
 			}
@@ -240,8 +251,8 @@
 			: null;
 
 		// Filter out any children that don't exist in history.messages yet (race condition)
-		const validChildrenIds = parentMessage?.childrenIds?.filter(id => history.messages[id]) || [];
-		
+		const validChildrenIds = parentMessage?.childrenIds?.filter((id) => history.messages[id]) || [];
+
 		groupedMessageIds = parentMessage?.models.reduce((a, model, modelIdx) => {
 			// Find all messages that are children of the parent message and have the same model
 			let modelMessageIds = validChildrenIds
@@ -320,67 +331,67 @@
 			{#key groupedMessageIdsVersion}
 				{#each Object.keys(groupedMessageIds) as modelIdx}
 					{#if groupedMessageIdsIdx[modelIdx] !== undefined && groupedMessageIds[modelIdx].messageIds.length > 0}
-					<!-- svelte-ignore a11y-no-static-element-interactions -->
-					<!-- svelte-ignore a11y-click-events-have-key-events -->
-					{@const _messageId =
-						groupedMessageIds[modelIdx].messageIds[groupedMessageIdsIdx[modelIdx]]}
+						<!-- svelte-ignore a11y-no-static-element-interactions -->
+						<!-- svelte-ignore a11y-click-events-have-key-events -->
+						{@const _messageId =
+							groupedMessageIds[modelIdx].messageIds[groupedMessageIdsIdx[modelIdx]]}
 
-					<div
-						class=" snap-center w-full max-w-full m-1 border {history.messages[messageId]
-							?.modelIdx == modelIdx
-							? `border-gray-100 dark:border-gray-850 border-[1.5px] ${
-									$mobile ? 'min-w-full' : 'min-w-80'
-								}`
-							: `border-gray-100 dark:border-gray-850 border-dashed ${
-									$mobile ? 'min-w-full' : 'min-w-80'
-								}`} transition-all p-5 rounded-2xl"
-						on:click={async () => {
-							if (messageId != _messageId) {
-								let currentMessageId = _messageId;
-								let messageChildrenIds = history.messages[currentMessageId].childrenIds;
-								while (messageChildrenIds.length !== 0) {
-									currentMessageId = messageChildrenIds.at(-1);
-									messageChildrenIds = history.messages[currentMessageId].childrenIds;
+						<div
+							class=" snap-center w-full max-w-full m-1 border {history.messages[messageId]
+								?.modelIdx == modelIdx
+								? `border-gray-100 dark:border-gray-850 border-[1.5px] ${
+										$mobile ? 'min-w-full' : 'min-w-80'
+									}`
+								: `border-gray-100 dark:border-gray-850 border-dashed ${
+										$mobile ? 'min-w-full' : 'min-w-80'
+									}`} transition-all p-5 rounded-2xl"
+							on:click={async () => {
+								if (messageId != _messageId) {
+									let currentMessageId = _messageId;
+									let messageChildrenIds = history.messages[currentMessageId].childrenIds;
+									while (messageChildrenIds.length !== 0) {
+										currentMessageId = messageChildrenIds.at(-1);
+										messageChildrenIds = history.messages[currentMessageId].childrenIds;
+									}
+									history.currentId = currentMessageId;
+
+									await tick();
+									await updateChat();
+									triggerScroll();
 								}
-								history.currentId = currentMessageId;
-
-								await tick();
-								await updateChat();
-								triggerScroll();
-							}
-						}}
-					>
-						{#key history.currentId}
-							{#if message}
-								<ResponseMessage
-									{chatId}
-									{history}
-									messageId={_messageId}
-									isLastMessage={true}
-									siblings={groupedMessageIds[modelIdx].messageIds}
-									gotoMessage={(message, messageIdx) => gotoMessage(modelIdx, messageIdx)}
-									showPreviousMessage={() => showPreviousMessage(modelIdx)}
-									showNextMessage={() => showNextMessage(modelIdx)}
-									{updateChat}
-									{editMessage}
-									{saveMessage}
-									{rateMessage}
-									{deleteMessage}
-									{actionMessage}
-									{submitMessage}
-									{continueResponse}
-									regenerateResponse={async (message) => {
-										regenerateResponse(message);
-										await tick();
-										groupedMessageIdsIdx[modelIdx] =
-											groupedMessageIds[modelIdx].messageIds.length - 1;
-									}}
-									{addMessages}
-									{readOnly}
-								/>
-							{/if}
-						{/key}
-					</div>
+							}}
+						>
+							{#key history.currentId}
+								{#if message}
+									<ResponseMessage
+										{chatId}
+										{history}
+										messageId={_messageId}
+										isLastMessage={true}
+										siblings={groupedMessageIds[modelIdx].messageIds}
+										gotoMessage={(message, messageIdx) => gotoMessage(modelIdx, messageIdx)}
+										showPreviousMessage={() => showPreviousMessage(modelIdx)}
+										showNextMessage={() => showNextMessage(modelIdx)}
+										{updateChat}
+										{editMessage}
+										{saveMessage}
+										{rateMessage}
+										{deleteMessage}
+										{actionMessage}
+										{submitMessage}
+										{continueResponse}
+										regenerateResponse={async (message) => {
+											regenerateResponse(message);
+											await tick();
+											groupedMessageIdsIdx[modelIdx] =
+												groupedMessageIds[modelIdx].messageIds.length - 1;
+										}}
+										{addMessages}
+										{readOnly}
+									/>
+								{/if}
+							{/key}
+						</div>
 					{/if}
 				{/each}
 			{/key}
@@ -429,7 +440,7 @@
 									id="merge-response-button"
 									class="{true
 										? 'visible'
-										: 'invisible group-hover:visible'} p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg dark:hover:text-white hover:text-black transition regenerate-response-button"
+										: 'invisible group-hover:visible'} p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg dark:hover:text-white hover:text-black transition"
 									on:click={() => {
 										mergeResponsesHandler();
 									}}

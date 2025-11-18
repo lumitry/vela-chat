@@ -1459,7 +1459,7 @@
 										{#if tokensPerSecond || totalCost || promptTokens}<span>•</span>{/if}
 										<span
 											>{completionTokens} out{reasoningTokens
-												? ` (+ ${reasoningTokens} CoT)`
+												? ` (${reasoningTokens} CoT)`
 												: ''}</span
 										>
 									{/if}
