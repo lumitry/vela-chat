@@ -396,8 +396,9 @@ async def chat_web_search_handler(
         )
 
     # Execute all searches in parallel with rate limiting
-    # Use a semaphore to limit concurrent API calls (max 2 at a time to avoid rate limits)
-    search_semaphore = asyncio.Semaphore(2)
+    # Use a semaphore to limit concurrent API calls (default 2 at a time to avoid rate limits, configurable via env)
+    search_concurrency_limit = int(os.environ.get("WEB_SEARCH_CONCURRENCY_LIMIT", 2))
+    search_semaphore = asyncio.Semaphore(search_concurrency_limit)
     
     async def execute_search(searchQuery, delay=0):
         # Stagger requests slightly to avoid hitting rate limits
