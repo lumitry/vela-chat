@@ -52,8 +52,9 @@ def convert_file_url_to_absolute(request: Request, url: str) -> str:
         match = re.search(r"/files/([A-Za-z0-9\-]+)", url)
         if match:
             file_id = match.group(1)
-            # Convert relative path to absolute URL
-            return str(request.url_for("get_file_content_by_id", id=file_id))
+            # Convert relative path to absolute URL using base_url to preserve port
+            base_url = str(request.base_url).rstrip('/')
+            return f"{base_url}/api/v1/files/{file_id}/content"
     
     return url
 
