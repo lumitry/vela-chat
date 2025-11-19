@@ -650,6 +650,11 @@
 			</p>
 			<br /> -->
 			<p>All dates are in UTC timezone, so a date may span multiple local calendar days.</p>
+			<br />
+			<p>
+				External image generation, web search, TTS, etc. are not included in the metrics - only LLM
+				and embedding inference costs are included.
+			</p>
 		</div>
 	</div>
 

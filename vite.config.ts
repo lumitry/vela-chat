@@ -1,5 +1,6 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
+import { visualizer } from 'rollup-plugin-visualizer';
 
 import { viteStaticCopy } from 'vite-plugin-static-copy';
 
@@ -28,6 +29,13 @@ export default defineConfig({
 					dest: 'wasm'
 				}
 			]
+		}),
+		visualizer({
+			open: true,
+			filename: 'dist/stats.html',
+			gzipSize: true,
+			brotliSize: true,
+			emitFile: false
 		})
 	],
 	define: {
@@ -35,7 +43,15 @@ export default defineConfig({
 		APP_BUILD_HASH: JSON.stringify(process.env.APP_BUILD_HASH || 'dev-build')
 	},
 	build: {
-		sourcemap: true
+		sourcemap: true,
+		rollupOptions: {
+			output: {
+				manualChunks: undefined
+			}
+		}
+	},
+	optimizeDeps: {
+		include: ['bits-ui']
 	},
 	worker: {
 		format: 'es'
