@@ -1016,11 +1016,9 @@ async def get_models(request: Request, user=Depends(get_verified_user)):
     start_time = time.time()
     
     def get_filtered_models(models, user):
-        # Batch fetch all model info at once to avoid N+1 queries
         model_ids = [model["id"] for model in models if not model.get("arena")]
         model_info_map = {}
         if model_ids:
-            # Batch fetch model info
             for model_id in model_ids:
                 model_info = Models.get_model_by_id(model_id)
                 if model_info:
