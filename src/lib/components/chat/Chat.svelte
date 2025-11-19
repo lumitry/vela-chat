@@ -158,6 +158,13 @@
 			const hasher = await getXXHash();
 			const cache_key = hasher(combined).toString(16).padStart(16, '0');
 
+			// Build meta object, including merged property if present
+			// Backend stores merged in meta.merged, so we do the same for consistency
+			const meta = message.meta ? { ...message.meta } : {};
+			if (message.merged) {
+				meta.merged = message.merged;
+			}
+
 			const cachedMessage = {
 				id: message.id,
 				chat_id: chatId,
@@ -169,7 +176,7 @@
 				content_json: message.content_json || null,
 				status: message.status || null,
 				usage: message.usage || null,
-				meta: message.meta || null,
+				meta: Object.keys(meta).length > 0 ? meta : null,
 				annotation: message.annotation || null,
 				feedback_id: message.feedbackId || message.feedback_id || null,
 				selected_model_id: message.selectedModelId || message.selected_model_id || null,
@@ -1454,6 +1461,13 @@
 											const combined = `${content_length}${updated_at}${role}${model_id}`;
 											const cache_key = hasher(combined).toString(16).padStart(16, '0');
 
+											// Build meta object, including merged property if present
+											// Backend stores merged in meta.merged, so we do the same for consistency
+											const meta = msg.meta ? { ...msg.meta } : {};
+											if (msg.merged) {
+												meta.merged = msg.merged;
+											}
+
 											return {
 												id: msg.id,
 												chat_id: $chatId,
@@ -1465,7 +1479,7 @@
 												content_json: msg.content_json || null,
 												status: msg.status || null,
 												usage: msg.usage || null,
-												meta: msg.meta || null,
+												meta: Object.keys(meta).length > 0 ? meta : null,
 												annotation: msg.annotation || null,
 												feedback_id: msg.feedbackId || msg.feedback_id || null,
 												selected_model_id: msg.selectedModelId || msg.selected_model_id || null,
@@ -1575,6 +1589,13 @@
 								});
 							}
 
+							// Extract merged from meta.merged if present (backend stores it in meta.merged)
+							// Frontend expects it at root level, matching backend converter behavior
+							let merged = null;
+							if (cachedMsg.meta && typeof cachedMsg.meta === 'object' && 'merged' in cachedMsg.meta) {
+								merged = cachedMsg.meta.merged;
+							}
+
 							messagesMap[cachedMsg.id] = {
 								id: cachedMsg.id,
 								parentId: cachedMsg.parent_id,
@@ -1588,6 +1609,7 @@
 								statusHistory: statusHistory, // Duplicate statusHistory at root level for frontend compatibility
 								usage: cachedMsg.usage || null,
 								meta: cachedMsg.meta || null,
+								merged: merged, // Extract merged from meta.merged to root level
 								annotation: cachedMsg.annotation,
 								feedbackId: cachedMsg.feedback_id,
 								selectedModelId: cachedMsg.selected_model_id,
@@ -2984,6 +3006,8 @@
 				}
 
 				await saveChatHandler(_chatId, history);
+				// Cache the merged message to IndexedDB
+				await cacheMessage(message, _chatId);
 			} else {
 				console.error(res);
 			}
