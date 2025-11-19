@@ -300,9 +300,6 @@ def upgrade() -> None:
                 .values(settings=settings)
             )
             migrated_count['user_background_images'] += 1
-
-    # Note: Do NOT call conn.commit() here - Alembic manages transactions automatically
-    # Manual commits can interfere with Alembic's ability to record the migration as complete
     
     print(f"Migration complete:")
     print(f"  Config arena models: {migrated_count['config_arena_models']} migrated, {skipped_count['config_arena_models']} skipped")

@@ -170,9 +170,6 @@ def upgrade() -> None:
             # Log error but continue with other models
             print(f"Error migrating model {model_id}: {e}")
             continue
-
-    # Note: Do NOT call conn.commit() here - Alembic manages transactions automatically
-    # Manual commits can interfere with Alembic's ability to record the migration as complete
     
     print(f"Migration complete: {migrated_count} models migrated, {skipped_count} skipped")
 

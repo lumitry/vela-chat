@@ -579,7 +579,6 @@ def upgrade() -> None:
                 "updated_at": now_ts,
             })
         
-        conn.commit()
         print("Daily metrics rollup table created and populated for SQLite")
         print("NOTE: SQLite does not support triggers. You'll need to update the rollup table")
         print("      via application code when chat_message is modified.")

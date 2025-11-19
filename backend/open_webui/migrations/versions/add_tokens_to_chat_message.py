@@ -119,8 +119,6 @@ def upgrade() -> None:
             except (json.JSONDecodeError, ValueError, TypeError) as e:
                 # Skip invalid JSON
                 continue
-        
-        conn.commit()
     else:
         # PostgreSQL approach: fetch all and update in Python
         result = conn.execute(sa.text("""
@@ -162,8 +160,6 @@ def upgrade() -> None:
                     SET {', '.join(set_clauses)}
                     WHERE id = :msg_id
                 """), params)
-        
-        conn.commit()
 
 
 def downgrade() -> None:

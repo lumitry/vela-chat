@@ -61,8 +61,6 @@ def upgrade() -> None:
                     SET position = :position
                     WHERE id = :msg_id
                 """), {"position": idx, "msg_id": msg_id})
-            
-            conn.commit()
     else:
         # PostgreSQL and other databases that support ROW_NUMBER() with UPDATE...FROM
         result = conn.execute(sa.text("""
