@@ -29,6 +29,7 @@
 	import Switch from '$lib/components/common/Switch.svelte';
 	import ChatBubbleOval from '$lib/components/icons/ChatBubbleOval.svelte';
 	import { goto } from '$app/navigation';
+	import { WEBUI_BASE_URL, getImageBaseUrl } from '$lib/constants';
 
 	const i18n = getContext('i18n');
 	const dispatch = createEventDispatcher();
@@ -516,8 +517,13 @@
 												content={$user?.role === 'admin' ? (item?.value ?? '') : ''}
 												placement="top-start"
 											>
+												{@const imageUrl =
+													item.model?.info?.meta?.profile_image_url ?? '/static/favicon.png'}
+												{@const imageSrc = imageUrl.startsWith('/')
+													? `${getImageBaseUrl(imageUrl)}${imageUrl}`
+													: imageUrl}
 												<img
-													src={item.model?.info?.meta?.profile_image_url ?? '/static/favicon.png'}
+													src={imageSrc}
 													alt="Model"
 													class="rounded-full size-5 flex items-center mr-2"
 												/>

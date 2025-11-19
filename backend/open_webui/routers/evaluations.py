@@ -78,6 +78,7 @@ class FeedbackUserReponse(BaseModel):
     name: str
     email: str
     role: str = "pending"
+    profile_image_url: str
 
     last_active_at: int  # timestamp in epoch
     updated_at: int  # timestamp in epoch
@@ -89,17 +90,25 @@ class FeedbackUserResponse(FeedbackResponse):
 
 
 @router.get("/feedbacks/all", response_model=list[FeedbackUserResponse])
-async def get_all_feedbacks(user=Depends(get_admin_user)):
+async def get_all_feedbacks(request: Request, user=Depends(get_admin_user)):
+    from open_webui.utils.model_images import convert_file_url_to_absolute
+    
     feedbacks = Feedbacks.get_all_feedbacks()
-    return [
-        FeedbackUserResponse(
-            **feedback.model_dump(),
-            user=FeedbackUserReponse(
-                **Users.get_user_by_id(feedback.user_id).model_dump()
-            ),
-        )
-        for feedback in feedbacks
-    ]
+    result = []
+    for feedback in feedbacks:
+        user_obj = Users.get_user_by_id(feedback.user_id)
+        if user_obj:
+            user_dict = user_obj.model_dump()
+            user_dict["profile_image_url"] = convert_file_url_to_absolute(
+                request, user_obj.profile_image_url
+            )
+            result.append(
+                FeedbackUserResponse(
+                    **feedback.model_dump(),
+                    user=FeedbackUserReponse(**user_dict),
+                )
+            )
+    return result
 
 
 @router.delete("/feedbacks/all")
@@ -120,9 +129,25 @@ async def get_all_feedbacks(user=Depends(get_admin_user)):
 
 
 @router.get("/feedbacks/user", response_model=list[FeedbackUserResponse])
-async def get_feedbacks(user=Depends(get_verified_user)):
+async def get_feedbacks(request: Request, user=Depends(get_verified_user)):
+    from open_webui.utils.model_images import convert_file_url_to_absolute
+    
     feedbacks = Feedbacks.get_feedbacks_by_user_id(user.id)
-    return feedbacks
+    result = []
+    for feedback in feedbacks:
+        user_obj = Users.get_user_by_id(feedback.user_id)
+        if user_obj:
+            user_dict = user_obj.model_dump()
+            user_dict["profile_image_url"] = convert_file_url_to_absolute(
+                request, user_obj.profile_image_url
+            )
+            result.append(
+                FeedbackUserResponse(
+                    **feedback.model_dump(),
+                    user=FeedbackUserReponse(**user_dict),
+                )
+            )
+    return result
 
 
 @router.delete("/feedbacks", response_model=bool)

@@ -445,8 +445,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="VelaChat",
-    docs_url="/docs" if ENV == "dev" else None,
-    openapi_url="/openapi.json" if ENV == "dev" else None,
+    docs_url="/docs",
+    openapi_url="/openapi.json",
     redoc_url=None,
     lifespan=lifespan,
 )

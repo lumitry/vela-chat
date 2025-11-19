@@ -7,6 +7,27 @@ export const WEBUI_HOSTNAME = browser ? (dev ? `${location.hostname}:8989` : ``)
 export const WEBUI_BASE_URL = browser ? (dev ? `http://${WEBUI_HOSTNAME}` : ``) : ``;
 export const WEBUI_API_BASE_URL = `${WEBUI_BASE_URL}/api/v1`;
 
+/**
+ * Get the appropriate base URL for an image path.
+ * For frontend static assets (like /user.png, /static/), use the frontend origin.
+ * For API paths (like /api/v1/files/), use WEBUI_BASE_URL.
+ */
+export const getImageBaseUrl = (imagePath: string): string => {
+	if (!browser) return '';
+
+	// Frontend static assets should use the frontend origin (current page origin)
+	if (
+		imagePath.startsWith('/user.png') ||
+		imagePath.startsWith('/static/') ||
+		imagePath.startsWith('/favicon.png')
+	) {
+		return window.location.origin;
+	}
+
+	// API paths use WEBUI_BASE_URL
+	return WEBUI_BASE_URL;
+};
+
 export const OLLAMA_API_BASE_URL = `${WEBUI_BASE_URL}/ollama`;
 export const OPENAI_API_BASE_URL = `${WEBUI_BASE_URL}/openai`;
 export const AUDIO_API_BASE_URL = `${WEBUI_BASE_URL}/api/v1/audio`;

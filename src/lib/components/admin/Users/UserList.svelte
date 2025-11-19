@@ -1,5 +1,5 @@
 <script>
-	import { WEBUI_BASE_URL } from '$lib/constants';
+	import { WEBUI_BASE_URL, getImageBaseUrl } from '$lib/constants';
 	import { WEBUI_NAME, config, user, showSidebar } from '$lib/stores';
 	import { goto } from '$app/navigation';
 	import { onMount, getContext } from 'svelte';
@@ -360,6 +360,19 @@
 		</thead>
 		<tbody class="">
 			{#each filteredUsers as user, userIdx}
+				{@const userImageUrl = user.profile_image_url || ''}
+				{@const userImageSrc =
+					userImageUrl === ''
+						? `${getImageBaseUrl('/user.png')}/user.png`
+						: userImageUrl.startsWith(WEBUI_BASE_URL) ||
+							  userImageUrl.startsWith('https://www.gravatar.com/avatar/') ||
+							  userImageUrl.startsWith('data:') ||
+							  userImageUrl.startsWith('http://') ||
+							  userImageUrl.startsWith('https://')
+							? userImageUrl
+							: userImageUrl.startsWith('/')
+								? `${getImageBaseUrl(userImageUrl)}${userImageUrl}`
+								: userImageUrl}
 				<tr class="bg-white dark:bg-gray-900 dark:border-gray-850 text-xs">
 					<td class="px-3 py-1 min-w-[7rem] w-28">
 						<button
@@ -384,11 +397,7 @@
 						<div class="flex flex-row w-max">
 							<img
 								class=" rounded-full w-6 h-6 object-cover mr-2.5"
-								src={user.profile_image_url.startsWith(WEBUI_BASE_URL) ||
-								user.profile_image_url.startsWith('https://www.gravatar.com/avatar/') ||
-								user.profile_image_url.startsWith('data:')
-									? user.profile_image_url
-									: `/user.png`}
+								src={userImageSrc}
 								alt="user"
 							/>
 

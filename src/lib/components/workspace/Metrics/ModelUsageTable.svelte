@@ -3,6 +3,7 @@
 	import { formatSmartCurrency } from '$lib/utils/currency';
 	import { models as modelsStore } from '$lib/stores';
 	import Spinner from '$lib/components/common/Spinner.svelte';
+	import { WEBUI_BASE_URL, getImageBaseUrl } from '$lib/constants';
 
 	const i18n = getContext('i18n');
 
@@ -17,7 +18,13 @@
 	}> = [];
 	export let loading: boolean = false;
 
-	type SortColumn = 'model_name' | 'spend' | 'input_tokens' | 'output_tokens' | 'total_tokens' | 'message_count';
+	type SortColumn =
+		| 'model_name'
+		| 'spend'
+		| 'input_tokens'
+		| 'output_tokens'
+		| 'total_tokens'
+		| 'message_count';
 	type SortDirection = 'asc' | 'desc';
 
 	let sortColumn: SortColumn = 'total_tokens';
@@ -83,7 +90,8 @@
 	// Get model icon URL from models store
 	const getModelIcon = (modelId: string): string => {
 		const model = $modelsStore?.find((m: any) => m.id === modelId);
-		return model?.info?.meta?.profile_image_url || '/static/favicon.png';
+		const imageUrl = model?.info?.meta?.profile_image_url || '/static/favicon.png';
+		return imageUrl.startsWith('/') ? `${getImageBaseUrl(imageUrl)}${imageUrl}` : imageUrl;
 	};
 </script>
 

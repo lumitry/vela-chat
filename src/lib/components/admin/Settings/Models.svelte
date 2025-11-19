@@ -14,6 +14,7 @@
 		toggleModelById,
 		updateModelById
 	} from '$lib/apis/models';
+	import { WEBUI_BASE_URL, getImageBaseUrl } from '$lib/constants';
 
 	import { getModels } from '$lib/apis';
 	import Search from '$lib/components/icons/Search.svelte';
@@ -278,6 +279,8 @@
 		<div class=" my-2 mb-5" id="model-list">
 			{#if models.length > 0}
 				{#each filteredModels as model, modelIdx (model.id)}
+					{@const imageUrl = model?.meta?.profile_image_url ?? '/static/favicon.png'}
+					{@const imageSrc = imageUrl.startsWith('/') ? `${getImageBaseUrl(imageUrl)}${imageUrl}` : imageUrl}
 					<div
 						class=" flex space-x-4 cursor-pointer w-full px-3 py-2 dark:hover:bg-white/5 hover:bg-black/5 rounded-lg transition {model
 							?.meta?.hidden
@@ -299,7 +302,7 @@
 										: 'opacity-50 dark:opacity-50'} "
 								>
 									<img
-										src={model?.meta?.profile_image_url ?? '/static/favicon.png'}
+										src={imageSrc}
 										alt="modelfile profile"
 										class=" rounded-full w-full h-auto object-cover"
 									/>

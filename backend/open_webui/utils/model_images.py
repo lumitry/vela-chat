@@ -42,19 +42,16 @@ def convert_file_url_to_absolute(request: Request, url: str) -> str:
     """
     Convert a relative file URL to an absolute URL using the request's base URL.
     If the URL is already absolute or is a static file path, return as-is.
+    
+    Note: This function is kept for backward compatibility, but the frontend
+    now handles URL resolution directly, so relative URLs are returned as-is.
     """
     if not url or url.startswith("http://") or url.startswith("https://") or url.startswith("/static/"):
         return url
     
     if url.startswith("/api/v1/files/"):
-        # Extract file ID from URL like /api/v1/files/{id}/content
-        import re
-        match = re.search(r"/files/([A-Za-z0-9\-]+)", url)
-        if match:
-            file_id = match.group(1)
-            # Convert relative path to absolute URL using base_url to preserve port
-            base_url = str(request.base_url).rstrip('/')
-            return f"{base_url}/api/v1/files/{file_id}/content"
+        # Return relative URL as-is - frontend handles base URL prepending
+        return url
     
     return url
 

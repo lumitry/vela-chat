@@ -19,6 +19,7 @@
 		toggleModelById,
 		updateModelById
 	} from '$lib/apis/models';
+	import { WEBUI_BASE_URL, getImageBaseUrl } from '$lib/constants';
 
 	import { getGroups } from '$lib/apis/groups';
 
@@ -236,6 +237,8 @@
 
 	<div class=" my-2 mb-5 gap-2 grid lg:grid-cols-2 xl:grid-cols-3" id="model-list">
 		{#each filteredModels as model}
+			{@const imageUrl = model?.meta?.profile_image_url ?? '/static/favicon.png'}
+			{@const imageSrc = imageUrl.startsWith('/') ? `${getImageBaseUrl(imageUrl)}${imageUrl}` : imageUrl}
 			<div
 				class=" flex flex-col cursor-pointer w-full px-3 py-2 dark:hover:bg-white/5 hover:bg-black/5 rounded-xl transition"
 				id="model-item-{model.id}"
@@ -248,7 +251,7 @@
 								: 'opacity-50 dark:opacity-50'} "
 						>
 							<img
-								src={model?.meta?.profile_image_url ?? '/static/favicon.png'}
+								src={imageSrc}
 								alt="modelfile profile"
 								class=" rounded-full w-full h-auto object-cover"
 							/>

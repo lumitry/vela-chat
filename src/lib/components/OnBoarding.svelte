@@ -2,7 +2,7 @@
 	import { getContext, onMount } from 'svelte';
 	const i18n = getContext('i18n');
 
-	import { WEBUI_BASE_URL } from '$lib/constants';
+	import { WEBUI_BASE_URL, getImageBaseUrl } from '$lib/constants';
 
 	import Marquee from './common/Marquee.svelte';
 	import SlideShow from './common/SlideShow.svelte';
@@ -45,7 +45,7 @@
 				<div class=" self-center">
 					<img
 						id="logo"
-						src="{WEBUI_BASE_URL}/static/favicon.png"
+						src="{getImageBaseUrl('/static/favicon.png')}/static/favicon.png"
 						class=" w-6 rounded-full"
 						alt="logo"
 					/>

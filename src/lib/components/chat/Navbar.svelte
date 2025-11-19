@@ -22,6 +22,7 @@
 
 	import { slide } from 'svelte/transition';
 	import { page } from '$app/stores';
+	import { WEBUI_BASE_URL } from '$lib/constants';
 
 	import ShareChatModal from '../chat/ShareChatModal.svelte';
 	import ChatInfoModal from '../chat/ChatInfoModal.svelte';
@@ -54,6 +55,10 @@
 	let showShareChatModal = false;
 	let showDownloadChatModal = false;
 	let showChatInfoModal = false;
+
+	$: userImageSrc = $user?.profile_image_url 
+		? ($user.profile_image_url.startsWith('/') ? `${WEBUI_BASE_URL}${$user.profile_image_url}` : $user.profile_image_url)
+		: '';
 
 	// State for current chat info
 	let currentChatDetails = null;
@@ -607,7 +612,7 @@
 							>
 								<div class=" self-center">
 									<img
-										src={$user?.profile_image_url}
+										src={userImageSrc}
 										class="size-6 object-cover rounded-full"
 										alt="User profile"
 										draggable="false"

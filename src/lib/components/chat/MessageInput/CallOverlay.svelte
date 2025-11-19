@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { config, models, settings, showCallOverlay, TTSWorker } from '$lib/stores';
 	import { onMount, tick, getContext, onDestroy, createEventDispatcher } from 'svelte';
+	import { WEBUI_BASE_URL, getImageBaseUrl } from '$lib/constants';
 
 	const dispatch = createEventDispatcher();
 
@@ -761,7 +762,13 @@
 							: 'bg-black dark:bg-white'}  bg-black dark:bg-white"
 						style={(model?.info?.meta?.profile_image_url ?? '/static/favicon.png') !==
 						'/static/favicon.png'
-							? `background-image: url('${model?.info?.meta?.profile_image_url}');`
+							? (() => {
+									const imageUrl = model?.info?.meta?.profile_image_url ?? '/static/favicon.png';
+									const imageSrc = imageUrl.startsWith('/')
+										? `${getImageBaseUrl(imageUrl)}${imageUrl}`
+										: imageUrl;
+									return `background-image: url('${imageSrc}');`;
+								})()
 							: ''}
 					/>
 				{/if}
@@ -843,7 +850,13 @@
 								: 'bg-black dark:bg-white'} "
 							style={(model?.info?.meta?.profile_image_url ?? '/static/favicon.png') !==
 							'/static/favicon.png'
-								? `background-image: url('${model?.info?.meta?.profile_image_url}');`
+								? (() => {
+										const imageUrl = model?.info?.meta?.profile_image_url ?? '/static/favicon.png';
+										const imageSrc = imageUrl.startsWith('/')
+											? `${getImageBaseUrl(imageUrl)}${imageUrl}`
+											: imageUrl;
+										return `background-image: url('${imageSrc}');`;
+									})()
 								: ''}
 						/>
 					{/if}

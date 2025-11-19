@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, getContext, tick } from 'svelte';
 	import { models, tools, functions, knowledge as knowledgeCollections, user } from '$lib/stores';
+	import { WEBUI_BASE_URL, getImageBaseUrl } from '$lib/constants';
 
 	import AdvancedParams from '$lib/components/chat/Settings/Advanced/AdvancedParams.svelte';
 	import Tags from '$lib/components/common/Tags.svelte';
@@ -481,8 +482,12 @@
 							}}
 						>
 							{#if info.meta.profile_image_url}
+								{@const imageUrl = info.meta.profile_image_url}
+								{@const imageSrc = imageUrl.startsWith('/')
+									? `${getImageBaseUrl(imageUrl)}${imageUrl}`
+									: imageUrl}
 								<img
-									src={info.meta.profile_image_url}
+									src={imageSrc}
 									alt="model profile"
 									class="rounded-xl size-72 md:size-60 object-cover shrink-0"
 								/>
