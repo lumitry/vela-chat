@@ -81,6 +81,22 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
                         "metadata": att.meta if att.meta else {}
                     })
 
+        # Batch fetch all children relationships to avoid N+1 queries
+        children_map: Dict[str, List[ChatMessage]] = {}
+        if message_ids:
+            all_children = db.query(ChatMessage).filter(
+                ChatMessage.parent_id.in_(message_ids)
+            ).order_by(
+                ChatMessage.position.asc(),
+                ChatMessage.created_at.asc()
+            ).all()
+            for child in all_children:
+                if child.parent_id:
+                    parent_id_str = str(child.parent_id)
+                    if parent_id_str not in children_map:
+                        children_map[parent_id_str] = []
+                    children_map[parent_id_str].append(child)
+
         # Build message map (old format) - use OrderedDict to preserve creation order
         messages_dict: OrderedDict[str, Dict] = OrderedDict()
 
@@ -109,6 +125,33 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
                 return last if last else None
             return content.strip() if content.strip() else None
 
+        # Helper to reconstruct file_obj from attachment metadata when file record is not found
+        def reconstruct_file_from_metadata(file_id: str, att_type: str, att_meta: dict, embed_files_as_base64: bool) -> dict:
+            """Reconstruct file object from attachment metadata when file record is unavailable."""
+            file_obj = {
+                "id": file_id,
+                "type": att_type,
+            }
+            # Copy metadata from attachment
+            if att_meta:
+                if "name" in att_meta:
+                    file_obj["name"] = att_meta["name"]
+                if "description" in att_meta:
+                    file_obj["description"] = att_meta["description"]
+                if "status" in att_meta:
+                    file_obj["status"] = att_meta["status"]
+                if "collection" in att_meta:
+                    file_obj["collection"] = att_meta["collection"]
+                # Build meta dict from attachment metadata
+                file_obj["meta"] = {}
+                # Include all relevant meta fields
+                for key in ["name", "content_type", "size", "data", "collection_name"]:
+                    if key in att_meta:
+                        file_obj["meta"][key] = att_meta[key]
+            if not embed_files_as_base64:
+                file_obj["url"] = f"/api/v1/files/{file_id}/content"
+            return file_obj
+
         # Build messages in creation order (ordered by created_at from query)
         # This matches the original order since messages were created sequentially
         for msg in all_messages:
@@ -117,12 +160,8 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
             if not msg_id_str:
                 continue  # Skip messages without valid IDs
 
-            # Build childrenIds list
-            # Order by position (for side-by-side) then creation time
-            children = db.query(ChatMessage).filter_by(parent_id=msg.id).order_by(
-                ChatMessage.position.asc(),
-                ChatMessage.created_at.asc()
-            ).all()
+            # Build childrenIds list from pre-fetched children map
+            children = children_map.get(msg_id_str, [])
             children_ids = [str(c.id) for c in children if c.id]
 
             # Map attachments to files array with base64 embedding
@@ -204,13 +243,12 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
                                     else:
                                         try:
                                             from open_webui.models.knowledge import Knowledge
-                                            with get_db() as db:
-                                                knowledge = db.query(Knowledge).filter_by(id=collection_name).first()
-                                                if knowledge:
-                                                    file_obj["collection"] = {
-                                                        "name": knowledge.name or "",
-                                                        "description": knowledge.description or ""
-                                                    }
+                                            knowledge = db.query(Knowledge).filter_by(id=collection_name).first()
+                                            if knowledge:
+                                                file_obj["collection"] = {
+                                                    "name": knowledge.name or "",
+                                                    "description": knowledge.description or ""
+                                                }
                                         except Exception:
                                             pass  # Collection lookup failed, continue without it
 
@@ -219,54 +257,11 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
                                     file_obj["url"] = f"/api/v1/files/{file_id}/content"
                             else:
                                 # File record not found, reconstruct from attachment metadata
-                                file_obj = {
-                                    "id": file_id,
-                                    "type": att_type,
-                                }
-                                # Copy metadata from attachment
-                                if att_meta:
-                                    if "name" in att_meta:
-                                        file_obj["name"] = att_meta["name"]
-                                    if "description" in att_meta:
-                                        file_obj["description"] = att_meta["description"]
-                                    if "status" in att_meta:
-                                        file_obj["status"] = att_meta["status"]
-                                    if "collection" in att_meta:
-                                        file_obj["collection"] = att_meta["collection"]
-                                # Build meta dict from attachment metadata
-                                if att_meta:
-                                    file_obj["meta"] = {}
-                                    # Include all relevant meta fields
-                                    for key in ["name", "content_type", "size", "data", "collection_name"]:
-                                        if key in att_meta:
-                                            file_obj["meta"][key] = att_meta[key]
-                                if not embed_files_as_base64:
-                                    file_obj["url"] = f"/api/v1/files/{file_id}/content"
+                                file_obj = reconstruct_file_from_metadata(file_id, att_type, att_meta, embed_files_as_base64)
                         except Exception as e:
                             log.warning(f"normalized_to_legacy_format: Failed to get file record {file_id}: {e}, using attachment metadata")
                             # Fallback: reconstruct from attachment metadata
-                            file_obj = {
-                                "id": file_id,
-                                "type": att_type,
-                            }
-                            if att_meta:
-                                if "name" in att_meta:
-                                    file_obj["name"] = att_meta["name"]
-                                if "description" in att_meta:
-                                    file_obj["description"] = att_meta["description"]
-                                if "status" in att_meta:
-                                    file_obj["status"] = att_meta["status"]
-                                if "collection" in att_meta:
-                                    file_obj["collection"] = att_meta["collection"]
-                                # Build meta dict from attachment metadata
-                                if att_meta:
-                                    file_obj["meta"] = {}
-                                    # Include all relevant meta fields
-                                    for key in ["name", "content_type", "size", "data", "collection_name"]:
-                                        if key in att_meta:
-                                            file_obj["meta"][key] = att_meta[key]
-                            if not embed_files_as_base64:
-                                file_obj["url"] = f"/api/v1/files/{file_id}/content"
+                            file_obj = reconstruct_file_from_metadata(file_id, att_type, att_meta, embed_files_as_base64)
                     elif att_type == "collection" and att_meta:
                         # For collections, reconstruct from attachment meta (excluding files and data.file_ids)
                         file_obj = {
@@ -373,8 +368,8 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
                         files.append(out)
                     # Deduplicate by (type, id or collection_name)
                     # Prefer files from meta (more complete) over those reconstructed from attachments
-                    seen_keys = set()
-                    dedup = []
+                    # Use dict for O(1) lookups instead of O(n) list search
+                    dedup_map = {}
                     for f in files:
                         file_type = f.get("type")
                         file_id = f.get("id")
@@ -383,26 +378,23 @@ def normalized_to_legacy_format(chat_id: str, embed_files_as_base64: bool = Fals
                         # Build deduplication key
                         key = (file_type, file_id or collection_name)
 
-                        if key not in seen_keys:
-                            seen_keys.add(key)
-                            dedup.append(f)
+                        if key not in dedup_map:
+                            dedup_map[key] = f
                         else:
                             # Key already exists - check if we should replace with a more complete version
-                            existing_idx = next((i for i, existing in enumerate(dedup) if (existing.get("type"), existing.get("id") or existing.get("collection_name")) == key), None)
-                            if existing_idx is not None:
-                                existing = dedup[existing_idx]
-                                # Prefer the one with an id field (more complete)
-                                if not existing.get("id") and f.get("id"):
-                                    dedup[existing_idx] = f
-                                # If both have id, prefer the one with more fields (likely from meta, more complete)
-                                elif existing.get("id") and f.get("id") and existing.get("id") == f.get("id"):
-                                    if len(f) > len(existing):
-                                        dedup[existing_idx] = f
-                                # If neither has id but both have collection_name, prefer the one with more fields
-                                elif not existing.get("id") and not f.get("id") and collection_name:
-                                    if len(f) > len(existing):
-                                        dedup[existing_idx] = f
-                    files = dedup
+                            existing = dedup_map[key]
+                            # Prefer the one with an id field (more complete)
+                            if not existing.get("id") and f.get("id"):
+                                dedup_map[key] = f
+                            # If both have id, prefer the one with more fields (likely from meta, more complete)
+                            elif existing.get("id") and f.get("id") and existing.get("id") == f.get("id"):
+                                if len(f) > len(existing):
+                                    dedup_map[key] = f
+                            # If neither has id but both have collection_name, prefer the one with more fields
+                            elif not existing.get("id") and not f.get("id") and collection_name:
+                                if len(f) > len(existing):
+                                    dedup_map[key] = f
+                    files = list(dedup_map.values())
             except Exception:
                 pass
 
