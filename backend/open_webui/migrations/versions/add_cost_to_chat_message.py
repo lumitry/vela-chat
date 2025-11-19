@@ -112,8 +112,6 @@ def upgrade() -> None:
             except (json.JSONDecodeError, ValueError, TypeError) as e:
                 # Skip invalid JSON
                 continue
-        
-        conn.commit()
     else:
         # PostgreSQL approach: use JSON operators
         # For PostgreSQL, we can use JSON operators but still need to handle the extraction logic
@@ -146,8 +144,6 @@ def upgrade() -> None:
                     SET cost = :cost
                     WHERE id = :msg_id
                 """), {"cost": cost_decimal, "msg_id": msg_id})
-        
-        conn.commit()
     
     # Create index for efficient analytics queries (cost by model_id, cost by chat_id, etc.)
     # Index on (model_id, cost) for aggregations by model
