@@ -6,9 +6,9 @@ authors = [
 ]
 license = { file = "LICENSE" }
 dependencies = [
-    "fastapi==0.115.7",
+    "fastapi==0.118.0",
     "uvicorn[standard]==0.34.0",
-    "pydantic==2.10.6",
+    "pydantic==2.11.7",
     "python-multipart==0.0.20",
 
     "python-socketio==5.13.0",
@@ -51,8 +51,9 @@ dependencies = [
     "langchain==0.3.19",
     "langchain-community==0.3.18",
 
+
     "fake-useragent==2.1.0",
-    "chromadb==0.6.3",
+    "chromadb==1.1.0",
     "pymilvus==2.5.0",
     "qdrant-client~=1.12.0",
     "opensearch-py==2.8.0",
@@ -117,7 +118,7 @@ dependencies = [
     "googleapis-common-protos==1.63.2",
     "google-cloud-storage==2.19.0",
 
-    "azure-identity==1.20.0",
+    "azure-identity==1.21.0",
     "azure-storage-blob==12.24.1",
 
     "ldap3==2.9.1",
@@ -129,6 +130,24 @@ dependencies = [
     "gcp-storage-emulator>=2024.8.3",
 
     "moto[s3]>=5.0.26",
+
+    "scikit-learn>=1.3.0",
+    "numpy>=1.24.0",
+    "umap-learn>=0.1.1",
+
+    "xxhash==3.5.0",
+
+    "opentelemetry-api==1.31.1",
+    "opentelemetry-sdk==1.31.1",
+    "opentelemetry-exporter-otlp==1.31.1",
+    "opentelemetry-instrumentation==0.52b1",
+    "opentelemetry-instrumentation-fastapi==0.52b1",
+    "opentelemetry-instrumentation-sqlalchemy==0.52b1",
+    "opentelemetry-instrumentation-redis==0.52b1",
+    "opentelemetry-instrumentation-requests==0.52b1",
+    "opentelemetry-instrumentation-logging==0.52b1",
+    "opentelemetry-instrumentation-httpx==0.52b1",
+    "opentelemetry-instrumentation-aiohttp-client==0.52b1",
 
 ]
 readme = "README.md"
@@ -151,9 +170,9 @@ open-webui = "open_webui:app"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.rye]
-managed = true
-dev-dependencies = []
+# [tool.rye]
+# managed = true
+# dev-dependencies = []
 
 [tool.hatch.metadata]
 allow-direct-references = true

@@ -1,6 +1,6 @@
-fastapi==0.115.7
+fastapi==0.118.0
 uvicorn[standard]==0.34.0
-pydantic==2.10.6
+pydantic==2.11.7
 python-multipart==0.0.20
 
 python-socketio==5.13.0
@@ -129,13 +129,14 @@ firecrawl-py==1.12.0
 # Sougou API SDK(Tencentcloud SDK)
 tencentcloud-sdk-python==3.0.1336
 
+
+## Fast hashing for cache keys
+xxhash==3.5.0
+
 ## Trace
 opentelemetry-api==1.31.1
 opentelemetry-sdk==1.31.1
 opentelemetry-exporter-otlp==1.31.1
-
-## Fast hashing for cache keys
-xxhash==3.5.0
 opentelemetry-instrumentation==0.52b1
 opentelemetry-instrumentation-fastapi==0.52b1
 opentelemetry-instrumentation-sqlalchemy==0.52b1
