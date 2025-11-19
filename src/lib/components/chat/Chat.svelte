@@ -193,21 +193,6 @@
 			};
 
 			await bulkPutMessages([cachedMessage]);
-
-			// Broadcast to other tabs via BroadcastChannel
-			if (typeof BroadcastChannel !== 'undefined') {
-				try {
-					const channel = new BroadcastChannel('vela-chat-messages');
-					channel.postMessage({
-						type: 'message_updated',
-						chat_id: chatId,
-						message_id: message.id
-					});
-					channel.close();
-				} catch (e) {
-					// BroadcastChannel not available, that's okay
-				}
-			}
 		} catch (error) {
 			console.warn('Failed to cache message in IndexedDB:', error);
 			// Don't throw - caching failure shouldn't break the app
@@ -649,30 +634,7 @@
 		}
 	}
 
-	// BroadcastChannel for multi-tab cache consistency
-	let broadcastChannel: BroadcastChannel | null = null;
-
 	onMount(async () => {
-		// Set up BroadcastChannel listener for multi-tab cache consistency
-		if (typeof BroadcastChannel !== 'undefined') {
-			try {
-				broadcastChannel = new BroadcastChannel('vela-chat-messages');
-				broadcastChannel.onmessage = async (event) => {
-					const { type, chat_id, message_id } = event.data;
-					if (type === 'message_updated' && chat_id === $chatId) {
-						// Another tab updated a message in this chat
-						// TODO Invalidate cache for this message or refresh if chat is currently loaded
-						// TODO For now, we'll just log it - full refresh would require reloading the chat
-						console.log(`Message ${message_id} updated in another tab for chat ${chat_id}`);
-						// TODO Optionally, we could trigger a refresh of the specific message
-						// TODO or reload the entire chat if it's currently open
-						// TODO also why does this trigger on multi-response messages? weird bug. probably bc we can only have one message at a time in this handler? i think?
-					}
-				};
-			} catch (e) {
-				console.warn('BroadcastChannel not available:', e);
-			}
-		}
 		window.addEventListener('chat-model-updated', handleModelUpdate as EventListener);
 		console.log('mounted');
 		window.addEventListener('message', onMessageHandler);
@@ -745,11 +707,6 @@
 		chatIdUnsubscriber?.();
 		window.removeEventListener('message', onMessageHandler);
 		$socket?.off('chat-events', chatEventHandler);
-		// Close BroadcastChannel
-		if (broadcastChannel) {
-			broadcastChannel.close();
-			broadcastChannel = null;
-		}
 	});
 
 	// File upload functions
@@ -1592,7 +1549,11 @@
 							// Extract merged from meta.merged if present (backend stores it in meta.merged)
 							// Frontend expects it at root level, matching backend converter behavior
 							let merged = null;
-							if (cachedMsg.meta && typeof cachedMsg.meta === 'object' && 'merged' in cachedMsg.meta) {
+							if (
+								cachedMsg.meta &&
+								typeof cachedMsg.meta === 'object' &&
+								'merged' in cachedMsg.meta
+							) {
 								merged = cachedMsg.meta.merged;
 							}
 
