@@ -6,9 +6,34 @@ VelaChat is an opinionated fork of Open WebUI 0.6.5 designed to provide a more p
 
 Note: Do not use this fork with an Sqlite database! It will probably break things! Postgres is simple to set up and very fast. The migration isn't particularly difficult in my experience. See [MIGRATE_SQLITE_TO_PSQL.md](utils/sqlite_to_postgres/MIGRATE_SQLITE_TO_PSQL.md) for more details.
 
-TODO: add gifs/videos showcasing perf and UI improvements! And screenshots of new UI features!
+> **⚠️ WARNING**
+>
+> **Before installing or upgrading VelaChat, please back up your Postgres database and your `backend/data` directory (or Docker volume) first!**
+>
+> Some of the migrations in VelaChat have a risk of data loss or database changes that cannot be easily reversed. Always keep backups of your database and any important data before proceeding with installation or updates!
+
+## Deployment Recommendations
+
+- Docker Compose
+- Use Postgres for the database
+- ChromaDB is fine for single-user deployments
+- Use a reverse proxy like Nginx or Caddy to serve the app. Nginx has worked great for me.
+- Tailscale.
+- Seriously. Please use Tailscale, it's awesome.
+- `tailscale cert` to get a certificate -> reverse proxy -> SSL -> HTTPS -> HTTP/2 -> faster loading times! Also access to more browser APIs like clipboard, notifications, etc.
+- There are also many other ways to get HTTPS, but Tailscale has lots of other advantages so I really like it.
+- I use LiteLLM to proxy external models with a custom patch to pass through cost usage info, but this is mostly unnecessary now that we've got metrics supported natively in VelaChat. I only keep it around because it's nice to have a log of requests and responses to debug issues.
+
+Dev environment:
+
+- VSCode remote ssh to my server (which means I can experience actual latency/perf issues firsthand)
+- The database is a Postgres-migrated version of my actual production database (the 2GB Sqlite database I mention in several places) with 15k messages. In other words, it is a real-world scenario with a lot of actual data and edge cases.
+- I bounce back and forth between firefox and chrome. Both have devtools with varying degrees of oddity. Chrome doesn't tell you the HTTP method in the overview by default and doesn't let you search response/request JSON for single requests. Firefox has a worse waterfall that's never the right size. No need to pick your poison - ¿por que no los dos?
+- I mostly use external models for testing, lately Gemini 2.5 Flash Lite Preview because when I'm testing, I don't want to break flow waiting for a 10 tps free model or an Ollama cold start. 300+ TPS for cheap prices is pretty nice.
 
 ## Performance
+
+_(TODO: add gifs/videos showcasing perf and UI improvements! And screenshots of new UI features!)_
 
 The original goal of VelaChat was to make the app more performant without sacrificing features. Notably, the same chat that used to take me 30 seconds to load now takes around a second to load. The journey to get there is documented below...
 
@@ -41,7 +66,7 @@ Current performance wins include:
 
 For any maintainers or contributors to other chat apps, I would personally recommend the base64 -> URL image change the most, since it is a massive performance win with very few downsides (less portability), especially if you cache the images. Normalizing the chat messages table is far more complex and involved, and if implemented poorly can actually be _slower_ since the previous implementation was dead-simple - the database just had to find the JSON object and send it to the client. Now, the queries involve more work. I've managed to implement it in a way that is notably faster, but it isn't a silver bullet.
 
-Current State of Performance:
+**Current State of Performance:**
 
 - Chat that was previously 64MB of JSON due to having many images and loaded in 15 seconds back in October in a 'prod' build running in a Docker container can now load in with less than 1MB transferred data and finish page load in 2 seconds... in a dev build lacking many build-time optimizations and lacking GZIP compression. (Note that this is only after the chat messages and images get cached!)
 - Chat that was previously 18.13MB of JSON (before gzip) due to having lots of RAG sources now fits into 1.56MB of JSON. I am not referring to the cached data transfer here, I am referring to the first-time chat load. In terms of latency, this means that same chat now takes less than 2 seconds (dev build) when it used to take 7 (prod w/ GZIP squeezing those 18.13MB into 4MB).
