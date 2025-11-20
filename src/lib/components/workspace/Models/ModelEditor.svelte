@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, getContext, tick } from 'svelte';
 	import { models, tools, functions, knowledge as knowledgeCollections, user } from '$lib/stores';
+	import { WEBUI_BASE_URL, getImageBaseUrl } from '$lib/constants';
 
 	import AdvancedParams from '$lib/components/chat/Settings/Advanced/AdvancedParams.svelte';
 	import Tags from '$lib/components/common/Tags.svelte';
@@ -12,7 +13,7 @@
 	import Textarea from '$lib/components/common/Textarea.svelte';
 	import { getTools } from '$lib/apis/tools';
 	import { getFunctions } from '$lib/apis/functions';
-	import { getKnowledgeBases } from '$lib/apis/knowledge';
+	import { getKnowledgeBaseMetadata } from '$lib/apis/knowledge';
 	import AccessControl from '../common/AccessControl.svelte';
 	import { stringify } from 'postcss';
 	import { toast } from 'svelte-sonner';
@@ -75,8 +76,8 @@
 		system: ''
 	};
 	let capabilities = {
-		vision: true,
-		usage: undefined,
+		vision: false,
+		usage: true,
 		citations: true,
 		verbosity: false
 	};
@@ -268,7 +269,11 @@
 	onMount(async () => {
 		await tools.set(await getTools(localStorage.token));
 		await functions.set(await getFunctions(localStorage.token));
-		await knowledgeCollections.set(await getKnowledgeBases(localStorage.token));
+
+		// Only fetch knowledge collections if not already populated
+		if (!$knowledgeCollections || $knowledgeCollections.length === 0) {
+			await knowledgeCollections.set(await getKnowledgeBaseMetadata(localStorage.token));
+		}
 
 		// Scroll to top 'workspace-container' element
 		const workspaceContainer = document.getElementById('workspace-container');
@@ -477,8 +482,12 @@
 							}}
 						>
 							{#if info.meta.profile_image_url}
+								{@const imageUrl = info.meta.profile_image_url}
+								{@const imageSrc = imageUrl.startsWith('/')
+									? `${getImageBaseUrl(imageUrl)}${imageUrl}`
+									: imageUrl}
 								<img
-									src={info.meta.profile_image_url}
+									src={imageSrc}
 									alt="model profile"
 									class="rounded-xl size-72 md:size-60 object-cover shrink-0"
 								/>

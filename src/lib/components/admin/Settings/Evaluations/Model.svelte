@@ -2,12 +2,16 @@
 	import { getContext, createEventDispatcher } from 'svelte';
 	const dispatch = createEventDispatcher();
 	const i18n = getContext('i18n');
+	import { WEBUI_BASE_URL, getImageBaseUrl } from '$lib/constants';
 
 	import Cog6 from '$lib/components/icons/Cog6.svelte';
 	import ArenaModelModal from './ArenaModelModal.svelte';
 	export let model;
 
 	let showModel = false;
+
+	$: imageUrl = model.meta.profile_image_url;
+	$: imageSrc = imageUrl.startsWith('/') ? `${getImageBaseUrl(imageUrl)}${imageUrl}` : imageUrl;
 </script>
 
 <ArenaModelModal
@@ -26,11 +30,7 @@
 	<div class="flex justify-between items-center mb-1">
 		<div class="flex flex-col flex-1">
 			<div class="flex gap-2.5 items-center">
-				<img
-					src={model.meta.profile_image_url}
-					alt={model.name}
-					class="size-8 rounded-full object-cover shrink-0"
-				/>
+				<img src={imageSrc} alt={model.name} class="size-8 rounded-full object-cover shrink-0" />
 
 				<div class="w-full flex flex-col">
 					<div class="flex items-center gap-1">

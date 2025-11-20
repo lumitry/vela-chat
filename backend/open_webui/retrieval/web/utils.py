@@ -96,6 +96,64 @@ def extract_metadata(soup, url):
         metadata["description"] = description.get("content", "No description found.")
     if html := soup.find("html"):
         metadata["language"] = html.get("lang", "No language found.")
+    
+    # Extract site name from Open Graph meta tag (og:site_name)
+    # This is the most reliable way to get the actual site name
+    # Examples: "CNBC", "Yahoo Finance", "Investing.com", etc.
+    if og_site_name := soup.find("meta", attrs={"property": "og:site_name"}):
+        site_name = og_site_name.get("content", "").strip()
+        if site_name:
+            metadata["site_name"] = site_name
+            # Also set as name if name is not already set (for citations)
+            if "name" not in metadata:
+                metadata["name"] = site_name
+    
+    # Manual overrides for sites where og:site_name is not ideal
+    # Wikipedia uses "Wikimedia Foundation, Inc." but we want "Wikipedia"
+    try:
+        from urllib.parse import urlparse
+        parsed_url = urlparse(url)
+        hostname = parsed_url.hostname or ""
+        if "wikipedia.org" in hostname.lower():
+            metadata["site_name"] = "Wikipedia"
+            metadata["name"] = "Wikipedia"
+    except Exception:
+        pass
+    
+    # Fallback 1: try to extract from JSON-LD structured data
+    if "site_name" not in metadata:
+        json_ld_scripts = soup.find_all("script", type="application/ld+json")
+        for script in json_ld_scripts:
+            try:
+                import json
+                data = json.loads(script.string)
+                # Handle both single objects and arrays
+                if isinstance(data, list):
+                    data = data[0] if data else {}
+                # Check for publisher name (common in news articles)
+                if "publisher" in data and isinstance(data["publisher"], dict):
+                    if "name" in data["publisher"]:
+                        publisher_name = data["publisher"]["name"].strip()
+                        if publisher_name:
+                            metadata["site_name"] = publisher_name
+                            if "name" not in metadata:
+                                metadata["name"] = publisher_name
+                            break
+            except (json.JSONDecodeError, AttributeError, KeyError, TypeError):
+                continue
+    
+    # Fallback 2: try alternative meta tags (some sites use different properties)
+    if "site_name" not in metadata:
+        # Try meta name="application-name" or similar
+        for attr_name in ["application-name", "apple-mobile-web-app-title"]:
+            if alt_meta := soup.find("meta", attrs={"name": attr_name}):
+                alt_name = alt_meta.get("content", "").strip()
+                if alt_name and len(alt_name) < 100:  # Reasonable length check
+                    metadata["site_name"] = alt_name
+                    if "name" not in metadata:
+                        metadata["name"] = alt_name
+                    break
+    
     return metadata
 
 
@@ -568,15 +626,7 @@ class SafeWebBaseLoader(WebBaseLoader):
         results = await self.ascrape_all(self.web_paths)
         for path, soup in zip(self.web_paths, results):
             text = soup.get_text(**self.bs_get_text_kwargs)
-            metadata = {"source": path}
-            if title := soup.find("title"):
-                metadata["title"] = title.get_text()
-            if description := soup.find("meta", attrs={"name": "description"}):
-                metadata["description"] = description.get(
-                    "content", "No description found."
-                )
-            if html := soup.find("html"):
-                metadata["language"] = html.get("lang", "No language found.")
+            metadata = extract_metadata(soup, path)
             yield Document(page_content=text, metadata=metadata)
 
     async def aload(self) -> list[Document]:

@@ -15,6 +15,7 @@
 
 	export let onSourceClick = () => {};
 	export let onTaskClick = () => {};
+	export let searchQuery = '';
 </script>
 
 <div>
@@ -23,6 +24,7 @@
 		{content}
 		{model}
 		{save}
+		{searchQuery}
 		sourceIds={(sources ?? []).reduce((acc, s) => {
 			let ids = [];
 			s.document.forEach((document, index) => {
@@ -34,6 +36,11 @@
 				const metadata = s.metadata?.[index];
 				const id = metadata?.source ?? 'N/A';
 
+				// Prefer site_name or name from metadata (extracted from og:site_name)
+				if (metadata?.site_name) {
+					ids.push(metadata.site_name);
+					return ids;
+				}
 				if (metadata?.name) {
 					ids.push(metadata.name);
 					return ids;

@@ -27,7 +27,6 @@ class Feedback(Base):
     type = Column(Text)
     data = Column(JSON, nullable=True)
     meta = Column(JSON, nullable=True)
-    snapshot = Column(JSON, nullable=True)
     created_at = Column(BigInteger)
     updated_at = Column(BigInteger)
 
@@ -39,7 +38,6 @@ class FeedbackModel(BaseModel):
     type: str
     data: Optional[dict] = None
     meta: Optional[dict] = None
-    snapshot: Optional[dict] = None
     created_at: int
     updated_at: int
 
@@ -79,16 +77,10 @@ class MetaData(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
-class SnapshotData(BaseModel):
-    chat: Optional[dict] = None
-    model_config = ConfigDict(extra="allow")
-
-
 class FeedbackForm(BaseModel):
     type: str
     data: Optional[RatingData] = None
     meta: Optional[dict] = None
-    snapshot: Optional[SnapshotData] = None
     model_config = ConfigDict(extra="allow")
 
 
@@ -184,8 +176,6 @@ class FeedbackTable:
                 feedback.data = form_data.data.model_dump()
             if form_data.meta:
                 feedback.meta = form_data.meta
-            if form_data.snapshot:
-                feedback.snapshot = form_data.snapshot.model_dump()
 
             feedback.updated_at = int(time.time())
 
@@ -204,8 +194,6 @@ class FeedbackTable:
                 feedback.data = form_data.data.model_dump()
             if form_data.meta:
                 feedback.meta = form_data.meta
-            if form_data.snapshot:
-                feedback.snapshot = form_data.snapshot.model_dump()
 
             feedback.updated_at = int(time.time())
 

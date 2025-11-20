@@ -3,9 +3,11 @@ import logging
 import mimetypes
 import os
 import shutil
+import time
+import asyncio
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator, List, Optional, Sequence, Union
 
@@ -64,6 +66,7 @@ from open_webui.retrieval.web.sougou import search_sougou
 
 from open_webui.retrieval.utils import (
     get_embedding_function,
+    get_embedding_function_with_usage,
     get_model_path,
     query_collection,
     query_collection_with_hybrid_search,
@@ -91,10 +94,20 @@ from open_webui.env import (
     DEVICE_TYPE,
     DOCKER,
 )
-from open_webui.constants import ERROR_MESSAGES
+from open_webui.constants import ERROR_MESSAGES, EMBEDDING_TYPES
+from open_webui.services.embedding_metrics import (
+    record_embedding_generation,
+    update_embedding_metrics_rollup,
+    update_rollup_from_embedding_generations,
+    extract_embedding_usage,
+)
 
 log = logging.getLogger(__name__)
 log.setLevel(SRC_LOG_LEVELS["RAG"])
+
+# In-memory storage for pending embedding metadata (keyed by file_id)
+# Format: {file_id: {"embedding_type": ..., "user_id": ..., "model_id": ..., "usage": ..., "cost": ..., "tokens": ..., "embedding_engine": ...}}
+pending_embedding_metadata: dict[str, dict] = {}
 
 ##########################################
 #
@@ -177,6 +190,8 @@ class ProcessUrlForm(CollectionNameForm):
 
 class SearchForm(BaseModel):
     query: str
+    chat_id: Optional[str] = None
+    message_id: Optional[str] = None
 
 
 @router.get("/")
@@ -388,6 +403,13 @@ async def get_rag_config(request: Request, user=Depends(get_admin_user)):
             "WEB_SEARCH_CONCURRENT_REQUESTS": request.app.state.config.WEB_SEARCH_CONCURRENT_REQUESTS,
             "WEB_SEARCH_DOMAIN_FILTER_LIST": request.app.state.config.WEB_SEARCH_DOMAIN_FILTER_LIST,
             "BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL": request.app.state.config.BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL,
+            "WEB_SEARCH_EMBEDDING_ENGINE": request.app.state.config.WEB_SEARCH_EMBEDDING_ENGINE,
+            "WEB_SEARCH_EMBEDDING_MODEL": request.app.state.config.WEB_SEARCH_EMBEDDING_MODEL,
+            "WEB_SEARCH_EMBEDDING_BATCH_SIZE": request.app.state.config.WEB_SEARCH_EMBEDDING_BATCH_SIZE,
+            "WEB_SEARCH_OPENAI_API_BASE_URL": request.app.state.config.WEB_SEARCH_OPENAI_API_BASE_URL,
+            "WEB_SEARCH_OPENAI_API_KEY": request.app.state.config.WEB_SEARCH_OPENAI_API_KEY,
+            "WEB_SEARCH_OLLAMA_BASE_URL": request.app.state.config.WEB_SEARCH_OLLAMA_BASE_URL,
+            "WEB_SEARCH_OLLAMA_API_KEY": request.app.state.config.WEB_SEARCH_OLLAMA_API_KEY,
             "SEARXNG_QUERY_URL": request.app.state.config.SEARXNG_QUERY_URL,
             "GOOGLE_PSE_API_KEY": request.app.state.config.GOOGLE_PSE_API_KEY,
             "GOOGLE_PSE_ENGINE_ID": request.app.state.config.GOOGLE_PSE_ENGINE_ID,
@@ -433,6 +455,14 @@ class WebConfig(BaseModel):
     WEB_SEARCH_CONCURRENT_REQUESTS: Optional[int] = None
     WEB_SEARCH_DOMAIN_FILTER_LIST: Optional[List[str]] = []
     BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL: Optional[bool] = None
+    # Web search embedding settings
+    WEB_SEARCH_EMBEDDING_ENGINE: Optional[str] = None
+    WEB_SEARCH_EMBEDDING_MODEL: Optional[str] = None
+    WEB_SEARCH_EMBEDDING_BATCH_SIZE: Optional[int] = None
+    WEB_SEARCH_OPENAI_API_BASE_URL: Optional[str] = None
+    WEB_SEARCH_OPENAI_API_KEY: Optional[str] = None
+    WEB_SEARCH_OLLAMA_BASE_URL: Optional[str] = None
+    WEB_SEARCH_OLLAMA_API_KEY: Optional[str] = None
     SEARXNG_QUERY_URL: Optional[str] = None
     GOOGLE_PSE_API_KEY: Optional[str] = None
     GOOGLE_PSE_ENGINE_ID: Optional[str] = None
@@ -650,6 +680,20 @@ async def update_rag_config(
         request.app.state.config.BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL = (
             form_data.web.BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL
         )
+        if form_data.web.WEB_SEARCH_EMBEDDING_ENGINE is not None:
+            request.app.state.config.WEB_SEARCH_EMBEDDING_ENGINE = form_data.web.WEB_SEARCH_EMBEDDING_ENGINE
+        if form_data.web.WEB_SEARCH_EMBEDDING_MODEL is not None:
+            request.app.state.config.WEB_SEARCH_EMBEDDING_MODEL = form_data.web.WEB_SEARCH_EMBEDDING_MODEL
+        if form_data.web.WEB_SEARCH_EMBEDDING_BATCH_SIZE is not None:
+            request.app.state.config.WEB_SEARCH_EMBEDDING_BATCH_SIZE = form_data.web.WEB_SEARCH_EMBEDDING_BATCH_SIZE
+        if form_data.web.WEB_SEARCH_OPENAI_API_BASE_URL is not None:
+            request.app.state.config.WEB_SEARCH_OPENAI_API_BASE_URL = form_data.web.WEB_SEARCH_OPENAI_API_BASE_URL
+        if form_data.web.WEB_SEARCH_OPENAI_API_KEY is not None:
+            request.app.state.config.WEB_SEARCH_OPENAI_API_KEY = form_data.web.WEB_SEARCH_OPENAI_API_KEY
+        if form_data.web.WEB_SEARCH_OLLAMA_BASE_URL is not None:
+            request.app.state.config.WEB_SEARCH_OLLAMA_BASE_URL = form_data.web.WEB_SEARCH_OLLAMA_BASE_URL
+        if form_data.web.WEB_SEARCH_OLLAMA_API_KEY is not None:
+            request.app.state.config.WEB_SEARCH_OLLAMA_API_KEY = form_data.web.WEB_SEARCH_OLLAMA_API_KEY
         request.app.state.config.SEARXNG_QUERY_URL = form_data.web.SEARXNG_QUERY_URL
         request.app.state.config.GOOGLE_PSE_API_KEY = form_data.web.GOOGLE_PSE_API_KEY
         request.app.state.config.GOOGLE_PSE_ENGINE_ID = (
@@ -748,6 +792,13 @@ async def update_rag_config(
             "WEB_SEARCH_CONCURRENT_REQUESTS": request.app.state.config.WEB_SEARCH_CONCURRENT_REQUESTS,
             "WEB_SEARCH_DOMAIN_FILTER_LIST": request.app.state.config.WEB_SEARCH_DOMAIN_FILTER_LIST,
             "BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL": request.app.state.config.BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL,
+            "WEB_SEARCH_EMBEDDING_ENGINE": request.app.state.config.WEB_SEARCH_EMBEDDING_ENGINE,
+            "WEB_SEARCH_EMBEDDING_MODEL": request.app.state.config.WEB_SEARCH_EMBEDDING_MODEL,
+            "WEB_SEARCH_EMBEDDING_BATCH_SIZE": request.app.state.config.WEB_SEARCH_EMBEDDING_BATCH_SIZE,
+            "WEB_SEARCH_OPENAI_API_BASE_URL": request.app.state.config.WEB_SEARCH_OPENAI_API_BASE_URL,
+            "WEB_SEARCH_OPENAI_API_KEY": request.app.state.config.WEB_SEARCH_OPENAI_API_KEY,
+            "WEB_SEARCH_OLLAMA_BASE_URL": request.app.state.config.WEB_SEARCH_OLLAMA_BASE_URL,
+            "WEB_SEARCH_OLLAMA_API_KEY": request.app.state.config.WEB_SEARCH_OLLAMA_API_KEY,
             "SEARXNG_QUERY_URL": request.app.state.config.SEARXNG_QUERY_URL,
             "GOOGLE_PSE_API_KEY": request.app.state.config.GOOGLE_PSE_API_KEY,
             "GOOGLE_PSE_ENGINE_ID": request.app.state.config.GOOGLE_PSE_ENGINE_ID,
@@ -801,6 +852,12 @@ def save_docs_to_vector_db(
     split: bool = True,
     add: bool = False,
     user=None,
+    use_web_search_embedding: bool = False,
+    embedding_type: Optional[str] = None,
+    chat_id: Optional[str] = None,
+    message_id: Optional[str] = None,
+    knowledge_base_id: Optional[str] = None,
+    skip_rollup_update: bool = False,
 ) -> bool:
     def _get_docs_info(docs: list[Document]) -> str:
         docs_info = set()
@@ -902,28 +959,155 @@ def save_docs_to_vector_db(
                 return True
 
         log.info(f"adding to collection {collection_name}")
-        embedding_function = get_embedding_function(
-            request.app.state.config.RAG_EMBEDDING_ENGINE,
-            request.app.state.config.RAG_EMBEDDING_MODEL,
-            request.app.state.ef,
-            (
-                request.app.state.config.RAG_OPENAI_API_BASE_URL
-                if request.app.state.config.RAG_EMBEDDING_ENGINE == "openai"
-                else request.app.state.config.RAG_OLLAMA_BASE_URL
-            ),
-            (
-                request.app.state.config.RAG_OPENAI_API_KEY
-                if request.app.state.config.RAG_EMBEDDING_ENGINE == "openai"
-                else request.app.state.config.RAG_OLLAMA_API_KEY
-            ),
-            request.app.state.config.RAG_EMBEDDING_BATCH_SIZE,
-        )
 
-        embeddings = embedding_function(
+        # Use web search embedding config if specified and configured, otherwise use regular RAG config
+        # If WEB_SEARCH_EMBEDDING_ENGINE is empty string, it means "use documents setting" (fallback to RAG config)
+        # If it's set to a specific engine (including "sentence-transformers"), use that for web search
+        if use_web_search_embedding and request.app.state.config.WEB_SEARCH_EMBEDDING_ENGINE is not None and request.app.state.config.WEB_SEARCH_EMBEDDING_ENGINE != "":
+            # Use web search embedding config
+            embedding_engine = request.app.state.config.WEB_SEARCH_EMBEDDING_ENGINE
+            embedding_model = request.app.state.config.WEB_SEARCH_EMBEDDING_MODEL or request.app.state.config.RAG_EMBEDDING_MODEL
+            embedding_batch_size = request.app.state.config.WEB_SEARCH_EMBEDDING_BATCH_SIZE or request.app.state.config.RAG_EMBEDDING_BATCH_SIZE
+
+            # Get embedding function for web search (ef) if needed (for sentence transformers)
+            web_search_ef = request.app.state.ef
+            if embedding_engine == "" or embedding_engine == "sentence-transformers":
+                web_search_ef = get_ef("", embedding_model, RAG_EMBEDDING_MODEL_AUTO_UPDATE)
+
+            # Normalize sentence-transformers to empty string for get_embedding_function
+            normalized_engine = "" if embedding_engine == "sentence-transformers" else embedding_engine
+            embedding_function_with_usage = get_embedding_function_with_usage(
+                normalized_engine,
+                embedding_model,
+                web_search_ef,
+                (
+                    request.app.state.config.WEB_SEARCH_OPENAI_API_BASE_URL
+                    if normalized_engine == "openai"
+                    else request.app.state.config.WEB_SEARCH_OLLAMA_BASE_URL
+                ),
+                (
+                    request.app.state.config.WEB_SEARCH_OPENAI_API_KEY
+                    if normalized_engine == "openai"
+                    else request.app.state.config.WEB_SEARCH_OLLAMA_API_KEY
+                ),
+                embedding_batch_size,
+            )
+            current_embedding_engine = normalized_engine
+            current_embedding_model = embedding_model
+
+            # Update metadata with web search embedding config
+            for metadata in metadatas:
+                embedding_config = json.loads(metadata.get("embedding_config", "{}"))
+                embedding_config["engine"] = embedding_engine
+                embedding_config["model"] = embedding_model
+                metadata["embedding_config"] = json.dumps(embedding_config)
+        else:
+            # Use regular RAG embedding config
+            embedding_function_with_usage = get_embedding_function_with_usage(
+                request.app.state.config.RAG_EMBEDDING_ENGINE,
+                request.app.state.config.RAG_EMBEDDING_MODEL,
+                request.app.state.ef,
+                (
+                    request.app.state.config.RAG_OPENAI_API_BASE_URL
+                    if request.app.state.config.RAG_EMBEDDING_ENGINE == "openai"
+                    else request.app.state.config.RAG_OLLAMA_BASE_URL
+                ),
+                (
+                    request.app.state.config.RAG_OPENAI_API_KEY
+                    if request.app.state.config.RAG_EMBEDDING_ENGINE == "openai"
+                    else request.app.state.config.RAG_OLLAMA_API_KEY
+                ),
+                request.app.state.config.RAG_EMBEDDING_BATCH_SIZE,
+            )
+            current_embedding_engine = request.app.state.config.RAG_EMBEDDING_ENGINE
+            current_embedding_model = request.app.state.config.RAG_EMBEDDING_MODEL
+
+        # Generate embeddings with usage tracking
+        embeddings, aggregated_usage = embedding_function_with_usage(
             list(map(lambda x: x.replace("\n", " "), texts)),
             prefix=RAG_EMBEDDING_CONTENT_PREFIX,
             user=user,
         )
+
+        # Record embedding metrics if embedding_type is provided
+        if embedding_type and user:
+            # Extract usage information
+            total_cost = aggregated_usage.get("total_cost", 0) or 0
+            total_tokens = aggregated_usage.get("total_tokens", 0) or 0
+            usage_list = aggregated_usage.get("usage_list", [])
+
+            # Determine if we should store in pending metadata (file upload without chat_id/message_id)
+            file_id = None
+            if metadata:
+                file_id = metadata.get("file_id")
+
+            should_store_pending = (
+                embedding_type == str(EMBEDDING_TYPES.UPLOAD_FILE_EMBEDDING) and
+                file_id is not None and
+                (not chat_id or not message_id)
+            )
+
+            # Record individual embedding generation
+            if not should_store_pending:
+                # We have chat_id/message_id or it's not a file upload - record directly
+                record_embedding_generation(
+                    embedding_type=embedding_type,
+                    user_id=user.id,
+                    embedding_engine=current_embedding_engine or "sentencetransformers",
+                    model_id=current_embedding_model,
+                    total_input_tokens=total_tokens if total_tokens > 0 else None,
+                    cost=total_cost if total_cost > 0 else None,
+                    usage={"usage_list": usage_list} if usage_list else None,
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    knowledge_base_id=knowledge_base_id,
+                )
+            else:
+                # Store in pending metadata for later association
+                if file_id is not None:
+                    pending_embedding_metadata[file_id] = {
+                        "embedding_type": embedding_type,
+                        "user_id": user.id,
+                        "model_id": current_embedding_model,
+                        "embedding_engine": current_embedding_engine or "sentencetransformers",
+                        "usage": {"usage_list": usage_list, "file_id": file_id} if usage_list else {"file_id": file_id},
+                        "cost": total_cost if total_cost > 0 else None,
+                        "tokens": total_tokens if total_tokens > 0 else None,
+                    }
+                    # Still record the generation but without chat_id/message_id
+                    # Store file_id in usage JSON so we can find it later
+                    usage_with_file_id = {"usage_list": usage_list, "file_id": file_id} if usage_list else {"file_id": file_id}
+                    record_embedding_generation(
+                        embedding_type=embedding_type,
+                        user_id=user.id,
+                        embedding_engine=current_embedding_engine or "sentencetransformers",
+                        model_id=current_embedding_model,
+                        total_input_tokens=total_tokens if total_tokens > 0 else None,
+                        cost=total_cost if total_cost > 0 else None,
+                        usage=usage_with_file_id,
+                        chat_id=None,
+                        message_id=None,
+                        knowledge_base_id=knowledge_base_id,
+                    )
+
+            # Update rollup table for single operations (not batch operations like web search)
+            # Batch operations should call update_rollup_from_embedding_generations after all embeddings complete
+            if not skip_rollup_update:
+                date_str = datetime.now(timezone.utc).date().isoformat()
+                update_embedding_metrics_rollup(
+                    user_id=user.id,
+                    date=date_str,
+                    embedding_type=embedding_type,
+                    model_id=current_embedding_model,
+                    embedding_model_type="internal" if (
+                        current_embedding_engine == "" or current_embedding_engine == "ollama") else "external",
+                    aggregated_usage={
+                        "total_cost": total_cost,
+                        "total_tokens": total_tokens,
+                        "count": aggregated_usage.get("count", 1),
+                        "distinct_chat_count": 1 if chat_id else 0,
+                    }
+                )
 
         items = [
             {
@@ -1080,6 +1264,10 @@ def process_file(
 
         if not request.app.state.config.BYPASS_EMBEDDING_AND_RETRIEVAL:
             try:
+                # Determine embedding type: knowledge base if collection_name provided, otherwise file upload
+                embedding_type = str(EMBEDDING_TYPES.KNOWLEDGE_BASE_EMBEDDING) if form_data.collection_name else str(EMBEDDING_TYPES.UPLOAD_FILE_EMBEDDING)
+                knowledge_base_id = form_data.collection_name if form_data.collection_name else None
+
                 result = save_docs_to_vector_db(
                     request,
                     docs=docs,
@@ -1091,6 +1279,8 @@ def process_file(
                     },
                     add=(True if form_data.collection_name else False),
                     user=user,
+                    embedding_type=embedding_type,
+                    knowledge_base_id=knowledge_base_id,
                 )
 
                 if result:
@@ -1190,7 +1380,8 @@ def process_youtube_video(
         log.debug(f"text_content: {content}")
 
         save_docs_to_vector_db(
-            request, docs, collection_name, overwrite=True, user=user
+            request, docs, collection_name, overwrite=True, user=user,
+            embedding_type=str(EMBEDDING_TYPES.PROCESS_YOUTUBE_EMBEDDING)
         )
 
         return {
@@ -1235,7 +1426,8 @@ def process_web(
 
         if not request.app.state.config.BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL:
             save_docs_to_vector_db(
-                request, docs, collection_name, overwrite=True, user=user
+                request, docs, collection_name, overwrite=True, user=user,
+                embedding_type=str(EMBEDDING_TYPES.PROCESS_WEB_EMBEDDING)
             )
         else:
             collection_name = None
@@ -1473,13 +1665,17 @@ def search_web(request: Request, engine: str, query: str) -> list[SearchResult]:
 async def process_web_search(
     request: Request, form_data: SearchForm, user=Depends(get_verified_user)
 ):
+    process_start = time.perf_counter()
     try:
         logging.info(
             f"trying to web search with {request.app.state.config.WEB_SEARCH_ENGINE, form_data.query}"
         )
+        search_start = time.perf_counter()
         web_results = search_web(
             request, request.app.state.config.WEB_SEARCH_ENGINE, form_data.query
         )
+        search_time = time.perf_counter() - search_start
+        log.debug(f"PERF: process_web_search search_web() took {search_time:.3f}s, got {len(web_results)} results")
     except Exception as e:
         log.exception(e)
 
@@ -1492,6 +1688,7 @@ async def process_web_search(
 
     try:
         urls = [result.link for result in web_results]
+        loader_start = time.perf_counter()
         loader = get_web_loader(
             urls,
             verify_ssl=request.app.state.config.ENABLE_WEB_LOADER_SSL_VERIFICATION,
@@ -1499,11 +1696,15 @@ async def process_web_search(
             trust_env=request.app.state.config.WEB_SEARCH_TRUST_ENV,
         )
         docs = await loader.aload()
+        loader_time = time.perf_counter() - loader_start
+        log.debug(f"PERF: process_web_search loader.aload() took {loader_time:.3f}s, loaded {len(docs)} docs from {len(urls)} URLs")
         urls = [
             doc.metadata["source"] for doc in docs
         ]  # only keep URLs which could be retrieved
 
         if request.app.state.config.BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL:
+            process_total_time = time.perf_counter() - process_start
+            log.debug(f"PERF: process_web_search total time (bypass mode): {process_total_time:.3f}s (query='{form_data.query[:50]}...', docs={len(docs)})")
             return {
                 "status": True,
                 "collection_name": None,
@@ -1519,22 +1720,87 @@ async def process_web_search(
             }
         else:
             collection_names = []
+            # Get chat_id and message_id from form_data if available
+            chat_id = form_data.chat_id
+            message_id = form_data.message_id
+
+            # Track embedding info for rollup update
+            embedding_info = None
+
+            embedding_start = time.perf_counter()
+            # Prepare all save tasks first
+            save_tasks = []
             for doc_idx, doc in enumerate(docs):
                 if doc and doc.page_content:
                     collection_name = f"web-search-{calculate_sha256_string(form_data.query + '-' + urls[doc_idx])}"[
                         :63
                     ]
-
                     collection_names.append(collection_name)
-                    await run_in_threadpool(
-                        save_docs_to_vector_db,
-                        request,
-                        [doc],
+                    
+                    # Prepare save task (don't await yet)
+                    save_tasks.append((
                         collection_name,
-                        overwrite=True,
-                        user=user,
-                    )
+                        run_in_threadpool(
+                            save_docs_to_vector_db,
+                            request,
+                            [doc],
+                            collection_name,
+                            overwrite=True,
+                            user=user,
+                            use_web_search_embedding=True,
+                            embedding_type=str(EMBEDDING_TYPES.WEB_SEARCH_EMBEDDING),
+                            chat_id=chat_id,
+                            message_id=message_id,
+                            skip_rollup_update=True,  # Skip individual rollup updates, aggregate at end
+                        )
+                    ))
+            
+            # Execute all save tasks in parallel
+            if save_tasks:
+                log.debug(f"PERF: process_web_search saving {len(save_tasks)} documents in parallel")
+                save_results = await asyncio.gather(*[task[1] for task in save_tasks], return_exceptions=True)
+                
+                # Log individual save times (approximate since they run in parallel)
+                for (collection_name, _), result in zip(save_tasks, save_results):
+                    if isinstance(result, Exception):
+                        log.exception(f"Error saving document to {collection_name}: {result}")
+                    else:
+                        log.debug(f"PERF: process_web_search save_docs_to_vector_db({collection_name}) completed")
+            
+            embedding_total_time = time.perf_counter() - embedding_start
+            log.debug(f"PERF: process_web_search total embedding/saving time: {embedding_total_time:.3f}s for {len(collection_names)} collections (parallelized)")
 
+            # Capture embedding info from the first doc for rollup update
+            if embedding_info is None and user and save_tasks:
+                # Determine embedding engine and model
+                if request.app.state.config.WEB_SEARCH_EMBEDDING_ENGINE and request.app.state.config.WEB_SEARCH_EMBEDDING_ENGINE != "":
+                    embedding_engine = request.app.state.config.WEB_SEARCH_EMBEDDING_ENGINE
+                    embedding_model = request.app.state.config.WEB_SEARCH_EMBEDDING_MODEL or request.app.state.config.RAG_EMBEDDING_MODEL
+                else:
+                    embedding_engine = request.app.state.config.RAG_EMBEDDING_ENGINE
+                    embedding_model = request.app.state.config.RAG_EMBEDDING_MODEL
+
+                embedding_model_type = "internal" if (embedding_engine == "" or embedding_engine == "ollama") else "external"
+                embedding_info = {
+                    "user_id": user.id,
+                    "embedding_type": str(EMBEDDING_TYPES.WEB_SEARCH_EMBEDDING),
+                    "model_id": embedding_model,
+                    "embedding_model_type": embedding_model_type,
+                }
+
+            # Update rollup table after all embeddings are complete
+            if embedding_info:
+                date_str = datetime.now(timezone.utc).date().isoformat()
+                update_rollup_from_embedding_generations(
+                    user_id=embedding_info["user_id"],
+                    date=date_str,
+                    embedding_type=embedding_info["embedding_type"],
+                    model_id=embedding_info["model_id"],
+                    embedding_model_type=embedding_info["embedding_model_type"],
+                )
+
+            process_total_time = time.perf_counter() - process_start
+            log.debug(f"PERF: process_web_search total time: {process_total_time:.3f}s (query='{form_data.query[:50]}...', collections={len(collection_names)}, docs={len(docs)})")
             return {
                 "status": True,
                 "collection_names": collection_names,
@@ -1791,12 +2057,17 @@ def process_files_batch(
     # Save all documents in one batch
     if all_docs:
         try:
+            # For batch processing, determine embedding type based on whether it's a knowledge base
+            embedding_type = str(EMBEDDING_TYPES.KNOWLEDGE_BASE_EMBEDDING) if collection_name else str(EMBEDDING_TYPES.UPLOAD_FILE_EMBEDDING)
+
             save_docs_to_vector_db(
                 request=request,
                 docs=all_docs,
                 collection_name=collection_name,
                 add=True,
                 user=user,
+                embedding_type=embedding_type,
+                knowledge_base_id=collection_name if collection_name else None,
             )
 
             # Update all files with collection name

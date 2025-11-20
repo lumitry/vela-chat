@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { getContext, onMount, tick } from 'svelte';
+	import { get, type Writable } from 'svelte/store';
 	import { toast } from 'svelte-sonner';
+	import type { i18n as i18nType } from 'i18next';
 
 	import {
 		WEBUI_NAME,
@@ -14,13 +16,16 @@
 		showSidebar,
 		temporaryChatEnabled,
 		user,
-		chats
+		chats,
+		models
 	} from '$lib/stores';
 
 	import { slide } from 'svelte/transition';
 	import { page } from '$app/stores';
+	import { WEBUI_BASE_URL } from '$lib/constants';
 
 	import ShareChatModal from '../chat/ShareChatModal.svelte';
+	import ChatInfoModal from '../chat/ChatInfoModal.svelte';
 	import ModelSelector from '../chat/ModelSelector.svelte';
 	import Tooltip from '../common/Tooltip.svelte';
 	import Menu from '$lib/components/layout/Navbar/Menu.svelte';
@@ -29,12 +34,14 @@
 	import AdjustmentsHorizontal from '../icons/AdjustmentsHorizontal.svelte';
 
 	import PencilSquare from '../icons/PencilSquare.svelte';
+	import Info from '../icons/Info.svelte';
 	import Banner from '../common/Banner.svelte';
-	import { getChatById } from '$lib/apis/chats';
+	import { getChatMetaById } from '$lib/apis/chats';
 	import { getFolders } from '$lib/apis/folders';
 	import { navigateToChat, navigateToFolder } from '$lib/stores/sidebar';
+	import { createMessagesList } from '$lib/utils';
 
-	const i18n = getContext('i18n');
+	const i18n: Writable<i18nType> = getContext('i18n');
 
 	export let initNewChat: Function;
 	export let title: string = $WEBUI_NAME;
@@ -47,11 +54,37 @@
 
 	let showShareChatModal = false;
 	let showDownloadChatModal = false;
+	let showChatInfoModal = false;
+
+	$: userImageSrc = $user?.profile_image_url 
+		? ($user.profile_image_url.startsWith('/') ? `${WEBUI_BASE_URL}${$user.profile_image_url}` : $user.profile_image_url)
+		: '';
 
 	// State for current chat info
 	let currentChatDetails = null;
 	let currentFolderName = null;
 	let folders = {};
+
+	type ChatInfoSnapshot = {
+		totalMessages: number;
+		currentBranchMessages: number;
+		branchCount: number;
+		attachmentCount: number;
+		totalCost: number;
+		totalInputTokens: number;
+		totalOutputTokens: number;
+		totalReasoningTokens: number;
+		uniqueModels: {
+			id: string;
+			label: string;
+			icon?: string | null;
+			messageCount: number;
+		}[];
+		createdAt: number | null;
+		updatedAt: number | null;
+	};
+
+	let chatInfoSnapshot: ChatInfoSnapshot | null = null;
 
 	// Lightweight collision detection
 	let chatTitleButton = null;
@@ -161,7 +194,7 @@
 	const refreshChatDetails = async () => {
 		// Re-fetch the chat details to get updated title and folder_id
 		try {
-			const updatedChatDetails = await getChatById(localStorage.token, $chatId);
+			const updatedChatDetails = await getChatMetaById(localStorage.token, $chatId);
 			if (updatedChatDetails && currentChatDetails) {
 				// Update both title and folder_id if they changed
 				if (updatedChatDetails.title !== currentChatDetails.title) {
@@ -178,7 +211,7 @@
 
 	const loadCurrentChatDetails = async () => {
 		try {
-			currentChatDetails = await getChatById(localStorage.token, $chatId);
+			currentChatDetails = await getChatMetaById(localStorage.token, $chatId);
 			// Position adjustment will be triggered by reactive statement
 		} catch (error) {
 			console.error('Failed to load chat details:', error);
@@ -202,9 +235,219 @@
 			navigateToChat($chatId);
 		}
 	};
+
+	const buildChatInfoSnapshot = (): ChatInfoSnapshot => {
+		const snapshot: ChatInfoSnapshot = {
+			totalMessages: 0,
+			currentBranchMessages: 0,
+			branchCount: 0,
+			attachmentCount: 0,
+			totalCost: 0,
+			totalInputTokens: 0,
+			totalOutputTokens: 0,
+			totalReasoningTokens: 0,
+			uniqueModels: [],
+			createdAt: currentChatDetails?.created_at ? currentChatDetails.created_at * 1000 : null,
+			updatedAt: currentChatDetails?.updated_at ? currentChatDetails.updated_at * 1000 : null
+		};
+
+		if (!history || !history.messages) {
+			return snapshot;
+		}
+
+		const messagesMap: Record<string, any> = history.messages ?? {};
+		const messageList = Object.values(messagesMap).filter((message) => !!message) as any[];
+
+		snapshot.totalMessages = messageList.length;
+
+		if (history.currentId) {
+			snapshot.currentBranchMessages = createMessagesList(history, history.currentId).length;
+		}
+
+		const availableModels = get(models) ?? [];
+		const modelLookup = new Map<string, (typeof availableModels)[number]>();
+		for (const model of availableModels) {
+			if (!model) continue;
+			modelLookup.set(model.id, model);
+			if (model.name) {
+				modelLookup.set(model.name, model);
+			}
+		}
+
+		const modelsUsed = new Map<
+			string,
+			{
+				id: string;
+				label: string;
+				icon?: string | null;
+				messageCount: number;
+			}
+		>();
+
+		const registerModel = (identifier?: string | null, labelOverride?: string | null) => {
+			if (!identifier) return null;
+			const normalizedId = String(identifier).trim();
+			if (!normalizedId) return null;
+
+			const matchedModel = modelLookup.get(normalizedId);
+			const resolvedLabel = labelOverride?.trim() || matchedModel?.name?.trim() || normalizedId;
+			const resolvedIcon = matchedModel?.info?.meta?.profile_image_url ?? null;
+
+			if (modelsUsed.has(normalizedId)) {
+				const existing = modelsUsed.get(normalizedId);
+				if (existing) {
+					if (existing.label === existing.id && resolvedLabel && resolvedLabel !== existing.label) {
+						existing.label = resolvedLabel;
+					}
+					if (!existing.icon && resolvedIcon) {
+						existing.icon = resolvedIcon;
+					}
+				}
+				return normalizedId;
+			}
+
+			modelsUsed.set(normalizedId, {
+				id: normalizedId,
+				label: resolvedLabel || normalizedId,
+				icon: resolvedIcon,
+				messageCount: 0
+			});
+
+			return normalizedId;
+		};
+
+		const incrementModelUsage = (identifier?: string | null, labelOverride?: string | null) => {
+			const registeredId = registerModel(identifier, labelOverride);
+			if (registeredId && modelsUsed.has(registeredId)) {
+				const entry = modelsUsed.get(registeredId);
+				if (entry) {
+					entry.messageCount += 1;
+				}
+				return registeredId;
+			}
+			return null;
+		};
+
+		const addModelCandidate = (candidate: any) => {
+			if (candidate === undefined || candidate === null) return;
+			if (typeof candidate === 'string' || typeof candidate === 'number') {
+				registerModel(String(candidate));
+				return;
+			}
+			if (Array.isArray(candidate)) {
+				candidate.forEach((entry) => addModelCandidate(entry));
+				return;
+			}
+			if (typeof candidate === 'object') {
+				if (
+					'id' in candidate ||
+					'name' in candidate ||
+					'label' in candidate ||
+					'model' in candidate
+				) {
+					const candidateId = (candidate.id ??
+						candidate.model ??
+						candidate.name ??
+						candidate.label) as string | undefined;
+					const candidateLabel = (candidate.name ?? candidate.label ?? candidateId) as
+						| string
+						| undefined;
+					registerModel(candidateId ?? candidateLabel, candidateLabel);
+					return;
+				}
+				for (const value of Object.values(candidate)) {
+					addModelCandidate(value);
+				}
+			}
+		};
+
+		const extractUsageNumber = (value: unknown): number => {
+			if (typeof value === 'number' && Number.isFinite(value)) {
+				return value;
+			}
+			return 0;
+		};
+
+		for (const message of messageList) {
+			if (!message) continue;
+
+			incrementModelUsage(
+				message.selected_model_id ??
+					message.model_id ??
+					message.model ??
+					message.modelName ??
+					(Array.isArray(message.models) ? message.models[0] : undefined) ??
+					message?.meta?.model ??
+					message?.meta?.model_id ??
+					(Array.isArray(message?.meta?.models) ? message.meta.models[0] : undefined)
+			) ?? incrementModelUsage('unknown-model', $i18n.t('Unknown Model'));
+
+			addModelCandidate(message.model);
+			addModelCandidate(message.model_id);
+			addModelCandidate(message.modelName);
+			addModelCandidate(message.selected_model_id);
+			addModelCandidate(message?.meta?.model);
+			addModelCandidate(message?.meta?.model_id);
+			addModelCandidate(message?.models);
+			addModelCandidate(message?.meta?.models);
+
+			if (Array.isArray(message.files)) {
+				snapshot.attachmentCount += message.files.length;
+			}
+
+			const usage = message.usage || message?.meta?.usage || null;
+			if (usage) {
+				const totalCost =
+					extractUsageNumber(usage.cost) || extractUsageNumber(usage.estimates?.total_cost) || 0;
+				const inputTokens =
+					extractUsageNumber(usage.prompt_tokens) ||
+					extractUsageNumber(usage.prompt_eval_count) ||
+					extractUsageNumber(usage.token_usage?.prompt_tokens) ||
+					extractUsageNumber(usage.token_usage?.input_tokens);
+				const outputTokens =
+					extractUsageNumber(usage.completion_tokens) ||
+					extractUsageNumber(usage.eval_count) ||
+					extractUsageNumber(usage.token_usage?.completion_tokens) ||
+					extractUsageNumber(usage.token_usage?.output_tokens);
+				const reasoningTokens =
+					extractUsageNumber(usage.completion_tokens_details?.reasoning_tokens) ||
+					extractUsageNumber(usage.reasoning_tokens) ||
+					extractUsageNumber(usage.token_usage?.reasoning_tokens);
+
+				snapshot.totalCost += totalCost;
+				snapshot.totalInputTokens += inputTokens;
+				snapshot.totalOutputTokens += outputTokens;
+				snapshot.totalReasoningTokens += reasoningTokens;
+			}
+
+			const children = Array.isArray(message.childrenIds)
+				? message.childrenIds.filter((childId) => childId && messagesMap[childId])
+				: [];
+
+			if (children.length === 0) {
+				snapshot.branchCount += 1;
+			}
+		}
+
+		snapshot.uniqueModels = Array.from(modelsUsed.values()).sort((a, b) =>
+			a.label.localeCompare(b.label, undefined, { sensitivity: 'base' })
+		);
+
+		return snapshot;
+	};
+
+	const openChatInfo = () => {
+		chatInfoSnapshot = buildChatInfoSnapshot();
+		showChatInfoModal = true;
+	};
 </script>
 
 <ShareChatModal bind:show={showShareChatModal} chatId={$chatId} />
+<ChatInfoModal
+	bind:show={showChatInfoModal}
+	stats={chatInfoSnapshot}
+	chatTitle={currentChatDetails?.title || $i18n.t('Untitled Chat')}
+/>
 
 <nav class="sticky top-0 z-30 w-full py-1.5 -mb-8 flex flex-col items-center drag-region">
 	<div class="flex items-center w-full px-1.5">
@@ -308,6 +551,20 @@
 						</Menu>
 					{/if}
 
+					{#if $chatId && currentChatDetails}
+						<Tooltip content={$i18n.t('Chat Info')}>
+							<button
+								class="flex cursor-pointer px-2 py-2 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-850 transition"
+								on:click={openChatInfo}
+								aria-label="Chat Info"
+							>
+								<div class=" m-auto self-center">
+									<Info className=" size-5" strokeWidth="1.5" />
+								</div>
+							</button>
+						</Tooltip>
+					{/if}
+
 					<Tooltip content={$i18n.t('Controls')}>
 						<button
 							class=" flex cursor-pointer px-2 py-2 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-850 transition"
@@ -355,7 +612,7 @@
 							>
 								<div class=" self-center">
 									<img
-										src={$user?.profile_image_url}
+										src={userImageSrc}
 										class="size-6 object-cover rounded-full"
 										alt="User profile"
 										draggable="false"

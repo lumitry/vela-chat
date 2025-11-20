@@ -29,6 +29,7 @@
 	import Switch from '$lib/components/common/Switch.svelte';
 	import ChatBubbleOval from '$lib/components/icons/ChatBubbleOval.svelte';
 	import { goto } from '$app/navigation';
+	import { WEBUI_BASE_URL, getImageBaseUrl } from '$lib/constants';
 
 	const i18n = getContext('i18n');
 	const dispatch = createEventDispatcher();
@@ -57,8 +58,24 @@
 	let show = false;
 	let tags = [];
 
-	let selectedModel = '';
-	$: selectedModel = items.find((item) => item.value === value) ?? '';
+	let selectedModel: { label: string; value: string; model: Model } | '' = '';
+	// Make this reactive to both items and value so it updates when models load
+	// Force reactivity by explicitly reading items.length at the start
+	$: {
+		// Explicitly read items.length first to ensure Svelte tracks the array
+		const itemsLength = items?.length ?? 0;
+		if (itemsLength > 0 && value) {
+			const found = items.find((item) => item.value === value);
+			if (found) {
+				selectedModel = found;
+			} else {
+				selectedModel = '';
+			}
+		} else if (!value) {
+			selectedModel = '';
+		}
+		// If items is empty but value exists, keep current selectedModel (might be transitioning)
+	}
 
 	let searchValue = '';
 
@@ -500,8 +517,13 @@
 												content={$user?.role === 'admin' ? (item?.value ?? '') : ''}
 												placement="top-start"
 											>
+												{@const imageUrl =
+													item.model?.info?.meta?.profile_image_url ?? '/static/favicon.png'}
+												{@const imageSrc = imageUrl.startsWith('/')
+													? `${getImageBaseUrl(imageUrl)}${imageUrl}`
+													: imageUrl}
 												<img
-													src={item.model?.info?.meta?.profile_image_url ?? '/static/favicon.png'}
+													src={imageSrc}
 													alt="Model"
 													class="rounded-full size-5 flex items-center mr-2"
 												/>

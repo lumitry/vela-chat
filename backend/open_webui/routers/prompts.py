@@ -7,7 +7,7 @@ from open_webui.models.prompts import (
     Prompts,
 )
 from open_webui.constants import ERROR_MESSAGES
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 from open_webui.utils.auth import get_admin_user, get_verified_user
 from open_webui.utils.access_control import has_access, has_permission
 
@@ -29,11 +29,18 @@ async def get_prompts(user=Depends(get_verified_user)):
 
 
 @router.get("/list", response_model=list[PromptUserResponse])
-async def get_prompt_list(user=Depends(get_verified_user)):
+async def get_prompt_list(
+    user=Depends(get_verified_user),
+    exclude_owned: bool = Query(False, description="Exclude prompts owned by the current user")
+):
     if user.role == "admin":
         prompts = Prompts.get_prompts()
     else:
         prompts = Prompts.get_prompts_by_user_id(user.id, "write")
+
+    # Filter out owned prompts if exclude_owned is True
+    if exclude_owned:
+        prompts = [prompt for prompt in prompts if prompt.user_id != user.id]
 
     return prompts
 

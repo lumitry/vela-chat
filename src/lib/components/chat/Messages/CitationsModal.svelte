@@ -53,6 +53,18 @@
 			return str;
 		}
 	};
+
+	/**
+	 * Normalizes whitespace in document content by collapsing multiple consecutive
+	 * newlines to a maximum of 3. This makes web-scraped content more readable.
+	 */
+	function normalizeWhitespace(content: string): string {
+		if (!content || typeof content !== 'string') {
+			return content;
+		}
+		// Replace 4 or more consecutive newlines with exactly 3 newlines
+		return content.replace(/\n{4,}/g, '\n\n\n');
+	}
 </script>
 
 <Modal size="lg" bind:show>
@@ -104,10 +116,20 @@
 											? `${WEBUI_API_BASE_URL}/files/${document?.metadata?.file_id}/content${document?.metadata?.page !== undefined ? `#page=${document.metadata.page + 1}` : ''}`
 											: document.source?.url?.includes('http')
 												? document.source.url
-												: `#`}
+												: document?.metadata?.source?.includes('http')
+													? document.metadata.source
+													: `#`}
 										target="_blank"
 									>
-										{decodeString(document?.metadata?.name ?? document.source.name)}
+										{decodeString(
+											// Always show the full URL in the modal, not the site name
+											document?.metadata?.file_id
+												? (document?.metadata?.name ?? document.source.name)
+												: (document?.metadata?.source ??
+														document.source?.url ??
+														document.source?.name ??
+														'N/A')
+										)}
 									</a>
 									{#if document?.metadata?.page}
 										<span class="text-xs text-gray-500 dark:text-gray-400">
@@ -169,12 +191,12 @@
 							<iframe
 								class="w-full border-0 h-auto rounded-none"
 								sandbox="allow-scripts allow-forms allow-same-origin"
-								srcdoc={document.document}
+								srcdoc={normalizeWhitespace(document.document)}
 								title={$i18n.t('Content')}
 							></iframe>
 						{:else}
 							<pre class="text-sm dark:text-gray-400 whitespace-pre-line">
-                {document.document}
+                {normalizeWhitespace(document.document)}
               </pre>
 						{/if}
 					</div>

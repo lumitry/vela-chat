@@ -1,6 +1,7 @@
 <script>
 	import { getContext, tick, onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
+	import { page } from '$app/stores';
 
 	import { config } from '$lib/stores';
 	import { getBackendConfig } from '$lib/apis';
@@ -24,9 +25,65 @@
 
 	const i18n = getContext('i18n');
 
-	let selectedTab = 'general';
+	// Valid tab names
+	const validTabs = [
+		'general',
+		'connections',
+		'models',
+		'evaluations',
+		'tools',
+		'documents',
+		'web',
+		'code-execution',
+		'interface',
+		'audio',
+		'images',
+		'pipelines',
+		'db'
+	];
+
+	// Get tab from URL hash or default to 'general'
+	const getTabFromHash = () => {
+		if (typeof window !== 'undefined') {
+			const hash = window.location.hash.slice(1); // Remove the '#'
+			return validTabs.includes(hash) ? hash : 'general';
+		}
+		return 'general';
+	};
+
+	let selectedTab = getTabFromHash();
+
+	// Update URL hash when tab changes
+	const updateHash = (tab, replace = false) => {
+		if (typeof window !== 'undefined') {
+			const newUrl = `${$page.url.pathname}#${tab}`;
+			if (replace) {
+				window.history.replaceState(null, '', newUrl);
+			} else {
+				window.history.pushState(null, '', newUrl);
+			}
+		}
+	};
 
 	onMount(() => {
+		// Read hash from URL on mount
+		selectedTab = getTabFromHash();
+		// Use replaceState on mount to avoid creating a history entry
+		updateHash(selectedTab, true);
+
+		// Listen for hash changes (e.g., direct hash navigation)
+		const handleHashChange = () => {
+			selectedTab = getTabFromHash();
+		};
+
+		// Listen for popstate events (browser back/forward navigation)
+		const handlePopState = () => {
+			selectedTab = getTabFromHash();
+		};
+
+		window.addEventListener('hashchange', handleHashChange);
+		window.addEventListener('popstate', handlePopState);
+
 		const containerElement = document.getElementById('admin-settings-tabs-container');
 
 		if (containerElement) {
@@ -37,6 +94,11 @@
 				}
 			});
 		}
+
+		return () => {
+			window.removeEventListener('hashchange', handleHashChange);
+			window.removeEventListener('popstate', handlePopState);
+		};
 	});
 </script>
 
@@ -52,6 +114,7 @@
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
 			on:click={() => {
 				selectedTab = 'general';
+				updateHash('general', false);
 			}}
 		>
 			<div class=" self-center mr-2">
@@ -78,6 +141,7 @@
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
 			on:click={() => {
 				selectedTab = 'connections';
+				updateHash('connections', false);
 			}}
 		>
 			<div class=" self-center mr-2">
@@ -102,6 +166,7 @@
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
 			on:click={() => {
 				selectedTab = 'models';
+				updateHash('models', false);
 			}}
 		>
 			<div class=" self-center mr-2">
@@ -128,6 +193,7 @@
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
 			on:click={() => {
 				selectedTab = 'evaluations';
+				updateHash('evaluations', false);
 			}}
 		>
 			<div class=" self-center mr-2">
@@ -143,6 +209,7 @@
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
 			on:click={() => {
 				selectedTab = 'tools';
+				updateHash('tools', false);
 			}}
 		>
 			<div class=" self-center mr-2">
@@ -169,6 +236,7 @@
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
 			on:click={() => {
 				selectedTab = 'documents';
+				updateHash('documents', false);
 			}}
 		>
 			<div class=" self-center mr-2">
@@ -199,6 +267,7 @@
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
 			on:click={() => {
 				selectedTab = 'web';
+				updateHash('web', false);
 			}}
 		>
 			<div class=" self-center mr-2">
@@ -223,6 +292,7 @@
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
 			on:click={() => {
 				selectedTab = 'code-execution';
+				updateHash('code-execution', false);
 			}}
 		>
 			<div class=" self-center mr-2">
@@ -249,6 +319,7 @@
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
 			on:click={() => {
 				selectedTab = 'interface';
+				updateHash('interface', false);
 			}}
 		>
 			<div class=" self-center mr-2">
@@ -275,6 +346,7 @@
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
 			on:click={() => {
 				selectedTab = 'audio';
+				updateHash('audio', false);
 			}}
 		>
 			<div class=" self-center mr-2">
@@ -302,6 +374,7 @@
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
 			on:click={() => {
 				selectedTab = 'images';
+				updateHash('images', false);
 			}}
 		>
 			<div class=" self-center mr-2">
@@ -328,6 +401,7 @@
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
 			on:click={() => {
 				selectedTab = 'pipelines';
+				updateHash('pipelines', false);
 			}}
 		>
 			<div class=" self-center mr-2">
@@ -358,6 +432,7 @@
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
 			on:click={() => {
 				selectedTab = 'db';
+				updateHash('db', false);
 			}}
 		>
 			<div class=" self-center mr-2">

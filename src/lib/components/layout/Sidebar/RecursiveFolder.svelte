@@ -20,11 +20,14 @@
 		updateFolderIsExpandedById,
 		updateFolderNameById,
 		updateFolderParentIdById,
-		createNewFolder
+		createNewFolder,
+		batchUpdateFolderIsExpanded
 	} from '$lib/apis/folders';
+	import { scheduleFolderUpdate } from '$lib/utils/folderBatch';
 	import { toast } from 'svelte-sonner';
 	import {
 		getChatById,
+		getChatMetaById,
 		getChatsByFolderId,
 		importChat,
 		updateChatFolderIdById
@@ -110,7 +113,7 @@
 						const data = JSON.parse(dataTransfer);
 						console.log(data);
 
-						const { type, id, item } = data;
+						const { type, id, meta, item } = data;
 
 						if (type === 'folder') {
 							open = true;
@@ -131,9 +134,17 @@
 						} else if (type === 'chat') {
 							open = true;
 
-							let chat = await getChatById(localStorage.token, id).catch((error) => {
-								return null;
-							});
+							// Fetch meta (fast, ~100ms) instead of full chat for drag-and-drop
+							let chat = meta;
+							if (!chat) {
+								chat = await getChatMetaById(localStorage.token, id).catch((error) => {
+									// Fallback to full chat if meta fails
+									return getChatById(localStorage.token, id).catch((error) => {
+										return null;
+									});
+								});
+							}
+							// Fallback for importing external chats
 							if (!chat && item) {
 								chat = await importChat(localStorage.token, item.chat, item?.meta ?? {});
 							}
@@ -294,25 +305,10 @@
 		}
 	};
 
-	const isExpandedUpdateHandler = async () => {
-		const res = await updateFolderIsExpandedById(localStorage.token, folderId, open).catch(
-			(error) => {
-				toast.error(`${error}`);
-				return null;
-			}
-		);
-	};
-
-	let isExpandedUpdateTimeout;
-
-	const isExpandedUpdateDebounceHandler = (open) => {
-		clearTimeout(isExpandedUpdateTimeout);
-		isExpandedUpdateTimeout = setTimeout(() => {
-			isExpandedUpdateHandler();
-		}, 500);
-	};
-
-	$: isExpandedUpdateDebounceHandler(open);
+	// Use shared batching service for folder expanded updates
+	$: if (open !== undefined) {
+		scheduleFolderUpdate(folderId, open);
+	}
 
 	const editHandler = async () => {
 		console.log('Edit');

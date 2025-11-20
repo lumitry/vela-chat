@@ -12,7 +12,6 @@
 	const dispatch = createEventDispatcher();
 
 	import { createNewFeedback, getFeedbackById, updateFeedbackById } from '$lib/apis/evaluations';
-	import { getChatById } from '$lib/apis/chats';
 	import { generateTags } from '$lib/apis';
 
 	import { config, models, settings, temporaryChatEnabled, TTSWorker, user } from '$lib/stores';
@@ -28,7 +27,7 @@
 		removeDetails,
 		removeAllDetails
 	} from '$lib/utils';
-	import { WEBUI_BASE_URL } from '$lib/constants';
+	import { WEBUI_BASE_URL, getImageBaseUrl } from '$lib/constants';
 
 	import Name from './Name.svelte';
 	import ProfileImage from './ProfileImage.svelte';
@@ -129,9 +128,11 @@
 	export let regenerateResponse: Function;
 
 	export let addMessages: Function;
+	export let refreshChatMeta: Function = () => {};
 
 	export let isLastMessage = true;
 	export let readOnly = false;
+	export let searchQuery: string = '';
 
 	let buttonsContainerElement: HTMLDivElement;
 	let showDeleteConfirm = false;
@@ -346,37 +347,10 @@
 		}
 	};
 
-	let preprocessedDetailsCache = [];
-
-	function preprocessForEditing(content: string): string {
-		// Replace <details>...</details> with unique ID placeholder
-		const detailsBlocks = [];
-		let i = 0;
-
-		content = content.replace(/<details[\s\S]*?<\/details>/gi, (match) => {
-			detailsBlocks.push(match);
-			return `<details id="__DETAIL_${i++}__"/>`;
-		});
-
-		// Store original blocks in the editedContent or globally (see merging later)
-		preprocessedDetailsCache = detailsBlocks;
-
-		return content;
-	}
-
-	function postprocessAfterEditing(content: string): string {
-		const restoredContent = content.replace(
-			/<details id="__DETAIL_(\d+)__"\/>/g,
-			(_, index) => preprocessedDetailsCache[parseInt(index)] || ''
-		);
-
-		return restoredContent;
-	}
-
 	const editMessageHandler = async () => {
 		edit = true;
 
-		editedContent = preprocessForEditing(message.content);
+		editedContent = message.content;
 
 		await tick();
 
@@ -385,7 +359,7 @@
 	};
 
 	const editMessageConfirmHandler = async () => {
-		const messageContent = postprocessAfterEditing(editedContent ? editedContent : '');
+		const messageContent = editedContent ? editedContent : '';
 		editMessage(message.id, messageContent, false);
 
 		edit = false;
@@ -395,7 +369,7 @@
 	};
 
 	const saveAsCopyHandler = async () => {
-		const messageContent = postprocessAfterEditing(editedContent ? editedContent : '');
+		const messageContent = editedContent ? editedContent : '';
 
 		editMessage(message.id, messageContent);
 
@@ -448,13 +422,6 @@
 			}
 		};
 
-		const chat = await getChatById(localStorage.token, chatId).catch((error) => {
-			toast.error(`${error}`);
-		});
-		if (!chat) {
-			return;
-		}
-
 		const messages = createMessagesList(history, message.id);
 
 		let feedbackItem = {
@@ -476,9 +443,6 @@
 				message_id: message.id,
 				message_index: messages.length,
 				chat_id: chatId
-			},
-			snapshot: {
-				chat: chat
 			}
 		};
 
@@ -599,7 +563,7 @@
 		<div class={`shrink-0 ltr:mr-3 rtl:ml-3`}>
 			<ProfileImage
 				src={model?.info?.meta?.profile_image_url ??
-					($i18n.language === 'dg-DG' ? `/doge.png` : `${WEBUI_BASE_URL}/static/favicon.png`)}
+					($i18n.language === 'dg-DG' ? `/doge.png` : `${getImageBaseUrl('/static/favicon.png')}/static/favicon.png`)}
 				className={'size-8'}
 			/>
 		</div>
@@ -651,7 +615,7 @@
 													<!-- $i18n.t("No search query generated") -->
 
 													<!-- $i18n.t('Searched {{count}} sites') -->
-													{#if status?.description.includes('{{count}}')}
+													{#if status?.description && status.description.includes('{{count}}')}
 														{$i18n.t(status?.description, {
 															count: status?.urls.length
 														})}
@@ -685,7 +649,7 @@
 													: ''} text-gray-500 dark:text-gray-500 text-base line-clamp-1 text-wrap"
 											>
 												<!-- $i18n.t(`Searching "{{searchQuery}}"`) -->
-												{#if status?.description.includes('{{searchQuery}}')}
+												{#if status?.description && status.description.includes('{{searchQuery}}')}
 													{$i18n.t(status?.description, {
 														searchQuery: status?.query
 													})}
@@ -800,6 +764,7 @@
 										floatingButtons={message?.done && !readOnly}
 										save={!readOnly}
 										{model}
+										{searchQuery}
 										onTaskClick={async (e) => {
 											console.log(e);
 										}}
@@ -1397,7 +1362,7 @@
 												id="delete-response-button"
 												class="{isLastMessage
 													? 'visible'
-													: 'invisible group-hover:visible'} p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg dark:hover:text-white hover:text-black transition regenerate-response-button"
+													: 'invisible group-hover:visible'} p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg dark:hover:text-white hover:text-black transition delete-response-button"
 												on:click={() => {
 													showDeleteConfirm = true;
 												}}
@@ -1494,7 +1459,7 @@
 										{#if tokensPerSecond || totalCost || promptTokens}<span>•</span>{/if}
 										<span
 											>{completionTokens} out{reasoningTokens
-												? ` (+ ${reasoningTokens} CoT)`
+												? ` (${reasoningTokens} CoT)`
 												: ''}</span
 										>
 									{/if}

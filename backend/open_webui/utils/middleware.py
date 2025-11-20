@@ -16,6 +16,7 @@ import ast
 
 from uuid import uuid4
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 
 
 from fastapi import Request, HTTPException
@@ -24,6 +25,9 @@ from starlette.responses import Response, StreamingResponse
 
 from open_webui.models.chats import Chats
 from open_webui.models.users import Users
+from open_webui.models.files import Files
+from open_webui.models.chat_messages import ChatMessages, MessageCreateForm
+from open_webui.storage.provider import Storage
 from open_webui.socket.main import (
     get_event_call,
     get_event_emitter,
@@ -64,6 +68,7 @@ from open_webui.utils.misc import (
     add_or_update_system_message,
     add_or_update_user_message,
     get_last_user_message,
+    get_last_user_message_item,
     get_last_assistant_message,
     prepend_to_first_user_message_content,
     convert_logit_bias_input_to_json,
@@ -293,6 +298,7 @@ async def chat_completion_tools_handler(
 async def chat_web_search_handler(
     request: Request, form_data: dict, extra_params: dict, user
 ):
+    handler_start = time.perf_counter()
     event_emitter = extra_params["__event_emitter__"]
     await event_emitter(
         {
@@ -308,7 +314,22 @@ async def chat_web_search_handler(
     messages = form_data["messages"]
     user_message = get_last_user_message(messages)
 
+    # Try to get message_id for query generation tracking
+    # For queries, we want the most recent user message ID
+    message_id = None
+    chat_id = form_data.get("chat_id") or extra_params.get("__metadata__", {}).get("chat_id")
+    if chat_id:
+        try:
+            # Get the last user message from the chat
+            all_messages = ChatMessages.get_all_messages_by_chat_id(chat_id)
+            user_messages = [m for m in all_messages if m.role == "user"]
+            if user_messages:
+                message_id = user_messages[-1].id
+        except Exception as e:
+            log.debug(f"Could not get message_id for query generation: {e}")
+
     queries = []
+    query_gen_start = time.perf_counter()
     try:
         res = await generate_queries(
             request,
@@ -317,6 +338,8 @@ async def chat_web_search_handler(
                 "messages": messages,
                 "prompt": user_message,
                 "type": "web_search",
+                "chat_id": chat_id,
+                "message_id": message_id,  # May be None, recording will skip if missing
             },
             user,
         )
@@ -339,6 +362,9 @@ async def chat_web_search_handler(
     except Exception as e:
         log.exception(e)
         queries = [user_message]
+    
+    query_gen_time = time.perf_counter() - query_gen_start
+    log.debug(f"PERF: chat_web_search_handler query generation took {query_gen_time:.3f}s, generated {len(queries)} queries")
 
     if len(queries) == 0:
         await event_emitter(
@@ -355,6 +381,7 @@ async def chat_web_search_handler(
 
     all_results = []
 
+    # Emit status for all searches starting
     for searchQuery in queries:
         await event_emitter(
             {
@@ -368,20 +395,76 @@ async def chat_web_search_handler(
             }
         )
 
-        try:
-            results = await process_web_search(
-                request,
-                SearchForm(
-                    **{
-                        "query": searchQuery,
+    # Execute all searches in parallel with rate limiting
+    # Use a semaphore to limit concurrent API calls (default 2 at a time to avoid rate limits, configurable via env)
+    search_concurrency_limit = int(os.environ.get("WEB_SEARCH_CONCURRENCY_LIMIT", 2))
+    search_semaphore = asyncio.Semaphore(search_concurrency_limit)
+    
+    async def execute_search(searchQuery, delay=0):
+        # Stagger requests slightly to avoid hitting rate limits
+        if delay > 0:
+            await asyncio.sleep(delay)
+        
+        async with search_semaphore:
+            search_start = time.perf_counter()
+            try:
+                results = await process_web_search(
+                    request,
+                    SearchForm(
+                        **{
+                            "query": searchQuery,
+                            "chat_id": chat_id,
+                            "message_id": message_id,
+                        }
+                    ),
+                    user=user,
+                )
+                search_time = time.perf_counter() - search_start
+                log.debug(f"PERF: process_web_search for query '{searchQuery[:50]}...' took {search_time:.3f}s")
+                return searchQuery, results, None
+            except Exception as e:
+                search_time = time.perf_counter() - search_start
+                log.exception(f"Error in parallel web search for query '{searchQuery[:50]}...': {e} (took {search_time:.3f}s)")
+                await event_emitter(
+                    {
+                        "type": "status",
+                        "data": {
+                            "action": "web_search",
+                            "description": 'Error searching "{{searchQuery}}"',
+                            "query": searchQuery,
+                            "done": True,
+                            "error": True,
+                        },
                     }
-                ),
-                user=user,
-            )
+                )
+                return searchQuery, None, e
 
+    # Run all searches in parallel with staggered delays to avoid rate limits
+    if queries:
+        log.debug(f"PERF: chat_web_search_handler executing {len(queries)} web searches in parallel (rate-limited)")
+        search_start = time.perf_counter()
+        # Stagger requests: 0s, 0.5s, 1s delays to avoid hitting API rate limits
+        search_tasks = [
+            execute_search(query, delay=i * 0.5) 
+            for i, query in enumerate(queries)
+        ]
+        search_results = await asyncio.gather(*search_tasks, return_exceptions=True)
+        search_total_time = time.perf_counter() - search_start
+        log.debug(f"PERF: chat_web_search_handler parallel web searches took {search_total_time:.3f}s for {len(queries)} queries")
+
+        # Process results
+        files = form_data.get("files", [])
+        for result in search_results:
+            if isinstance(result, Exception):
+                log.exception(f"Unexpected error in parallel web search: {result}")
+                continue
+            
+            searchQuery, results, error = result
+            if error:
+                continue  # Already logged and emitted
+            
             if results:
                 all_results.append(results)
-                files = form_data.get("files", [])
 
                 if results.get("collection_names"):
                     for col_idx, collection_name in enumerate(
@@ -422,21 +505,7 @@ async def chat_web_search_handler(
                             }
                         )
 
-                form_data["files"] = files
-        except Exception as e:
-            log.exception(e)
-            await event_emitter(
-                {
-                    "type": "status",
-                    "data": {
-                        "action": "web_search",
-                        "description": 'Error searching "{{searchQuery}}"',
-                        "query": searchQuery,
-                        "done": True,
-                        "error": True,
-                    },
-                }
-            )
+        form_data["files"] = files
 
     if all_results:
         urls = []
@@ -467,6 +536,9 @@ async def chat_web_search_handler(
                 },
             }
         )
+    
+    handler_total_time = time.perf_counter() - handler_start
+    log.debug(f"PERF: chat_web_search_handler total time: {handler_total_time:.3f}s (processed {len(queries)} queries, {len(all_results)} results)")
 
     return form_data
 
@@ -490,11 +562,26 @@ async def chat_image_generation_handler(
 
     if request.app.state.config.ENABLE_IMAGE_PROMPT_GENERATION:
         try:
+            # Get chat_id and message_id for tracking
+            chat_id = form_data.get("chat_id") or extra_params.get("__metadata__", {}).get("chat_id")
+            message_id = None
+            if chat_id:
+                try:
+                    # Get the last user message from the chat
+                    all_messages = ChatMessages.get_all_messages_by_chat_id(chat_id)
+                    user_messages = [m for m in all_messages if m.role == "user"]
+                    if user_messages:
+                        message_id = user_messages[-1].id
+                except Exception as e:
+                    log.debug(f"Could not get message_id for image prompt generation: {e}")
+
             res = await generate_image_prompt(
                 request,
                 {
                     "model": form_data["model"],
                     "messages": messages,
+                    "chat_id": chat_id,
+                    "message_id": message_id,  # May be None, recording will skip if missing
                 },
                 user,
             )
@@ -580,12 +667,27 @@ async def chat_completion_files_handler(
     if files := body.get("metadata", {}).get("files", None):
         queries = []
         try:
+            # Try to get message_id for query generation tracking
+            message_id = None
+            chat_id = body.get("metadata", {}).get("chat_id")
+            if chat_id:
+                try:
+                    # Get the last user message from the chat
+                    all_messages = ChatMessages.get_all_messages_by_chat_id(chat_id)
+                    user_messages = [m for m in all_messages if m.role == "user"]
+                    if user_messages:
+                        message_id = user_messages[-1].id
+                except Exception as e:
+                    log.debug(f"Could not get message_id for retrieval query generation: {e}")
+
             queries_response = await generate_queries(
                 request,
                 {
                     "model": body["model"],
                     "messages": body["messages"],
                     "type": "retrieval",
+                    "chat_id": chat_id,
+                    "message_id": message_id,  # May be None, recording will skip if missing
                 },
                 user,
             )
@@ -611,7 +713,8 @@ async def chat_completion_files_handler(
             queries = [get_last_user_message(body["messages"])]
 
         try:
-            # Offload get_sources_from_files to a separate thread
+            # Trust the frontend's file list - it already includes chat-level files + per-message files
+            # The frontend builds this in sendPromptSocket: chatFiles + userMessage.files + responseMessage.files
             loop = asyncio.get_running_loop()
             with ThreadPoolExecutor() as executor:
                 sources = await loop.run_in_executor(
@@ -682,25 +785,25 @@ def apply_params_to_form_data(form_data, model):
                 transformed = {}
                 for key, value in provider_params.items():
                     transformed[key] = value
-                
+
                 # Convert comma-separated strings to arrays
                 for key in ['order', 'only', 'ignore']:
                     if key in transformed and transformed[key]:
                         if isinstance(transformed[key], str):
                             transformed[key] = [item.strip() for item in transformed[key].split(',') if item.strip()]
-                
+
                 # Handle boolean values
                 for key in ['allow_fallbacks', 'require_parameters']:
                     if key in transformed and transformed[key] is not None:
                         if isinstance(transformed[key], str):
                             transformed[key] = transformed[key].lower() in ('true', '1', 'yes')
-                
+
                 # Handle string values (ensure they're stripped)
                 for key in ['data_collection', 'sort']:
                     if key in transformed and transformed[key] is not None:
                         if isinstance(transformed[key], str):
                             transformed[key] = transformed[key].strip()
-                
+
                 form_data["provider"] = transformed
             else:
                 form_data["provider"] = params["provider"]
@@ -717,6 +820,9 @@ def apply_params_to_form_data(form_data, model):
 
 
 async def process_chat_payload(request, form_data, user, metadata, model):
+    # Ensure messages exists from the start to prevent KeyError
+    if "messages" not in form_data or form_data.get("messages") is None:
+        form_data["messages"] = []
 
     form_data = apply_params_to_form_data(form_data, model)
     log.debug(f"form_data: {form_data}")
@@ -756,6 +862,494 @@ async def process_chat_payload(request, form_data, user, metadata, model):
 
     events = []
     sources = []
+
+    # Ensure messages exist; if missing or empty, rebuild from normalized storage
+    # Only rebuild if messages is actually missing (not just empty)
+    if "messages" not in form_data or form_data.get("messages") is None:
+        try:
+            chat_id = metadata.get("chat_id")
+            # Use parent chain of the user message; if message_id refers to assistant, hop to parent
+            leaf_id = metadata.get("message_id")
+            if leaf_id:
+                leaf = ChatMessages.get_message_by_id(leaf_id)
+                parent_id = leaf.parent_id if leaf else None
+            else:
+                parent_id = None
+            branch = []
+            if chat_id and parent_id:
+                branch = ChatMessages.get_branch_to_root(chat_id, parent_id)
+            # Convert to OpenAI-style messages with image_url content
+            rebuilt = []
+            for m in branch:
+                content = m.content_text or ""
+                items = []
+                if content:
+                    items.append({"type": "text", "text": content})
+                # attachments are added later during image resolution if present in frontend; we skip here
+                rebuilt.append({
+                    "role": m.role,
+                    "content": content if items == [] else items
+                })
+            if rebuilt:
+                form_data["messages"] = rebuilt
+        except Exception as e:
+            log.debug(f"Failed to rebuild messages from normalized storage: {e}")
+
+    # Ensure messages is always a list, even if empty or missing
+    if "messages" not in form_data or form_data["messages"] is None:
+        form_data["messages"] = []
+
+    # Compute _request_files BEFORE processing user messages so files are available when we need them
+    # This determines which files should be attached to the user message
+    files = form_data.get("files", [])
+    chat_id = metadata.get("chat_id")
+    new_request_files: list[dict] = []
+    if files and chat_id:
+        all_request_files = [f for f in files if isinstance(f, dict)]
+
+        try:
+            from open_webui.models.chat_messages import ChatMessage, ChatMessageAttachment
+            from open_webui.internal.db import get_db
+
+            # Get files already in chat.files
+            chat_model = Chats.get_chat_by_id(chat_id)
+            existing_chat_files: list[dict] = []
+            if chat_model and chat_model.chat and isinstance(chat_model.chat, dict):
+                existing_chat_files = chat_model.chat.get("files", []) or []
+
+            # Get all files already attached to messages in this chat
+            with get_db() as db:
+                # Get all user messages in this chat
+                attached_messages = db.query(ChatMessage).filter_by(
+                    chat_id=chat_id,
+                    role="user"
+                ).all()
+
+                # Collect all file IDs/keys from message attachments and meta
+                attached_file_keys = set()
+                for msg in attached_messages:
+                    # Check message meta for files
+                    msg_meta = msg.meta if hasattr(msg, 'meta') else None
+                    if msg_meta and isinstance(msg_meta, dict) and "files" in msg_meta:
+                        msg_files = msg_meta.get("files", [])
+                        if isinstance(msg_files, list):
+                            for f in msg_files:
+                                if isinstance(f, dict):
+                                    file_id = f.get("id") or f.get("collection_name") or (f.get("meta") or {}).get("collection_name")
+                                    file_type = f.get("type", "file")
+                                    if file_id:
+                                        attached_file_keys.add((file_type, file_id))
+
+                # Check message attachments table directly
+                message_ids = [msg.id for msg in attached_messages]
+                if message_ids:
+                    attachments = db.query(ChatMessageAttachment).filter(
+                        ChatMessageAttachment.message_id.in_(message_ids)
+                    ).all()
+                    for att in attachments:
+                        if att.file_id:
+                            attached_file_keys.add((att.type or "file", att.file_id))
+                        elif att.url and isinstance(att.url, str) and "/files/" in att.url:
+                            # Extract file_id from URL
+                            match = re.search(r"/files/([A-Za-z0-9\-]+)", att.url)
+                            if match:
+                                attached_file_keys.add((att.type or "file", match.group(1)))
+
+            def _file_key(file_item: dict) -> tuple:
+                if not isinstance(file_item, dict):
+                    return (None, None)
+                meta = file_item.get("meta") or {}
+                file_id = file_item.get("id") or file_item.get("collection_name") or meta.get("collection_name")
+                return (file_item.get("type", "file"), file_id)
+
+            # Files that should be attached: in chat.files but not yet attached to any message
+            existing_chat_keys = {_file_key(f) for f in existing_chat_files if isinstance(f, dict)}
+            for file_item in all_request_files:
+                file_key = _file_key(file_item)
+                # Attach if: file is in chat.files AND not yet attached to any message
+                if file_key in existing_chat_keys and file_key not in attached_file_keys:
+                    new_request_files.append(file_item)
+                elif file_key not in existing_chat_keys:
+                    # File is new to chat entirely - attach it
+                    new_request_files.append(file_item)
+        except Exception as e:
+            log.debug(f"Error checking attached files for chat {chat_id}: {e}", exc_info=True)
+            # Fallback: if we can't check, don't attach any files (safer than duplicating)
+            new_request_files = []
+
+    # Store _request_files in metadata so it's available when processing user messages
+    metadata["_request_files"] = new_request_files
+
+    # Insert user message into normalized database if we have chat_id and a user message
+    if chat_id and form_data.get("messages"):
+        try:
+            # Find the last user message to insert
+            user_msg = get_last_user_message_item(form_data["messages"])
+            if user_msg:
+                # Extract content and attachments
+                content_text = None
+                content_json = None
+                attachments = []
+
+                content = user_msg.get("content")
+                if isinstance(content, str):
+                    content_text = content
+                elif isinstance(content, list):
+                    for item in content:
+                        if item.get("type") == "text":
+                            if content_text:
+                                content_text += "\n" + item.get("text", "")
+                            else:
+                                content_text = item.get("text", "")
+                        elif item.get("type") == "image_url":
+                            url = (item.get("image_url") or {}).get("url", "")
+                            # Extract file_id from URL if it's an internal file URL
+                            if url and "/files/" in url:
+                                file_match = re.search(r"/files/([A-Za-z0-9\-]+)", url)
+                                if file_match:
+                                    file_id = file_match.group(1)
+                                    file_model = Files.get_file_by_id(file_id)
+                                    if file_model:
+                                        file_meta = file_model.meta or {}
+                                        file_data = file_model.data or {}
+                                        attachments.append({
+                                            "type": "image",
+                                            "file_id": file_id,
+                                            "url": url,
+                                            "mime_type": file_meta.get("content_type") or file_data.get("content_type"),
+                                            "size_bytes": file_meta.get("size"),
+                                            "metadata": file_meta  # Store full file meta
+                                        })
+                    # If we have a list with no text, store as JSON
+                    if not content_text and content:
+                        content_json = {"items": content}
+
+                # Attach files explicitly provided on this user message.
+                # We only attach files that the frontend marked on this specific user message.
+                request_files = metadata.get("_request_files", [])
+                user_msg_files = user_msg.get("files", [])  # Files from message object (may be empty)
+                user_meta = None
+
+                files_to_attach: list[dict] = []
+                # Priority 1: Files explicitly in user_msg.files (explicitly attached to this message)
+                if isinstance(user_msg_files, list) and user_msg_files:
+                    files_to_attach = [f for f in user_msg_files if isinstance(f, dict)]
+                # Priority 2: Files that are new to the chat (not already in chat.files)
+                elif isinstance(request_files, list) and request_files:
+                    files_to_attach = [f for f in request_files if isinstance(f, dict)]
+
+                meta_files = []
+                if files_to_attach:
+                    for file_item in files_to_attach:
+                        file_type = file_item.get("type", "file")
+                        file_id = file_item.get("id")
+
+                        # Build attachment metadata preserving all fields
+                        attachment_meta = {}
+                        if "meta" in file_item and isinstance(file_item["meta"], dict):
+                            attachment_meta.update(file_item["meta"])
+                        # Copy top-level fields that should be preserved
+                        # For collections, include id and other important fields (but NOT files or data.file_ids)
+                        fields_to_copy = ["name", "description", "status", "collection", "collection_name", "collection_names"]
+                        if file_type == "collection":
+                            # For collections, copy id and other collection-specific fields, but exclude files and data.file_ids
+                            fields_to_copy.extend(["id", "user_id", "user", "access_control", "created_at", "updated_at"])
+                            # Copy data but exclude file_ids from it
+                            if "data" in file_item and isinstance(file_item["data"], dict):
+                                data_copy = {k: v for k, v in file_item["data"].items() if k != "file_ids"}
+                                if data_copy:  # Only add data if there are other fields besides file_ids
+                                    attachment_meta["data"] = data_copy
+                        for key in fields_to_copy:
+                            if key in file_item:
+                                attachment_meta[key] = file_item[key]
+
+                        # Create attachment dict
+                        att_dict = {
+                            "type": file_type,
+                            "file_id": file_id if file_type not in ["collection", "web_search"] else None,
+                            "url": file_item.get("url") if file_type not in ["collection", "web_search"] else None,
+                            "mime_type": file_item.get("mime_type"),
+                            "size_bytes": file_item.get("size_bytes"),
+                            "metadata": attachment_meta if attachment_meta else {}
+                        }
+                        attachments.append(att_dict)
+
+                        # Preserve full file metadata for the message meta (deep copy to avoid mutation)
+                        sanitized = deepcopy(file_item)
+                        # Avoid storing large in-memory data blobs on the message meta
+                        if isinstance(sanitized.get("data"), (bytes, bytearray)):
+                            sanitized.pop("data", None)
+                        if isinstance(sanitized.get("file"), dict):
+                            sanitized["file"] = {
+                                k: v for k, v in sanitized["file"].items() if k != "data"
+                            }
+                        # For collections, strip files array and data.file_ids
+                        if file_type == "collection":
+                            sanitized.pop("files", None)
+                            if isinstance(sanitized.get("data"), dict):
+                                sanitized["data"].pop("file_ids", None)
+                                # Remove data entirely if it's now empty
+                                if not sanitized["data"]:
+                                    sanitized.pop("data", None)
+                        meta_files.append(sanitized)
+
+                if meta_files:
+                    user_meta = user_meta.copy() if user_meta else {}
+                    user_meta["files"] = meta_files
+                metadata.pop("_request_files", None)
+
+                # Get parent_id from the message structure if available
+                # Convert to string to ensure consistent format
+                parent_id_raw = user_msg.get("parent_id") or user_msg.get("parentId")
+                parent_id = str(parent_id_raw) if parent_id_raw is not None else None
+
+                # Frontend-provided user message ID (use it if provided)
+                # Convert to string to ensure consistent format
+                frontend_user_id_raw = user_msg.get("id")
+                frontend_user_id = str(frontend_user_id_raw) if frontend_user_id_raw is not None else None
+
+                # For side-by-side chats: check if a user message with the same content already exists recently
+                # This prevents duplicate user messages when multiple models respond to the same prompt
+                should_insert_user = True
+                existing_user_message_id = None
+
+                if frontend_user_id:
+                    existing = ChatMessages.get_message_by_id(frontend_user_id)
+                    if existing:
+                        should_insert_user = False
+                        user_message_id = existing.id
+                        # Use the existing message's parent_id to maintain sibling relationships
+                        parent_id = existing.parent_id
+                        # Update existing message with files and attachments if we have them
+                        if (meta_files and len(meta_files) > 0) or (attachments and len(attachments) > 0):
+                            # Update meta with files
+                            if meta_files and len(meta_files) > 0:
+                                update_meta = user_meta.copy() if user_meta else {}
+                                if "files" not in update_meta:
+                                    update_meta["files"] = meta_files
+                                ChatMessages.update_message(user_message_id, meta=update_meta)
+                            # Add attachments if they don't already exist
+                            if attachments and len(attachments) > 0:
+                                from open_webui.models.chat_messages import ChatMessageAttachment
+                                from open_webui.internal.db import get_db
+                                with get_db() as db:
+                                    # Check which attachments already exist
+                                    existing_attachments = db.query(ChatMessageAttachment).filter_by(
+                                        message_id=user_message_id
+                                    ).all()
+                                    existing_att_keys = set()
+                                    for att in existing_attachments:
+                                        if att.file_id:
+                                            existing_att_keys.add((att.type or "file", att.file_id))
+                                        elif att.url and isinstance(att.url, str) and "/files/" in att.url:
+                                            match = re.search(r"/files/([A-Za-z0-9\-]+)", att.url)
+                                            if match:
+                                                existing_att_keys.add((att.type or "file", match.group(1)))
+                                    # Add new attachments
+                                    for att_dict in attachments:
+                                        att_type = att_dict.get("type", "file")
+                                        att_file_id = att_dict.get("file_id")
+                                        att_key = (att_type, att_file_id) if att_file_id else None
+                                        if att_key and att_key not in existing_att_keys:
+                                            ChatMessages.add_attachment(user_message_id, att_dict)
+                    else:
+                        user_message_id = None
+                else:
+                    user_message_id = None
+
+                # If we don't have an existing message by ID, check for duplicate content (side-by-side scenario)
+                # BUT: Only use duplicate detection if we don't have a frontend-provided ID
+                # If frontend provided an ID, we should use it even if content is duplicate (to preserve ID consistency)
+                if should_insert_user and content_text and not frontend_user_id:
+                    from open_webui.internal.db import get_db
+                    from open_webui.models.chat_messages import ChatMessage
+                    from sqlalchemy import and_
+
+                    with get_db() as db:
+                        # Look for a user message with the same content created within the last 30 seconds
+                        recent_cutoff = int(time.time()) - 30
+                        duplicate = db.query(ChatMessage).filter(
+                            and_(
+                                ChatMessage.chat_id == chat_id,
+                                ChatMessage.role == "user",
+                                ChatMessage.content_text == content_text,
+                                ChatMessage.created_at >= recent_cutoff
+                            )
+                        ).order_by(ChatMessage.created_at.desc()).first()
+
+                        if duplicate:
+                            # Reuse the existing user message for side-by-side chats
+                            should_insert_user = False
+                            existing_user_message_id = duplicate.id
+                            user_message_id = duplicate.id
+                            # Use the duplicate's parent_id to maintain correct hierarchy
+                            # Access the SQLAlchemy model attribute directly
+                            parent_id = duplicate.parent_id if duplicate.parent_id else None
+                            # Update existing message with files and attachments if we have them
+                            if (meta_files and len(meta_files) > 0) or (attachments and len(attachments) > 0):
+                                # Update meta with files
+                                if meta_files and len(meta_files) > 0:
+                                    update_meta = user_meta.copy() if user_meta else {}
+                                    if "files" not in update_meta:
+                                        update_meta["files"] = meta_files
+                                    ChatMessages.update_message(user_message_id, meta=update_meta)
+                                # Add attachments if they don't already exist
+                                if attachments and len(attachments) > 0:
+                                    from open_webui.models.chat_messages import ChatMessageAttachment
+                                    from open_webui.internal.db import get_db
+                                    with get_db() as db_att:
+                                        # Check which attachments already exist
+                                        existing_attachments = db_att.query(ChatMessageAttachment).filter_by(
+                                            message_id=user_message_id
+                                        ).all()
+                                        existing_att_keys = set()
+                                        for att in existing_attachments:
+                                            if att.file_id:
+                                                existing_att_keys.add((att.type or "file", att.file_id))
+                                            elif att.url and isinstance(att.url, str) and "/files/" in att.url:
+                                                match = re.search(r"/files/([A-Za-z0-9\-]+)", att.url)
+                                                if match:
+                                                    existing_att_keys.add((att.type or "file", match.group(1)))
+                                        # Add new attachments
+                                        for att_dict in attachments:
+                                            att_type = att_dict.get("type", "file")
+                                            att_file_id = att_dict.get("file_id")
+                                            att_key = (att_type, att_file_id) if att_file_id else None
+                                            if att_key and att_key not in existing_att_keys:
+                                                ChatMessages.add_attachment(user_message_id, att_dict)
+
+                # Validate parent_id exists in database if provided
+                # If parent_id is provided but doesn't exist, it might be a frontend ID that wasn't saved correctly
+                # In that case, we should try to find the message by other means (e.g., by content/timestamp)
+                if should_insert_user and parent_id:
+                    parent_msg = ChatMessages.get_message_by_id(parent_id)
+                    if not parent_msg:
+                        log.debug(f"Parent message {parent_id} not found in database for chat {chat_id}. Attempting to fall back to last assistant message.")
+                        # Fallback: use the most recent assistant message in this chat as parent
+                        try:
+                            with get_db() as db:
+                                last_assistant = (
+                                    db.query(ChatMessage)
+                                    .filter_by(chat_id=chat_id, role="assistant")
+                                    .order_by(ChatMessage.created_at.desc())
+                                    .first()
+                                )
+                                if last_assistant:
+                                    parent_id = str(last_assistant.id)
+                                    log.debug(f"Using last assistant message {parent_id} as parent fallback")
+                                else:
+                                    # As a final fallback, use active_message_id if valid
+                                    chat_model = Chats.get_chat_by_id(chat_id)
+                                    if chat_model and chat_model.active_message_id:
+                                        active_msg = ChatMessages.get_message_by_id(chat_model.active_message_id)
+                                        if active_msg:
+                                            parent_id = str(chat_model.active_message_id)
+                                            log.debug(f"Using active_message_id {parent_id} as parent fallback")
+                        except Exception as e:
+                            log.debug(f"Fallback parent resolution failed: {e}")
+                    else:
+                        # Parent exists - verify the ID matches (should be string)
+                        if str(parent_msg.id) != str(parent_id):
+                            log.debug(f"Parent ID mismatch: requested {parent_id}, got {parent_msg.id}")
+                            parent_id = str(parent_msg.id)
+
+                # If parent_id is still not set and we're inserting, try to get it from chat's active_message_id
+                # For side-by-side chats, the frontend sets parent_id to the selected assistant message
+                # so we should trust the parent_id from the user message payload
+                # Only fall back to chat metadata if parent_id wasn't provided
+                if should_insert_user and not parent_id:
+                    chat_model = Chats.get_chat_by_id(chat_id)
+                    if chat_model:
+                        # Use active_message_id if it exists and is an assistant message (for continuing side-by-side)
+                        # or if it's a user message (for standard continuation)
+                        if chat_model.active_message_id:
+                            active_msg = ChatMessages.get_message_by_id(chat_model.active_message_id)
+                            if active_msg:
+                                # Allow both user and assistant messages as parents
+                                # User message parent = standard continuation
+                                # Assistant message parent = side-by-side continuation from specific response
+                                parent_id = str(chat_model.active_message_id)
+                        elif chat_model.root_message_id:
+                            # Fallback to root_message_id if active_message_id is not set
+                            root_msg = ChatMessages.get_message_by_id(chat_model.root_message_id)
+                            if root_msg and root_msg.role == "user":
+                                parent_id = str(chat_model.root_message_id)
+
+                # Extract models array from user message for side-by-side chats
+                # This is stored in the user message's "models" property in the frontend
+                # First try to get it from the user message in the payload
+                user_models = user_msg.get("models")
+
+                # If not in the message, try to get it from chat.chat["models"] (stored at chat level)
+                if not user_models:
+                    chat_model = Chats.get_chat_by_id(chat_id)
+                    if chat_model and chat_model.chat:
+                        # Check if models are stored in chat.chat (the JSON blob)
+                        user_models = chat_model.chat.get("models")
+                    # Also check params as fallback
+                    if not user_models and chat_model and chat_model.params:
+                        user_models = chat_model.params.get("models")
+
+                if user_models:
+                    user_meta = user_meta.copy() if user_meta else {}
+                    user_meta["models"] = user_models
+
+                # Insert user message if needed
+                if should_insert_user:
+                    # Ensure parent_id and frontend_user_id are strings
+                    parent_id_str = str(parent_id) if parent_id else None
+                    frontend_user_id_str = str(frontend_user_id) if frontend_user_id else None
+
+                    inserted_user = ChatMessages.insert_message(chat_id, MessageCreateForm(
+                        parent_id=parent_id_str,
+                        role="user",
+                        content_text=content_text,
+                        content_json=content_json,
+                        model_id=None,
+                        attachments=attachments if attachments else None,
+                        meta=user_meta
+                    ), message_id=frontend_user_id_str)
+                    if inserted_user:
+                        user_message_id = inserted_user.id
+                        # If this is the first message (no parent), set it as root_message_id
+                        if not parent_id:
+                            Chats.update_chat_active_and_root_message_ids(chat_id, root_message_id=user_message_id)
+
+                # Insert assistant placeholder if we have message_id and it doesn't exist
+                assistant_id = metadata.get("message_id")
+                if assistant_id:
+                    existing_assistant = ChatMessages.get_message_by_id(assistant_id)
+                    if not existing_assistant and user_message_id:
+                        # Extract modelIdx from metadata for side-by-side chats
+                        # modelIdx indicates which position in the user's models array this response corresponds to
+                        model_idx = metadata.get("modelIdx")
+                        assistant_meta = None
+                        position_for_assistant = None
+                        if model_idx is not None:
+                            assistant_meta = {"modelIdx": model_idx}
+                            # Use modelIdx as position for side-by-side chats to ensure correct ordering
+                            # This prevents race conditions when multiple messages are created simultaneously
+                            position_for_assistant = model_idx
+
+                        # For side-by-side chats, use modelIdx as position to ensure correct ordering
+                        # Ensure user_message_id and assistant_id are strings
+                        user_message_id_str = str(user_message_id) if user_message_id else None
+                        assistant_id_str = str(assistant_id) if assistant_id else None
+
+                        ChatMessages.insert_message(chat_id, MessageCreateForm(
+                            parent_id=user_message_id_str,
+                            role="assistant",
+                            content_text="",
+                            content_json=None,
+                            model_id=form_data.get("model"),
+                            attachments=None,
+                            meta=assistant_meta,
+                            position=position_for_assistant
+                        ), message_id=assistant_id_str)
+                        # Update active_message_id to point to this assistant message
+                        Chats.update_chat_active_and_root_message_ids(chat_id, active_message_id=assistant_id_str)
+        except Exception as e:
+            log.debug(f"Failed to insert messages into normalized storage: {e}")
 
     user_message = get_last_user_message(form_data["messages"])
     model_knowledge = model.get("info", {}).get("meta", {}).get("knowledge", False)
@@ -858,6 +1452,10 @@ async def process_chat_payload(request, form_data, user, metadata, model):
         "tool_ids": tool_ids,
         "files": files,
     }
+    # _request_files was already computed earlier, before user message processing
+    # Just ensure it's in metadata
+    if "_request_files" not in metadata:
+        metadata["_request_files"] = []
     form_data["metadata"] = metadata
 
     # Server side tools
@@ -918,7 +1516,6 @@ async def process_chat_payload(request, form_data, user, metadata, model):
         sources.extend(flags.get("sources", []))
     except Exception as e:
         log.exception(e)
-
     # If context is not empty, insert it into the messages
     if len(sources) > 0:
         context_string = ""
@@ -982,7 +1579,67 @@ async def process_chat_payload(request, form_data, user, metadata, model):
             }
         )
 
+    # Convert internal file URLs in image_url blocks to Base64 for provider compatibility
+    try:
+        form_data["messages"] = await _resolve_message_image_urls_to_base64(
+            request, form_data.get("messages", [])
+        )
+    except Exception as e:
+        log.debug(f"_resolve_message_image_urls_to_base64 error: {e}")
+
     return form_data, metadata, events
+
+
+async def _resolve_message_image_urls_to_base64(request: Request, messages: list[dict]) -> list[dict]:
+    """
+    Transform any message content items of type image_url that reference internal
+    /api/v1/files/{id} (optionally with /content suffix) into Base64 data URIs so
+    providers that require inline images receive them without the frontend sending Base64.
+    """
+    if not isinstance(messages, list):
+        return messages
+
+    # Precompile regex to extract file id from URL
+    file_id_regex = re.compile(r"/files/([A-Za-z0-9\-]+)")
+
+    def to_data_uri(file_model) -> Optional[str]:
+        try:
+            file_path = Storage.get_file(file_model.path)
+            with open(file_path, "rb") as f:
+                raw = f.read()
+            mime = (
+                (file_model.meta or {}).get("content_type")
+                or (file_model.data or {}).get("content_type")
+                or "image/png"
+            )
+            return f"data:{mime};base64,{base64.b64encode(raw).decode('utf-8')}"
+        except Exception as e:
+            log.debug(f"Failed to load file bytes for image embedding: {e}")
+            return None
+
+    resolved: list[dict] = []
+    for message in messages:
+        msg = message
+        content = msg.get("content")
+        if isinstance(content, list):
+            new_items = []
+            for item in content:
+                if isinstance(item, dict) and item.get("type") == "image_url":
+                    url = (item.get("image_url") or {}).get("url", "")
+                    if url and not url.startswith("data:"):
+                        match = file_id_regex.search(url)
+                        if match:
+                            file_id = match.group(1)
+                            file_model = Files.get_file_by_id(file_id)
+                            if file_model:
+                                data_uri = to_data_uri(file_model)
+                                if data_uri:
+                                    item = {"type": "image_url", "image_url": {"url": data_uri}}
+                new_items.append(item)
+            msg = {**msg, "content": new_items}
+        resolved.append(msg)
+
+    return resolved
 
 
 async def process_chat_response(
@@ -1004,6 +1661,7 @@ async def process_chat_response(
                                 "model": message["model"],
                                 "messages": messages,
                                 "chat_id": metadata["chat_id"],
+                                "message_id": metadata["message_id"],  # Assistant message ID
                             },
                             user,
                         )
@@ -1059,6 +1717,7 @@ async def process_chat_response(
                             "model": message["model"],
                             "messages": messages,
                             "chat_id": metadata["chat_id"],
+                            "message_id": metadata["message_id"],  # Assistant message ID
                         },
                         user,
                     )
@@ -1117,6 +1776,14 @@ async def process_chat_response(
                         "error": {"content": error},
                     },
                 )
+                # Update normalized table
+                try:
+                    ChatMessages.update_message(
+                        metadata["message_id"],
+                        meta={"error": {"content": error}}
+                    )
+                except Exception as e:
+                    log.debug(f"Failed to update normalized message error: {e}")
 
             if "selected_model_id" in response:
                 Chats.upsert_message_to_chat_by_id_and_message_id(
@@ -1126,6 +1793,14 @@ async def process_chat_response(
                         "selectedModelId": response["selected_model_id"],
                     },
                 )
+                # Update normalized table
+                try:
+                    ChatMessages.update_message(
+                        metadata["message_id"],
+                        meta={"selectedModelId": response["selected_model_id"]}
+                    )
+                except Exception as e:
+                    log.debug(f"Failed to update normalized message selectedModelId: {e}")
 
             choices = response.get("choices", [])
             if choices and choices[0].get("message", {}).get("content"):
@@ -1161,6 +1836,21 @@ async def process_chat_response(
                             "content": content,
                         },
                     )
+                    # Update normalized table with content and usage
+                    try:
+                        usage = response.get("usage")
+                        result = ChatMessages.update_message(
+                            metadata["message_id"],
+                            content_text=content,
+                            usage=usage
+                        )
+                        if not result:
+                            log.warning(f"Failed to update normalized message {metadata['message_id']}: message not found in normalized table")
+                        # Update active_message_id to point to this completed message
+                        if result:
+                            Chats.update_chat_active_and_root_message_ids(metadata["chat_id"], active_message_id=metadata["message_id"])
+                    except Exception as e:
+                        log.error(f"Failed to update normalized message content: {e}", exc_info=True)
 
                     # Send a webhook notification if the user is not active
                     if get_active_status_by_user_id(user.id) is None:
@@ -1221,6 +1911,14 @@ async def process_chat_response(
                 "model": model_id,
             },
         )
+        # Update normalized table
+        try:
+            ChatMessages.update_message(
+                metadata["message_id"],
+                model_id=model_id
+            )
+        except Exception as e:
+            log.debug(f"Failed to update normalized message model_id: {e}")
 
         def split_content_and_whitespace(content):
             content_stripped = content.rstrip()
@@ -1559,6 +2257,7 @@ async def process_chat_response(
                 else last_assistant_message if last_assistant_message else ""
             )
 
+            usage_data = None
             content_blocks = [
                 {
                     "type": "text",
@@ -1604,10 +2303,27 @@ async def process_chat_response(
                             **event,
                         },
                     )
+                    # Update normalized table (for event data)
+                    try:
+                        if "content" in event:
+                            ChatMessages.update_message(
+                                metadata["message_id"],
+                                content_text=event["content"]
+                            )
+                        # Persist sources if present in event
+                        if "sources" in event:
+                            ChatMessages.set_sources(
+                                metadata["message_id"],
+                                event["sources"]
+                            )
+                    except Exception as e:
+                        log.debug(f"Failed to update normalized message from event: {e}")
 
                 async def stream_body_handler(response):
                     nonlocal content
                     nonlocal content_blocks
+                    nonlocal usage_data
+                    usage_data = None
 
                     response_tool_calls = []
 
@@ -1650,6 +2366,14 @@ async def process_chat_response(
                                             "selectedModelId": model_id,
                                         },
                                     )
+                                    # Update normalized table
+                                    try:
+                                        ChatMessages.update_message(
+                                            metadata["message_id"],
+                                            meta={"selectedModelId": model_id}
+                                        )
+                                    except Exception as e:
+                                        log.debug(f"Failed to update normalized message selectedModelId: {e}")
                                 else:
                                     choices = data.get("choices", [])
                                     if not choices:
@@ -1665,6 +2389,7 @@ async def process_chat_response(
                                             )
                                         usage = data.get("usage", {})
                                         if usage:
+                                            usage_data = usage  # Store for later save
                                             await event_emitter(
                                                 {
                                                     "type": "chat:completion",
@@ -1831,15 +2556,22 @@ async def process_chat_response(
 
                                         if ENABLE_REALTIME_CHAT_SAVE:
                                             # Save message in the database
+                                            serialized_content = serialize_content_blocks(content_blocks)
                                             Chats.upsert_message_to_chat_by_id_and_message_id(
                                                 metadata["chat_id"],
                                                 metadata["message_id"],
                                                 {
-                                                    "content": serialize_content_blocks(
-                                                        content_blocks
-                                                    ),
+                                                    "content": serialized_content,
                                                 },
                                             )
+                                            # Update normalized table (usage will be saved when stream completes)
+                                            try:
+                                                ChatMessages.update_message(
+                                                    metadata["message_id"],
+                                                    content_text=serialized_content
+                                                )
+                                            except Exception as e:
+                                                log.debug(f"Failed to update normalized message content (realtime): {e}")
                                         else:
                                             data = {
                                                 "content": serialize_content_blocks(
@@ -2236,13 +2968,25 @@ async def process_chat_response(
 
                 if not ENABLE_REALTIME_CHAT_SAVE:
                     # Save message in the database
+                    serialized_content = serialize_content_blocks(content_blocks)
                     Chats.upsert_message_to_chat_by_id_and_message_id(
                         metadata["chat_id"],
                         metadata["message_id"],
                         {
-                            "content": serialize_content_blocks(content_blocks),
+                            "content": serialized_content,
                         },
                     )
+                    # Update normalized table with content and usage
+                    try:
+                        ChatMessages.update_message(
+                            metadata["message_id"],
+                            content_text=serialized_content,
+                            usage=usage_data
+                        )
+                        # Update active_message_id
+                        Chats.update_chat_active_and_root_message_ids(metadata["chat_id"], active_message_id=metadata["message_id"])
+                    except Exception as e:
+                        log.debug(f"Failed to update normalized message content (final): {e}")
 
                 # Send a webhook notification if the user is not active
                 if get_active_status_by_user_id(user.id) is None:
@@ -2274,13 +3018,22 @@ async def process_chat_response(
 
                 if not ENABLE_REALTIME_CHAT_SAVE:
                     # Save message in the database
+                    serialized_content = serialize_content_blocks(content_blocks)
                     Chats.upsert_message_to_chat_by_id_and_message_id(
                         metadata["chat_id"],
                         metadata["message_id"],
                         {
-                            "content": serialize_content_blocks(content_blocks),
+                            "content": serialized_content,
                         },
                     )
+                    # Update normalized table
+                    try:
+                        ChatMessages.update_message(
+                            metadata["message_id"],
+                            content_text=serialized_content
+                        )
+                    except Exception as e:
+                        log.debug(f"Failed to update normalized message content (cancelled): {e}")
 
             if response.background is not None:
                 await response.background()

@@ -45,6 +45,7 @@
 	export let showMessage: Function = () => {};
 	export let submitMessage: Function = () => {};
 	export let addMessages: Function = () => {};
+	export let refreshChatMeta: Function = () => {};
 
 	export let readOnly = false;
 
@@ -53,6 +54,7 @@
 
 	export let searchMatches = [];
 	export let currentMatchId = '';
+	export let searchQuery = '';
 
 	let messagesCount = 20;
 	let messagesLoading = false;
@@ -76,7 +78,19 @@
 		let message = history.messages[history.currentId];
 		while (message && _messages.length <= messagesCount) {
 			_messages.unshift({ ...message });
-			message = message.parentId !== null ? history.messages[message.parentId] : null;
+			if (message.parentId !== null) {
+				const parentMessage = history.messages[message.parentId];
+				if (!parentMessage) {
+					console.warn(
+						`Parent message ${message.parentId} not found in history.messages for message ${message.id}`
+					);
+					// Stop walking if parent is missing to avoid infinite loop
+					break;
+				}
+				message = parentMessage;
+			} else {
+				message = null;
+			}
 		}
 
 		messages = _messages;
@@ -100,10 +114,20 @@
 		if (!$temporaryChatEnabled) {
 			history = history;
 			await tick();
-			await updateChatById(localStorage.token, chatId, {
-				history: history,
-				messages: messages
+			// Strip content, sources, and files from messages array to reduce bandwidth (backend will look them up from history.messages)
+			const messagesWithoutContent = messages.map((m) => {
+				const { content, sources, files, ...rest } = m;
+				return rest;
 			});
+			await updateChatById(localStorage.token, chatId, {
+				chat: {
+					history: history,
+					messages: messagesWithoutContent
+				}
+			});
+
+			// Refresh chat metadata to get updated active_message_id
+			await refreshChatMeta();
 
 			currentChatPage.set(1);
 			await chats.set(await getChatList(localStorage.token, $currentChatPage));
@@ -416,7 +440,7 @@
 		<div class="w-full pt-2">
 			{#key chatId}
 				<div class="w-full">
-					{#if messages.at(0)?.parentId !== null}
+					{#if messages.at(0)?.parentId !== null && history.messages[messages.at(0).parentId]}
 						<Loader
 							on:visible={(e) => {
 								console.log('visible');
@@ -453,10 +477,12 @@
 							{continueResponse}
 							{mergeResponses}
 							{addMessages}
+							{refreshChatMeta}
 							{triggerScroll}
 							{readOnly}
 							searchMatch={searchMatches.includes(message.id)}
 							isCurrentSearch={message.id === currentMatchId}
+							{searchQuery}
 						/>
 					{/each}
 				</div>

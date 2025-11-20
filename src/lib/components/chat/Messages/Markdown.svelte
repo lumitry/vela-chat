@@ -1,6 +1,6 @@
 <script>
 	import { marked } from 'marked';
-	import { replaceTokens, processResponseContent } from '$lib/utils';
+	import { replaceTokens, processResponseContent, escapeSingleTildes } from '$lib/utils';
 	import { user } from '$lib/stores';
 
 	import markedExtension from '$lib/utils/marked/extension';
@@ -20,6 +20,7 @@
 
 	export let onSourceClick = () => {};
 	export let onTaskClick = () => {};
+	export let searchQuery = '';
 
 	let tokens = [];
 
@@ -32,9 +33,10 @@
 
 	$: (async () => {
 		if (content) {
-			tokens = marked.lexer(
+			const processedContent = escapeSingleTildes(
 				replaceTokens(processResponseContent(content), sourceIds, model?.name, $user?.name)
 			);
+			tokens = marked.lexer(processedContent);
 		}
 	})();
 </script>
@@ -46,6 +48,7 @@
 		{save}
 		{onTaskClick}
 		{onSourceClick}
+		{searchQuery}
 		on:update={(e) => {
 			dispatch('update', e.detail);
 		}}

@@ -145,8 +145,17 @@ class ToolsTable:
     def get_tools(self) -> list[ToolUserModel]:
         with get_db() as db:
             tools = []
-            for tool in db.query(Tool).order_by(Tool.updated_at.desc()).all():
-                user = Users.get_user_by_id(tool.user_id)
+            tool_list = db.query(Tool).order_by(Tool.updated_at.desc()).all()
+            
+            # Batch fetch all users at once to avoid N+1 queries
+            user_ids = list(set(tool.user_id for tool in tool_list if tool.user_id))
+            users_map = {}
+            if user_ids:
+                users = Users.get_users_by_ids(user_ids)
+                users_map = {user.id: user for user in users}
+            
+            for tool in tool_list:
+                user = users_map.get(tool.user_id) if tool.user_id else None
                 tools.append(
                     ToolUserModel.model_validate(
                         {

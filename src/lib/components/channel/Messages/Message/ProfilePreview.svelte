@@ -3,7 +3,7 @@
 	import { createEventDispatcher } from 'svelte';
 
 	import { flyAndScale } from '$lib/utils/transitions';
-	import { WEBUI_BASE_URL } from '$lib/constants';
+	import { WEBUI_BASE_URL, getImageBaseUrl } from '$lib/constants';
 	import { activeUserIds } from '$lib/stores';
 
 	export let side = 'right';
@@ -36,11 +36,16 @@
 			transition={flyAndScale}
 		>
 			{#if user}
+				{@const userImageUrl =
+					user?.profile_image_url ?? `${getImageBaseUrl('/static/favicon.png')}/static/favicon.png`}
+				{@const userImageSrc =
+					userImageUrl.startsWith('/') && !userImageUrl.startsWith(WEBUI_BASE_URL)
+						? `${getImageBaseUrl(userImageUrl)}${userImageUrl}`
+						: userImageUrl}
 				<div class=" flex flex-col gap-2 w-full rounded-lg">
 					<div class="py-8 relative bg-gray-900 rounded-t-lg">
 						<img
-							crossorigin="anonymous"
-							src={user?.profile_image_url ?? `${WEBUI_BASE_URL}/static/favicon.png`}
+							src={userImageSrc}
 							class=" absolute -bottom-5 left-3 size-12 ml-0.5 object-cover rounded-full -translate-y-[1px]"
 							alt="profile"
 						/>

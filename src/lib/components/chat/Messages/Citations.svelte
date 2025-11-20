@@ -4,6 +4,7 @@
 	import Collapsible from '$lib/components/common/Collapsible.svelte';
 	import ChevronDown from '$lib/components/icons/ChevronDown.svelte';
 	import ChevronUp from '$lib/components/icons/ChevronUp.svelte';
+	import { getSiteTitleFromUrl } from '$lib/utils/index';
 
 	const i18n = getContext('i18n');
 
@@ -57,11 +58,22 @@
 				const id = metadata?.source ?? source?.source?.id ?? 'N/A';
 				let _source = source?.source;
 
-				if (metadata?.name) {
-					_source = { ..._source, name: metadata.name };
-				}
-
-				if (id.startsWith('http://') || id.startsWith('https://')) {
+				// Prefer site_name or name from metadata (extracted from og:site_name)
+				// This gives us the actual site name like "CNBC", "Yahoo Finance", etc.
+				if (metadata?.site_name) {
+					_source = {
+						..._source,
+						name: metadata.site_name,
+						url: id.startsWith('http') ? id : _source?.url
+					};
+				} else if (metadata?.name) {
+					_source = {
+						..._source,
+						name: metadata.name,
+						url: id.startsWith('http') ? id : _source?.url
+					};
+				} else if (id.startsWith('http://') || id.startsWith('https://')) {
+					// Fallback to URL-based parsing if no site name in metadata
 					_source = { ..._source, name: id, url: id };
 				}
 
@@ -95,6 +107,15 @@
 			return str;
 		}
 	};
+
+	// Format citation name - if it's a URL, convert to site title
+	function formatCitationName(name: string): string {
+		const decoded = decodeString(name);
+		if (decoded.startsWith('http://') || decoded.startsWith('https://')) {
+			return getSiteTitleFromUrl(decoded);
+		}
+		return decoded;
+	}
 </script>
 
 <CitationsModal
@@ -125,7 +146,7 @@
 						<div
 							class="flex-1 mx-1 truncate text-black/60 hover:text-black dark:text-white/60 dark:hover:text-white transition"
 						>
-							{decodeString(citation.source.name)}
+							{formatCitationName(citation.source.name)}
 						</div>
 					</button>
 				{/each}
@@ -165,7 +186,7 @@
 											</div>
 										{/if}
 										<div class="flex-1 mx-1 truncate">
-											{decodeString(citation.source.name)}
+											{formatCitationName(citation.source.name)}
 										</div>
 									</button>
 								{/each}
@@ -202,7 +223,7 @@
 									</div>
 								{/if}
 								<div class="flex-1 mx-1 truncate">
-									{decodeString(citation.source.name)}
+									{formatCitationName(citation.source.name)}
 								</div>
 							</button>
 						{/each}

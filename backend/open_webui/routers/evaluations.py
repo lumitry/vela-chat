@@ -49,7 +49,24 @@ async def update_config(
     if form_data.ENABLE_EVALUATION_ARENA_MODELS is not None:
         config.ENABLE_EVALUATION_ARENA_MODELS = form_data.ENABLE_EVALUATION_ARENA_MODELS
     if form_data.EVALUATION_ARENA_MODELS is not None:
-        config.EVALUATION_ARENA_MODELS = form_data.EVALUATION_ARENA_MODELS
+        # Convert base64 images in arena models to filesystem storage
+        from open_webui.utils.model_images import get_or_create_model_image_file
+        arena_models = form_data.EVALUATION_ARENA_MODELS
+        if arena_models:
+            # Use system user_id for config images (global/system-level)
+            system_user_id = "system"
+            for model in arena_models:
+                if isinstance(model, dict):
+                    meta = model.get('meta', {})
+                    if isinstance(meta, dict):
+                        profile_image_url = meta.get('profile_image_url')
+                        if profile_image_url:
+                            # Convert base64 to file if needed
+                            meta['profile_image_url'] = get_or_create_model_image_file(
+                                request, system_user_id, profile_image_url
+                            )
+                            model['meta'] = meta
+        config.EVALUATION_ARENA_MODELS = arena_models
     return {
         "ENABLE_EVALUATION_ARENA_MODELS": config.ENABLE_EVALUATION_ARENA_MODELS,
         "EVALUATION_ARENA_MODELS": config.EVALUATION_ARENA_MODELS,
@@ -61,6 +78,7 @@ class FeedbackUserReponse(BaseModel):
     name: str
     email: str
     role: str = "pending"
+    profile_image_url: str
 
     last_active_at: int  # timestamp in epoch
     updated_at: int  # timestamp in epoch
@@ -72,17 +90,25 @@ class FeedbackUserResponse(FeedbackResponse):
 
 
 @router.get("/feedbacks/all", response_model=list[FeedbackUserResponse])
-async def get_all_feedbacks(user=Depends(get_admin_user)):
+async def get_all_feedbacks(request: Request, user=Depends(get_admin_user)):
+    from open_webui.utils.model_images import convert_file_url_to_absolute
+    
     feedbacks = Feedbacks.get_all_feedbacks()
-    return [
-        FeedbackUserResponse(
-            **feedback.model_dump(),
-            user=FeedbackUserReponse(
-                **Users.get_user_by_id(feedback.user_id).model_dump()
-            ),
-        )
-        for feedback in feedbacks
-    ]
+    result = []
+    for feedback in feedbacks:
+        user_obj = Users.get_user_by_id(feedback.user_id)
+        if user_obj:
+            user_dict = user_obj.model_dump()
+            user_dict["profile_image_url"] = convert_file_url_to_absolute(
+                request, user_obj.profile_image_url
+            )
+            result.append(
+                FeedbackUserResponse(
+                    **feedback.model_dump(),
+                    user=FeedbackUserReponse(**user_dict),
+                )
+            )
+    return result
 
 
 @router.delete("/feedbacks/all")
@@ -103,9 +129,25 @@ async def get_all_feedbacks(user=Depends(get_admin_user)):
 
 
 @router.get("/feedbacks/user", response_model=list[FeedbackUserResponse])
-async def get_feedbacks(user=Depends(get_verified_user)):
+async def get_feedbacks(request: Request, user=Depends(get_verified_user)):
+    from open_webui.utils.model_images import convert_file_url_to_absolute
+    
     feedbacks = Feedbacks.get_feedbacks_by_user_id(user.id)
-    return feedbacks
+    result = []
+    for feedback in feedbacks:
+        user_obj = Users.get_user_by_id(feedback.user_id)
+        if user_obj:
+            user_dict = user_obj.model_dump()
+            user_dict["profile_image_url"] = convert_file_url_to_absolute(
+                request, user_obj.profile_image_url
+            )
+            result.append(
+                FeedbackUserResponse(
+                    **feedback.model_dump(),
+                    user=FeedbackUserReponse(**user_dict),
+                )
+            )
+    return result
 
 
 @router.delete("/feedbacks", response_model=bool)
@@ -120,6 +162,14 @@ async def create_feedback(
     form_data: FeedbackForm,
     user=Depends(get_verified_user),
 ):
+    # Ensure tags exist in database if data.tags is present
+    if form_data.data:
+        # RatingData has extra="allow" so tags can be stored there
+        data_dict = form_data.data.model_dump() if hasattr(form_data.data, 'model_dump') else (form_data.data if isinstance(form_data.data, dict) else {})
+        if isinstance(data_dict, dict) and "tags" in data_dict and data_dict["tags"]:
+            from open_webui.models.tags import Tags
+            Tags.ensure_tags_exist(data_dict["tags"], user.id)
+    
     feedback = Feedbacks.insert_new_feedback(user_id=user.id, form_data=form_data)
     if not feedback:
         raise HTTPException(
@@ -146,6 +196,14 @@ async def get_feedback_by_id(id: str, user=Depends(get_verified_user)):
 async def update_feedback_by_id(
     id: str, form_data: FeedbackForm, user=Depends(get_verified_user)
 ):
+    # Ensure tags exist in database if data.tags is present
+    if form_data.data:
+        # RatingData has extra="allow" so tags can be stored there
+        data_dict = form_data.data.model_dump() if hasattr(form_data.data, 'model_dump') else (form_data.data if isinstance(form_data.data, dict) else {})
+        if isinstance(data_dict, dict) and "tags" in data_dict and data_dict["tags"]:
+            from open_webui.models.tags import Tags
+            Tags.ensure_tags_exist(data_dict["tags"], user.id)
+    
     feedback = Feedbacks.update_feedback_by_id_and_user_id(
         id=id, user_id=user.id, form_data=form_data
     )

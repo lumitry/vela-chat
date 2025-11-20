@@ -2,19 +2,47 @@
 .DS_Store
 docs
 kubernetes
-node_modules
-/.svelte-kit
 /package
 .env
 .env.*
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
-__pycache__
 .idea
-venv
 _old
 uploads
 .ipynb_checkpoints
-**/*.db
 _test
-backend/data/*
+
+# Python virtualenvs
+.venv/
+venv/
+**/.venv/
+**/venv/
+
+# Python cache
+__pycache__/
+**/__pycache__/
+*.pyc
+
+# HuggingFace caches
+cache/
+**/cache/
+**/.cache/
+**/hf_cache/
+
+# Node modules (you WANT to ignore these for docker)
+node_modules/
+**/node_modules/
+
+# Build artifacts
+.svelte-kit/
+dist/
+build/
+
+# Databases
+*.db
+backend/data/
+backend/data/**
+
+# Git (optional)
+.git

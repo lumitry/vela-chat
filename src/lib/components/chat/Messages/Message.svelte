@@ -42,6 +42,7 @@
 
 	export let searchMatch: boolean = false;
 	export let isCurrentSearch: boolean = false;
+	export let searchQuery: string = '';
 </script>
 
 <div
@@ -70,6 +71,7 @@
 				{editMessage}
 				{deleteMessage}
 				{readOnly}
+				{searchQuery}
 			/>
 		{:else if (history.messages[history.messages[messageId].parentId]?.models?.length ?? 1) === 1}
 			<ResponseMessage
@@ -92,6 +94,7 @@
 				{regenerateResponse}
 				{addMessages}
 				{readOnly}
+				{searchQuery}
 			/>
 		{:else}
 			<MultiResponseMessages
@@ -112,6 +115,7 @@
 				{triggerScroll}
 				{addMessages}
 				{readOnly}
+				{searchQuery}
 			/>
 		{/if}
 	{/if}

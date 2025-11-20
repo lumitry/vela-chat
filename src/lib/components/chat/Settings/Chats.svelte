@@ -10,13 +10,15 @@
 		deleteAllChats,
 		getAllChats,
 		getAllUserChats,
-		getChatList
+		getChatList,
+		importChat
 	} from '$lib/apis/chats';
 	import { getImportOrigin, convertOpenAIChats } from '$lib/utils';
 	import { onMount, getContext } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import ArchivedChatsModal from '$lib/components/layout/Sidebar/ArchivedChatsModal.svelte';
+	import { getCacheStats, clearAllMessages, isIndexedDBAvailable } from '$lib/utils/indexeddb';
 
 	const i18n = getContext('i18n');
 
@@ -28,8 +30,11 @@
 	let showArchiveConfirm = false;
 	let showDeleteConfirm = false;
 	let showArchivedChatsModal = false;
+	let showClearCacheConfirm = false;
 
 	let chatImportInputElement: HTMLInputElement;
+	let cacheStats = { totalMessages: 0, estimatedSize: null };
+	let cacheStatsLoading = false;
 
 	$: if (importFiles) {
 		console.log(importFiles);
@@ -57,10 +62,25 @@
 		for (const chat of _chats) {
 			console.log(chat);
 
+			// Use importChat instead of createNewChat to preserve timestamps
 			if (chat.chat) {
-				await createNewChat(localStorage.token, chat.chat);
+				// Ensure timestamp is in the chat object if it exists at root level
+				if (chat.timestamp && !chat.chat.timestamp && !chat.chat.created_at) {
+					chat.chat.timestamp = chat.timestamp;
+				}
+				if (chat.created_at && !chat.chat.created_at && !chat.chat.timestamp) {
+					chat.chat.created_at = chat.created_at;
+				}
+				await importChat(
+					localStorage.token,
+					chat.chat,
+					chat.meta || {},
+					chat.pinned,
+					chat.folder_id
+				);
 			} else {
-				await createNewChat(localStorage.token, chat);
+				// If no nested chat object, use the root object as chat
+				await importChat(localStorage.token, chat, chat.meta || {}, chat.pinned, chat.folder_id);
 			}
 		}
 
@@ -70,7 +90,7 @@
 	};
 
 	const exportChats = async () => {
-		let blob = new Blob([JSON.stringify(await getAllChats(localStorage.token))], {
+		let blob = new Blob([JSON.stringify(await getAllChats(localStorage.token, true))], {
 			type: 'application/json'
 		});
 		saveAs(blob, `chat-export-${Date.now()}.json`);
@@ -103,6 +123,40 @@
 		await chats.set(await getChatList(localStorage.token, $currentChatPage));
 		scrollPaginationEnabled.set(true);
 	};
+
+	const loadCacheStats = async () => {
+		if (!isIndexedDBAvailable()) {
+			return;
+		}
+		cacheStatsLoading = true;
+		try {
+			cacheStats = await getCacheStats();
+		} catch (error) {
+			console.error('Failed to load cache stats:', error);
+		} finally {
+			cacheStatsLoading = false;
+		}
+	};
+
+	const clearCacheHandler = async () => {
+		if (!isIndexedDBAvailable()) {
+			toast.error('IndexedDB is not available');
+			return;
+		}
+		try {
+			await clearAllMessages();
+			toast.success('Browser cache cleared successfully');
+			showClearCacheConfirm = false;
+			await loadCacheStats();
+		} catch (error) {
+			console.error('Failed to clear cache:', error);
+			toast.error(`Failed to clear cache: ${error}`);
+		}
+	};
+
+	onMount(async () => {
+		await loadCacheStats();
+	});
 </script>
 
 <ArchivedChatsModal bind:show={showArchivedChatsModal} on:change={handleArchivedChatsChange} />
@@ -162,6 +216,10 @@
 				</div>
 				<div class=" self-center text-sm font-medium">{$i18n.t('Export Chats')}</div>
 			</button>
+
+			<p class="text-gray-500 dark:text-gray-400 text-xs italic mt-2 mb-2">
+				You can also import chats by dragging and dropping them into the sidebar.
+			</p>
 		</div>
 
 		<hr class=" border-gray-100 dark:border-gray-850" />
@@ -190,7 +248,7 @@
 						/>
 					</svg>
 				</div>
-				<div class=" self-center text-sm font-medium">{$i18n.t('Archived Chats')}</div>
+				<div class=" self-center text-sm font-medium">{$i18n.t('Show Archived Chats')}</div>
 			</button>
 
 			{#if showArchiveConfirm}
@@ -362,6 +420,112 @@
 					</div>
 					<div class=" self-center text-sm font-medium">{$i18n.t('Delete All Chats')}</div>
 				</button>
+			{/if}
+		</div>
+
+		<hr class=" border-gray-100 dark:border-gray-850" />
+
+		<div class="flex flex-col">
+			<div class="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">
+				{$i18n.t('Browser Cache')}
+			</div>
+			{#if isIndexedDBAvailable()}
+				<div class="text-xs text-gray-500 dark:text-gray-400 mb-2">
+					{#if cacheStatsLoading}
+						Loading...
+					{:else}
+						{cacheStats.totalMessages} messages cached
+						{#if cacheStats.estimatedSize !== null}
+							({Math.round(cacheStats.estimatedSize / 1024)} KB)
+						{/if}
+					{/if}
+				</div>
+				{#if showClearCacheConfirm}
+					<div class="flex justify-between rounded-md items-center py-2 px-3.5 w-full transition">
+						<div class="flex items-center space-x-3">
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								viewBox="0 0 16 16"
+								fill="currentColor"
+								class="w-4 h-4"
+							>
+								<path d="M2 3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3Z" />
+								<path
+									fill-rule="evenodd"
+									d="M13 6H3v6a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V6ZM5.72 7.47a.75.75 0 0 1 1.06 0L8 8.69l1.22-1.22a.75.75 0 1 1 1.06 1.06L9.06 9.75l1.22 1.22a.75.75 0 1 1-1.06 1.06L8 10.81l-1.22 1.22a.75.75 0 0 1-1.06-1.06l1.22-1.22-1.22-1.22a.75.75 0 0 1 0-1.06Z"
+									clip-rule="evenodd"
+								/>
+							</svg>
+							<span>{$i18n.t('Are you sure?')}</span>
+						</div>
+
+						<div class="flex space-x-1.5 items-center">
+							<button
+								class="hover:text-white transition"
+								on:click={() => {
+									clearCacheHandler();
+								}}
+							>
+								<svg
+									xmlns="http://www.w3.org/2000/svg"
+									viewBox="0 0 20 20"
+									fill="currentColor"
+									class="w-4 h-4"
+								>
+									<path
+										fill-rule="evenodd"
+										d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z"
+										clip-rule="evenodd"
+									/>
+								</svg>
+							</button>
+							<button
+								class="hover:text-white transition"
+								on:click={() => {
+									showClearCacheConfirm = false;
+								}}
+							>
+								<svg
+									xmlns="http://www.w3.org/2000/svg"
+									viewBox="0 0 20 20"
+									fill="currentColor"
+									class="w-4 h-4"
+								>
+									<path
+										d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z"
+									/>
+								</svg>
+							</button>
+						</div>
+					</div>
+				{:else}
+					<button
+						class=" flex rounded-md py-2 px-3.5 w-full hover:bg-gray-200 dark:hover:bg-gray-800 transition"
+						on:click={() => {
+							showClearCacheConfirm = true;
+						}}
+					>
+						<div class=" self-center mr-3">
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								viewBox="0 0 16 16"
+								fill="currentColor"
+								class="w-4 h-4"
+							>
+								<path
+									fill-rule="evenodd"
+									d="M5 3.25a.75.75 0 01.75-.75h4.5a.75.75 0 01.75.75v1.5a.75.75 0 01-.75.75h-4.5A.75.75 0 015 4.75v-1.5zM3.25 7a.75.75 0 01.75-.75h8a.75.75 0 01.75.75v5a2 2 0 01-2 2h-6a2 2 0 01-2-2V7zm1.5.75v4.25c0 .138.112.25.25.25h6a.25.25 0 00.25-.25V7.75H4.75z"
+									clip-rule="evenodd"
+								/>
+							</svg>
+						</div>
+						<div class=" self-center text-sm font-medium">{$i18n.t('Clear Browser Cache')}</div>
+					</button>
+				{/if}
+			{:else}
+				<div class="text-xs text-gray-500 dark:text-gray-400">
+					IndexedDB is not available in this browser
+				</div>
 			{/if}
 		</div>
 	</div>

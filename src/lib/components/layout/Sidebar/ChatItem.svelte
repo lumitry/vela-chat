@@ -14,6 +14,7 @@
 		getChatById,
 		getChatList,
 		getChatListByTagName,
+		getChatMetaById,
 		getPinnedChatList,
 		updateChatById
 	} from '$lib/apis/chats';
@@ -25,7 +26,8 @@
 		pinnedChats,
 		showSidebar,
 		currentChatPage,
-		tags
+		tags,
+		chatCache
 	} from '$lib/stores';
 
 	import ChatMenu from './ChatMenu.svelte';
@@ -47,21 +49,8 @@
 	export let selected = false;
 	export let shiftKey = false;
 
-	let chat = null;
-
 	let mouseOver = false;
 	let draggable = false;
-	$: if (mouseOver) {
-		loadChat();
-	}
-
-	const loadChat = async () => {
-		if (!chat) {
-			draggable = false;
-			chat = await getChatById(localStorage.token, id);
-			draggable = true;
-		}
-	};
 
 	let showShareChatModal = false;
 	let confirmEdit = false;
@@ -74,6 +63,11 @@
 		} else {
 			await updateChatById(localStorage.token, id, {
 				title: title
+			});
+			// Invalidate cache since chat was updated
+			chatCache.update((cache) => {
+				cache.delete(id);
+				return cache;
 			});
 
 			if (id === $chatId) {
@@ -116,6 +110,11 @@
 		});
 
 		if (res) {
+			// Remove from cache when deleted
+			chatCache.update((cache) => {
+				cache.delete(id);
+				return cache;
+			});
 			tags.set(await getAllTags(localStorage.token));
 			if ($chatId === id) {
 				await goto('/');
@@ -152,13 +151,12 @@
 
 		event.dataTransfer.setDragImage(dragImage, 0, 0);
 
-		// Set the data to be transferred
+		// Set the data to be transferred - just pass id, meta will be fetched on drop
 		event.dataTransfer.setData(
 			'text/plain',
 			JSON.stringify({
 				type: 'chat',
-				id: id,
-				item: chat
+				id: id
 			})
 		);
 
@@ -245,7 +243,7 @@
 <div
 	bind:this={itemElement}
 	class=" w-full {className} relative group"
-	draggable={draggable && !confirmEdit}
+	draggable={!confirmEdit}
 	data-chat-id={id}
 >
 	{#if confirmEdit}

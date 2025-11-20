@@ -15,12 +15,12 @@
 	import {
 		createNewModel,
 		deleteModelById,
-		getModels as getWorkspaceModels,
+		getModelsMetadata as getWorkspaceModels,
 		toggleModelById,
 		updateModelById
 	} from '$lib/apis/models';
+	import { WEBUI_BASE_URL, getImageBaseUrl } from '$lib/constants';
 
-	import { getModels } from '$lib/apis';
 	import { getGroups } from '$lib/apis/groups';
 
 	import EllipsisHorizontal from '../icons/EllipsisHorizontal.svelte';
@@ -50,6 +50,9 @@
 
 	let group_ids = [];
 
+	// Track which models are currently being toggled to prevent race conditions
+	let togglingModels = new Set();
+
 	$: if (models) {
 		filteredModels = models.filter(
 			(m) => searchValue === '' || m.name.toLowerCase().includes(searchValue.toLowerCase())
@@ -68,12 +71,7 @@
 			toast.success($i18n.t(`Deleted {{name}}`, { name: model.id }));
 		}
 
-		await _models.set(
-			await getModels(
-				localStorage.token,
-				$config?.features?.enable_direct_connections && ($settings?.directConnections ?? null)
-			)
-		);
+		// Only refresh workspace models, not all models
 		models = await getWorkspaceModels(localStorage.token);
 	};
 
@@ -136,12 +134,7 @@
 			);
 		}
 
-		await _models.set(
-			await getModels(
-				localStorage.token,
-				$config?.features?.enable_direct_connections && ($settings?.directConnections ?? null)
-			)
-		);
+		// Only refresh workspace models, not all models
 		models = await getWorkspaceModels(localStorage.token);
 	};
 
@@ -244,6 +237,8 @@
 
 	<div class=" my-2 mb-5 gap-2 grid lg:grid-cols-2 xl:grid-cols-3" id="model-list">
 		{#each filteredModels as model}
+			{@const imageUrl = model?.meta?.profile_image_url ?? '/static/favicon.png'}
+			{@const imageSrc = imageUrl.startsWith('/') ? `${getImageBaseUrl(imageUrl)}${imageUrl}` : imageUrl}
 			<div
 				class=" flex flex-col cursor-pointer w-full px-3 py-2 dark:hover:bg-white/5 hover:bg-black/5 rounded-xl transition"
 				id="model-item-{model.id}"
@@ -256,7 +251,7 @@
 								: 'opacity-50 dark:opacity-50'} "
 						>
 							<img
-								src={model?.meta?.profile_image_url ?? '/static/favicon.png'}
+								src={imageSrc}
 								alt="modelfile profile"
 								class=" rounded-full w-full h-auto object-cover"
 							/>
@@ -377,14 +372,35 @@
 									<Switch
 										bind:state={model.is_active}
 										on:change={async (e) => {
-											toggleModelById(localStorage.token, model.id);
-											_models.set(
-												await getModels(
-													localStorage.token,
-													$config?.features?.enable_direct_connections &&
-														($settings?.directConnections ?? null)
-												)
-											);
+											// Prevent multiple simultaneous toggles of the same model
+											if (togglingModels.has(model.id)) {
+												return;
+											}
+
+											togglingModels.add(model.id);
+
+											try {
+												await toggleModelById(localStorage.token, model.id);
+												// Update only the specific model in the array instead of replacing everything
+												const updatedModels = await getWorkspaceModels(localStorage.token);
+												if (updatedModels) {
+													const modelIndex = models.findIndex((m) => m.id === model.id);
+													if (modelIndex !== -1) {
+														const updatedModel = updatedModels.find((m) => m.id === model.id);
+														if (updatedModel) {
+															// Update only this specific model to avoid triggering updates for others
+															models[modelIndex] = { ...updatedModel };
+															models = models; // Trigger reactivity
+														}
+													}
+												}
+											} catch (error) {
+												// Revert on error
+												model.is_active = !model.is_active;
+												toast.error($i18n.t('Failed to toggle model'));
+											} finally {
+												togglingModels.delete(model.id);
+											}
 										}}
 									/>
 								</Tooltip>
@@ -436,13 +452,7 @@
 								}
 							}
 
-							await _models.set(
-								await getModels(
-									localStorage.token,
-									$config?.features?.enable_direct_connections &&
-										($settings?.directConnections ?? null)
-								)
-							);
+							// Only refresh workspace models, not all models
 							models = await getWorkspaceModels(localStorage.token);
 						};
 

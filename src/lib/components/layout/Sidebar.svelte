@@ -21,7 +21,8 @@
 		socket,
 		config,
 		isApp,
-		chatListSortBy
+		chatListSortBy,
+		folders as foldersStore
 	} from '$lib/stores';
 	import { onMount, getContext, tick, onDestroy } from 'svelte';
 
@@ -34,9 +35,11 @@
 		getChatListBySearchText,
 		createNewChat,
 		getPinnedChatList,
+		getPinnedChatListMetadata,
 		toggleChatPinnedStatusById,
 		getChatPinnedStatusById,
 		getChatById,
+		getChatMetaById,
 		updateChatFolderIdById,
 		importChat
 	} from '$lib/apis/chats';
@@ -44,9 +47,11 @@
 		createNewFolder,
 		getFolders,
 		updateFolderParentIdById,
-		updateFolderIsExpandedById
+		updateFolderIsExpandedById,
+		batchUpdateFolderIsExpanded
 	} from '$lib/apis/folders';
-	import { WEBUI_BASE_URL } from '$lib/constants';
+	import { setBatchUpdateFunction } from '$lib/utils/folderBatch';
+	import { WEBUI_BASE_URL, getImageBaseUrl } from '$lib/constants';
 	import { sidebarNavigationCommand, type SidebarNavigationCommand } from '$lib/stores/sidebar';
 	import { getTimeRange } from '$lib/utils';
 
@@ -76,6 +81,12 @@
 
 	let selectedChatId = null;
 	let showDropdown = false;
+
+	$: userImageSrc = $user?.profile_image_url
+		? $user.profile_image_url.startsWith('/')
+			? `${getImageBaseUrl($user.profile_image_url)}${$user.profile_image_url}`
+			: $user.profile_image_url
+		: '';
 	let showPinnedChat = true;
 
 	let showCreateChannel = false;
@@ -210,6 +221,9 @@
 				});
 			}
 		}
+
+		// Update the folders store so other components can use it
+		foldersStore.set(folders);
 	};
 
 	const createFolder = async (name = 'Untitled') => {
@@ -316,34 +330,45 @@
 			currentFolder = currentFolder.parent_id ? folderMap[currentFolder.parent_id] : null;
 		}
 
-		// Expand each folder in the hierarchy from root to target
+		// Collect folders that need backend updates (batch them)
+		const foldersToUpdate = [];
 		for (const folderIdToExpand of foldersToExpand) {
 			const folder = folderMap[folderIdToExpand];
-			if (folder) {
-				try {
-					// Update backend if not already expanded
-					if (!folder.is_expanded) {
-						await updateFolderIsExpandedById(localStorage.token, folderIdToExpand, true);
+			if (folder && !folder.is_expanded) {
+				foldersToUpdate.push({ id: folderIdToExpand, isExpanded: true });
+			}
+
+			// Always update local state to trigger UI expansion
+			folders = {
+				...folders,
+				[folderIdToExpand]: {
+					...folders[folderIdToExpand],
+					is_expanded: true,
+					expansionTimestamp: Date.now() // Force UI expansion regardless of previous state
+				}
+			};
+		}
+
+		// Batch update all folders that need backend updates
+		if (foldersToUpdate.length > 0) {
+			try {
+				await batchUpdateFolderIsExpanded(localStorage.token, foldersToUpdate);
+			} catch (error) {
+				console.error('Failed to batch update folder expanded states:', error);
+				// Fallback to individual updates if batch fails
+				for (const update of foldersToUpdate) {
+					try {
+						await updateFolderIsExpandedById(localStorage.token, update.id, update.isExpanded);
+					} catch (err) {
+						console.error(`Failed to update folder ${update.id}:`, err);
 					}
-
-					// Always update local state to trigger UI expansion
-					folders = {
-						...folders,
-						[folderIdToExpand]: {
-							...folders[folderIdToExpand],
-							is_expanded: true,
-							expansionTimestamp: Date.now() // Force UI expansion regardless of previous state
-						}
-					};
-
-					// Wait for DOM to update
-					await tick();
-					await new Promise((resolve) => setTimeout(resolve, 50));
-				} catch (error) {
-					console.error(`Failed to expand folder ${folderIdToExpand}:`, error);
 				}
 			}
 		}
+
+		// Wait for DOM to update
+		await tick();
+		await new Promise((resolve) => setTimeout(resolve, 50));
 	};
 
 	const scrollToFolder = async (folderId: string) => {
@@ -397,14 +422,21 @@
 	const initChatList = async () => {
 		// Reset pagination variables
 		tags.set(await getAllTags(localStorage.token));
-		pinnedChats.set(await getPinnedChatList(localStorage.token));
+
+		// Only fetch pinned chats if not already populated
+		if (!$pinnedChats || $pinnedChats.length === 0) {
+			pinnedChats.set(await getPinnedChatListMetadata(localStorage.token));
+		}
+
 		initFolders();
 
 		currentChatPage.set(1);
 		allChatsLoaded = false;
 
 		if (search) {
-			await chats.set(await getChatListBySearchText(localStorage.token, search, $currentChatPage));
+			await chats.set(
+				await getChatListBySearchText(localStorage.token, search, $currentChatPage, undefined)
+			);
 		} else {
 			await chats.set(await getChatList(localStorage.token, $currentChatPage));
 		}
@@ -421,7 +453,12 @@
 		let newChatList = [];
 
 		if (search) {
-			newChatList = await getChatListBySearchText(localStorage.token, search, $currentChatPage);
+			newChatList = await getChatListBySearchText(
+				localStorage.token,
+				search,
+				$currentChatPage,
+				undefined
+			);
 		} else {
 			newChatList = await getChatList(localStorage.token, $currentChatPage);
 		}
@@ -434,10 +471,17 @@
 	};
 
 	let searchDebounceTimeout;
+	let searchAbortController: AbortController | null = null;
 
 	const searchDebounceHandler = async () => {
 		console.log('search', search);
 		chats.set(null);
+
+		// Cancel any in-flight search request
+		if (searchAbortController) {
+			searchAbortController.abort();
+			searchAbortController = null;
+		}
 
 		if (searchDebounceTimeout) {
 			clearTimeout(searchDebounceTimeout);
@@ -447,15 +491,45 @@
 			await initChatList();
 			return;
 		} else {
+			// With request cancellation, we can use a shorter debounce (50ms)
+			// Old requests get cancelled, so we only process the latest one
+			// This gives near-instant feel while preventing wasted requests
 			searchDebounceTimeout = setTimeout(async () => {
+				// Create new AbortController for this request
+				searchAbortController = new AbortController();
+				const currentController = searchAbortController;
+
 				allChatsLoaded = false;
 				currentChatPage.set(1);
-				await chats.set(await getChatListBySearchText(localStorage.token, search));
 
-				if ($chats.length === 0) {
-					tags.set(await getAllTags(localStorage.token));
+				try {
+					const results = await getChatListBySearchText(
+						localStorage.token,
+						search,
+						1,
+						currentController.signal
+					);
+
+					// Only update if this request wasn't cancelled
+					if (!currentController.signal.aborted) {
+						await chats.set(results);
+
+						if ($chats.length === 0) {
+							tags.set(await getAllTags(localStorage.token));
+						}
+					}
+				} catch (err) {
+					// Ignore AbortError - it's expected when cancelling old requests
+					if (err.name !== 'AbortError') {
+						console.error('Search error:', err);
+					}
+				} finally {
+					// Clear controller if this was the active one
+					if (searchAbortController === currentController) {
+						searchAbortController = null;
+					}
 				}
-			}, 1000);
+			}, 50); // Reduced to 50ms with cancellation support
 		}
 	};
 
@@ -580,6 +654,23 @@
 	};
 
 	onMount(async () => {
+		// Initialize shared folder batching service
+		setBatchUpdateFunction(async (updates) => {
+			try {
+				await batchUpdateFolderIsExpanded(localStorage.token, updates);
+			} catch (error) {
+				console.error('Failed to batch update folder expanded states:', error);
+				// Fallback to individual updates if batch fails
+				for (const update of updates) {
+					try {
+						await updateFolderIsExpandedById(localStorage.token, update.id, update.isExpanded);
+					} catch (err) {
+						console.error(`Failed to update folder ${update.id}:`, err);
+					}
+				}
+			}
+		});
+
 		showPinnedChat = localStorage?.showPinnedChat ? localStorage.showPinnedChat === 'true' : true;
 
 		mobile.subscribe((value) => {
@@ -619,7 +710,7 @@
 			}
 		});
 
-		await initChannels();
+		// await initChannels();
 		await initChatList();
 
 		// Listen for navigation commands from other components
@@ -772,7 +863,7 @@
 				<div class="flex items-center">
 					<div class="self-center mx-1.5">
 						<img
-							src="{WEBUI_BASE_URL}/static/favicon.png"
+							src="{getImageBaseUrl('/static/favicon.png')}/static/favicon.png"
 							class=" size-5 -translate-x-1.5 rounded-full"
 							alt="logo"
 						/>
@@ -931,12 +1022,20 @@
 					importChatHandler(e.detail);
 				}}
 				on:drop={async (e) => {
-					const { type, id, item } = e.detail;
+					const { type, id, meta, item } = e.detail;
 
 					if (type === 'chat') {
-						let chat = await getChatById(localStorage.token, id).catch((error) => {
-							return null;
-						});
+						// Fetch meta (fast, ~100ms) instead of full chat for drag-and-drop
+						let chat = meta;
+						if (!chat) {
+							chat = await getChatMetaById(localStorage.token, id).catch((error) => {
+								// Fallback to full chat if meta fails
+								return getChatById(localStorage.token, id).catch((error) => {
+									return null;
+								});
+							});
+						}
+						// Fallback for importing external chats
 						if (!chat && item) {
 							chat = await importChat(localStorage.token, item.chat, item?.meta ?? {});
 						}
@@ -1173,7 +1272,7 @@
 						>
 							<div class=" self-center mr-3">
 								<img
-									src={$user?.profile_image_url}
+									src={userImageSrc}
 									class=" max-w-[30px] object-cover rounded-full"
 									alt="User profile"
 								/>

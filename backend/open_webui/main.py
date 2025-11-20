@@ -76,6 +76,8 @@ from open_webui.routers import (
     tools,
     users,
     utils,
+    chat_messages,
+    metrics,
 )
 
 from open_webui.routers.retrieval import (
@@ -213,6 +215,13 @@ from open_webui.config import (
     WEB_SEARCH_CONCURRENT_REQUESTS,
     WEB_SEARCH_TRUST_ENV,
     WEB_SEARCH_DOMAIN_FILTER_LIST,
+    WEB_SEARCH_EMBEDDING_ENGINE,
+    WEB_SEARCH_EMBEDDING_MODEL,
+    WEB_SEARCH_EMBEDDING_BATCH_SIZE,
+    WEB_SEARCH_OPENAI_API_BASE_URL,
+    WEB_SEARCH_OPENAI_API_KEY,
+    WEB_SEARCH_OLLAMA_BASE_URL,
+    WEB_SEARCH_OLLAMA_API_KEY,
     JINA_API_KEY,
     SEARCHAPI_API_KEY,
     SEARCHAPI_ENGINE,
@@ -436,8 +445,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="VelaChat",
-    docs_url="/docs" if ENV == "dev" else None,
-    openapi_url="/openapi.json" if ENV == "dev" else None,
+    docs_url="/docs",
+    openapi_url="/openapi.json",
     redoc_url=None,
     lifespan=lifespan,
 )
@@ -640,6 +649,13 @@ app.state.config.WEB_SEARCH_TRUST_ENV = WEB_SEARCH_TRUST_ENV
 app.state.config.BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL = (
     BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL
 )
+app.state.config.WEB_SEARCH_EMBEDDING_ENGINE = WEB_SEARCH_EMBEDDING_ENGINE
+app.state.config.WEB_SEARCH_EMBEDDING_MODEL = WEB_SEARCH_EMBEDDING_MODEL
+app.state.config.WEB_SEARCH_EMBEDDING_BATCH_SIZE = WEB_SEARCH_EMBEDDING_BATCH_SIZE
+app.state.config.WEB_SEARCH_OPENAI_API_BASE_URL = WEB_SEARCH_OPENAI_API_BASE_URL
+app.state.config.WEB_SEARCH_OPENAI_API_KEY = WEB_SEARCH_OPENAI_API_KEY
+app.state.config.WEB_SEARCH_OLLAMA_BASE_URL = WEB_SEARCH_OLLAMA_BASE_URL
+app.state.config.WEB_SEARCH_OLLAMA_API_KEY = WEB_SEARCH_OLLAMA_API_KEY
 
 app.state.config.ENABLE_GOOGLE_DRIVE_INTEGRATION = ENABLE_GOOGLE_DRIVE_INTEGRATION
 app.state.config.ENABLE_ONEDRIVE_INTEGRATION = ENABLE_ONEDRIVE_INTEGRATION
@@ -953,6 +969,8 @@ app.include_router(users.router, prefix="/api/v1/users", tags=["users"])
 
 
 app.include_router(channels.router, prefix="/api/v1/channels", tags=["channels"])
+# Register chat_messages BEFORE chats to avoid route conflicts (batch must match before /{id}/messages/{message_id})
+app.include_router(chat_messages.router, prefix="/api/v1/chats", tags=["chat_messages"])
 app.include_router(chats.router, prefix="/api/v1/chats", tags=["chats"])
 
 app.include_router(models.router, prefix="/api/v1/models", tags=["models"])
@@ -969,6 +987,7 @@ app.include_router(
     evaluations.router, prefix="/api/v1/evaluations", tags=["evaluations"]
 )
 app.include_router(utils.router, prefix="/api/v1/utils", tags=["utils"])
+app.include_router(metrics.router, prefix="/api/v1/metrics", tags=["metrics"])
 
 
 try:
@@ -993,7 +1012,18 @@ if audit_level != AuditLevel.NONE:
 
 @app.get("/api/models")
 async def get_models(request: Request, user=Depends(get_verified_user)):
+    import time
+    start_time = time.time()
+    
     def get_filtered_models(models, user):
+        model_ids = [model["id"] for model in models if not model.get("arena")]
+        model_info_map = {}
+        if model_ids:
+            for model_id in model_ids:
+                model_info = Models.get_model_by_id(model_id)
+                if model_info:
+                    model_info_map[model_id] = model_info
+        
         filtered_models = []
         for model in models:
             if model.get("arena"):
@@ -1007,7 +1037,7 @@ async def get_models(request: Request, user=Depends(get_verified_user)):
                     filtered_models.append(model)
                 continue
 
-            model_info = Models.get_model_by_id(model["id"])
+            model_info = model_info_map.get(model["id"])
             if model_info:
                 if user.id == model_info.user_id or has_access(
                     user.id, type="read", access_control=model_info.access_control
@@ -1016,7 +1046,10 @@ async def get_models(request: Request, user=Depends(get_verified_user)):
 
         return filtered_models
 
+    all_models_start = time.time()
     all_models = await get_all_models(request, user=user)
+    all_models_time = time.time()
+    log.debug(f"[PERF] /api/models: get_all_models took {(all_models_time - all_models_start) * 1000:.2f}ms")
 
     models = []
     for model in all_models:
@@ -1050,10 +1083,14 @@ async def get_models(request: Request, user=Depends(get_verified_user)):
 
     # Filter out models that the user does not have access to
     if user.role == "user" and not BYPASS_MODEL_ACCESS_CONTROL:
+        filter_start = time.time()
         models = get_filtered_models(models, user)
+        filter_time = time.time()
+        log.debug(f"[PERF] /api/models: get_filtered_models took {(filter_time - filter_start) * 1000:.2f}ms")
 
+    total_time = time.time()
     log.debug(
-        f"/api/models returned filtered models accessible to the user: {json.dumps([model['id'] for model in models])}"
+        f"[PERF] /api/models: total took {(total_time - start_time) * 1000:.2f}ms, returned {len(models)} models"
     )
     return {"data": models}
 
@@ -1219,8 +1256,7 @@ async def list_tasks_endpoint(user=Depends(get_verified_user)):
 
 @app.get("/api/tasks/chat/{chat_id}")
 async def list_tasks_by_chat_id_endpoint(chat_id: str, user=Depends(get_verified_user)):
-    chat = Chats.get_chat_by_id(chat_id)
-    if chat is None or chat.user_id != user.id:
+    if not Chats.has_chat_access(chat_id, user.id):
         return {"task_ids": []}
 
     task_ids = list_task_ids_by_chat_id(chat_id)

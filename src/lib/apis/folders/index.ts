@@ -165,6 +165,43 @@ export const updateFolderIsExpandedById = async (
 	return res;
 };
 
+export const batchUpdateFolderIsExpanded = async (
+	token: string,
+	updates: Array<{ id: string; isExpanded: boolean }>
+) => {
+	let error = null;
+
+	const res = await fetch(`${WEBUI_API_BASE_URL}/folders/batch/update/expanded`, {
+		method: 'POST',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json',
+			authorization: `Bearer ${token}`
+		},
+		body: JSON.stringify({
+			updates: updates.map((u) => ({ id: u.id, is_expanded: u.isExpanded }))
+		})
+	})
+		.then(async (res) => {
+			if (!res.ok) throw await res.json();
+			return res.json();
+		})
+		.then((json) => {
+			return json;
+		})
+		.catch((err) => {
+			error = err.detail;
+			console.log(err);
+			return null;
+		});
+
+	if (error) {
+		throw error;
+	}
+
+	return res;
+};
+
 export const updateFolderParentIdById = async (token: string, id: string, parentId?: string) => {
 	let error = null;
 

@@ -27,6 +27,7 @@
 	import { stringify } from 'postcss';
 	import PencilSquare from '../icons/PencilSquare.svelte';
 	import Plus from '../icons/Plus.svelte';
+	import { WEBUI_BASE_URL } from '$lib/constants';
 
 	const i18n = getContext('i18n');
 
@@ -40,6 +41,10 @@
 
 	let showShareChatModal = false;
 	let showDownloadChatModal = false;
+
+	$: userImageSrc = $user?.profile_image_url 
+		? ($user.profile_image_url.startsWith('/') ? `${WEBUI_BASE_URL}${$user.profile_image_url}` : $user.profile_image_url)
+		: '';
 </script>
 
 <ShareChatModal bind:show={showShareChatModal} chatId={$chatId} />
@@ -180,7 +185,7 @@
 						>
 							<div class=" self-center">
 								<img
-									src={$user?.profile_image_url}
+									src={userImageSrc}
 									class="size-6 object-cover rounded-full"
 									alt="User profile"
 									draggable="false"

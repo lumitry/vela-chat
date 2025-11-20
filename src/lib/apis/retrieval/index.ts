@@ -390,7 +390,9 @@ export const processWeb = async (token: string, collection_name: string, url: st
 export const processWebSearch = async (
 	token: string,
 	query: string,
-	collection_name?: string
+	collection_name?: string,
+	chat_id?: string,
+	message_id?: string
 ): Promise<SearchDocument | null> => {
 	let error = null;
 
@@ -402,7 +404,9 @@ export const processWebSearch = async (
 		},
 		body: JSON.stringify({
 			query,
-			collection_name: collection_name ?? ''
+			collection_name: collection_name ?? '',
+			chat_id: chat_id ?? null,
+			message_id: message_id ?? null
 		})
 	})
 		.then(async (res) => {

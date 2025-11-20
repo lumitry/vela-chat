@@ -6,6 +6,7 @@
 
 	import { slide } from 'svelte/transition';
 	import { page } from '$app/stores';
+	import { WEBUI_BASE_URL } from '$lib/constants';
 
 	import UserMenu from '$lib/components/layout/Sidebar/UserMenu.svelte';
 	import MenuLines from '../icons/MenuLines.svelte';
@@ -14,6 +15,10 @@
 	const i18n = getContext('i18n');
 
 	export let channel;
+
+	$: userImageSrc = $user?.profile_image_url 
+		? ($user.profile_image_url.startsWith('/') ? `${WEBUI_BASE_URL}${$user.profile_image_url}` : $user.profile_image_url)
+		: '';
 </script>
 
 <nav class="sticky top-0 z-30 w-full px-1.5 py-1.5 -mb-8 flex items-center drag-region">
@@ -71,7 +76,7 @@
 						>
 							<div class=" self-center">
 								<img
-									src={$user?.profile_image_url}
+									src={userImageSrc}
 									class="size-6 object-cover rounded-full"
 									alt="User profile"
 									draggable="false"

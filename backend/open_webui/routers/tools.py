@@ -1,7 +1,7 @@
 import logging
+import time
 from pathlib import Path
 from typing import Optional
-import time
 
 from open_webui.models.tools import (
     ToolForm,
@@ -34,6 +34,8 @@ router = APIRouter()
 
 @router.get("/", response_model=list[ToolUserResponse])
 async def get_tools(request: Request, user=Depends(get_verified_user)):
+    import time
+    start_time = time.time()
 
     if not request.app.state.TOOL_SERVERS:
         # If the tool servers are not set, we need to set them
@@ -44,7 +46,26 @@ async def get_tools(request: Request, user=Depends(get_verified_user)):
             request.app.state.config.TOOL_SERVER_CONNECTIONS
         )
 
-    tools = Tools.get_tools()
+    tools_start = time.time()
+    tools_list = Tools.get_tools()
+    tools_time = time.time()
+    log.debug(f"[PERF] get_tools: Tools.get_tools() took {(tools_time - tools_start) * 1000:.2f}ms")
+    
+    # Convert ToolUserModel to ToolUserResponse
+    tools = [
+        ToolUserResponse(
+            id=tool.id,
+            user_id=tool.user_id,
+            name=tool.name,
+            meta=tool.meta,
+            access_control=tool.access_control,
+            updated_at=tool.updated_at,
+            created_at=tool.created_at,
+            user=tool.user,
+        )
+        for tool in tools_list
+    ]
+    
     for server in request.app.state.TOOL_SERVERS:
         tools.append(
             ToolUserResponse(
@@ -78,6 +99,8 @@ async def get_tools(request: Request, user=Depends(get_verified_user)):
             or has_access(user.id, "read", tool.access_control)
         ]
 
+    total_time = time.time()
+    log.debug(f"[PERF] get_tools: total took {(total_time - start_time) * 1000:.2f}ms, returned {len(tools)} tools")
     return tools
 
 

@@ -8,6 +8,7 @@
 
 	import Modal from '$lib/components/common/Modal.svelte';
 	import localizedFormat from 'dayjs/plugin/localizedFormat';
+	import { WEBUI_BASE_URL } from '$lib/constants';
 
 	const i18n = getContext('i18n');
 	const dispatch = createEventDispatcher();
@@ -41,6 +42,10 @@
 			_user.password = '';
 		}
 	});
+
+	$: userImageSrc = _user?.profile_image_url 
+		? (_user.profile_image_url.startsWith('/') ? `${WEBUI_BASE_URL}${_user.profile_image_url}` : _user.profile_image_url)
+		: '';
 </script>
 
 <Modal size="sm" bind:show>
@@ -78,7 +83,7 @@
 					<div class=" flex items-center rounded-md py-2 px-4 w-full">
 						<div class=" self-center mr-5">
 							<img
-								src={selectedUser.profile_image_url}
+								src={userImageSrc}
 								class=" max-w-[55px] object-cover rounded-full"
 								alt="User profile"
 							/>

@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import { onMount, tick, getContext } from 'svelte';
-	import { openDB, deleteDB } from 'idb';
+	import { onDestroy, onMount, tick, getContext } from 'svelte';
 	import fileSaver from 'file-saver';
 	const { saveAs } = fileSaver;
 	import mermaid from 'mermaid';
@@ -36,17 +35,24 @@
 		banners,
 		showSettings,
 		showChangelog,
+		chatTitle,
 		temporaryChatEnabled,
-		toolServers
+		toolServers,
+		commandPaletteQuery,
+		commandPaletteSubmenu,
+		isCommandPaletteOpen
 	} from '$lib/stores';
 
 	import Sidebar from '$lib/components/layout/Sidebar.svelte';
 	import SettingsModal from '$lib/components/chat/SettingsModal.svelte';
-	import ChangelogModal from '$lib/components/ChangelogModal.svelte';
+	// import ChangelogModal from '$lib/components/ChangelogModal.svelte';
 	import AccountPending from '$lib/components/layout/Overlay/AccountPending.svelte';
 	import UpdateInfoToast from '$lib/components/layout/UpdateInfoToast.svelte';
 	import { get } from 'svelte/store';
 	import Spinner from '$lib/components/common/Spinner.svelte';
+	import { registerCoreCommands } from '$lib/utils/commandPalette/commands';
+	import { addRecentChat } from '$lib/utils/commandPalette/recentChats';
+	import CommandPalette from '$lib/components/common/CommandPalette/CommandPalette.svelte';
 
 	const i18n = getContext('i18n');
 
@@ -56,70 +62,106 @@
 	let localDBChats = [];
 
 	let version;
+	let paletteShortcut = 'cmd+p';
+	let lastShiftPress = 0;
+	let paletteShortcutUnsubscribe: (() => void) | null = null;
+
+	page.subscribe(($page) => {
+		if (typeof window === 'undefined') return;
+		const match = /^\/c\/([^/]+)/.exec($page.url.pathname);
+		if (match) {
+			const currentTitle = get(chatTitle) ?? 'Chat';
+			addRecentChat({ id: match[1], title: currentTitle });
+		}
+	});
 
 	onMount(async () => {
+		registerCoreCommands();
+
+		paletteShortcutUnsubscribe = settings.subscribe(($settings) => {
+			paletteShortcut = $settings?.commandPaletteShortcut ?? 'cmd+p';
+		});
+
 		if ($user === undefined || $user === null) {
 			await goto('/auth');
 		} else if (['user', 'admin'].includes($user?.role)) {
+			// Load settings from localStorage immediately (non-blocking)
+			let localStorageSettings = {} as Parameters<(typeof settings)['set']>[0];
 			try {
-				// Check if IndexedDB exists
-				DB = await openDB('Chats', 1);
+				localStorageSettings = JSON.parse(localStorage.getItem('settings') ?? '{}');
+			} catch (e: unknown) {
+				console.error('Failed to parse settings from localStorage', e);
+			}
+			settings.set(localStorageSettings);
 
-				if (DB) {
-					const chats = await DB.getAllFromIndex('chats', 'timestamp');
-					localDBChats = chats.map((item, idx) => chats[chats.length - 1 - idx]);
+			// Apply custom theme if selected
+			if (localStorage.theme === 'custom' && localStorageSettings?.customThemeColor) {
+				applyCustomThemeColors(localStorageSettings.customThemeColor);
+			}
 
-					if (localDBChats.length === 0) {
-						await deleteDB('Chats');
+			// Load models in parallel (non-blocking for initial render)
+			// Models are needed for chat input, but we can render the input first
+			getModels(
+				localStorage.token,
+				$config?.features?.enable_direct_connections && ($settings?.directConnections ?? null)
+			)
+				.then((modelsData) => {
+					models.set(modelsData);
+				})
+				.catch((error) => {
+					console.error('Failed to load models:', error);
+				});
+
+			// Fetch user settings in background and update if different
+			// Only update if server settings differ significantly to avoid overwriting user changes
+			getUserSettings(localStorage.token)
+				.then((userSettings) => {
+					if (userSettings) {
+						// Compare current settings with server settings
+						const currentSettingsStr = JSON.stringify($settings);
+						const serverSettingsStr = JSON.stringify(userSettings.ui);
+
+						// Only update if they're different (avoid unnecessary updates)
+						if (currentSettingsStr !== serverSettingsStr) {
+							settings.set(userSettings.ui);
+
+							// Apply custom theme if selected
+							if (localStorage.theme === 'custom' && userSettings.ui?.customThemeColor) {
+								applyCustomThemeColors(userSettings.ui.customThemeColor);
+							}
+						}
 					}
-				}
+				})
+				.catch((error) => {
+					console.error('Failed to load user settings:', error);
+				});
 
-				console.log(DB);
-			} catch (error) {
-				// IndexedDB Not Found
-			}
+			// Defer non-critical data loading to after initial render
+			// Use requestIdleCallback if available, otherwise setTimeout
+			const loadDeferredData = () => {
+				// Load banners, tools, and toolServers in parallel
+				Promise.all([
+					getBanners(localStorage.token).catch(() => []),
+					getTools(localStorage.token).catch(() => []),
+					getToolServersData($i18n, $settings?.toolServers ?? []).catch(() => [])
+				]).then(([bannersData, toolsData, toolServersData]) => {
+					banners.set(bannersData);
+					tools.set(toolsData);
+					toolServers.set(toolServersData);
+				});
+			};
 
-			const userSettings = await getUserSettings(localStorage.token).catch((error) => {
-				console.error(error);
-				return null;
-			});
-
-			if (userSettings) {
-				settings.set(userSettings.ui);
-
-				// Apply custom theme if selected
-				if (localStorage.theme === 'custom' && userSettings.ui?.customThemeColor) {
-					applyCustomThemeColors(userSettings.ui.customThemeColor);
-				}
+			if (typeof requestIdleCallback !== 'undefined') {
+				requestIdleCallback(loadDeferredData, { timeout: 2000 });
 			} else {
-				let localStorageSettings = {} as Parameters<(typeof settings)['set']>[0];
-
-				try {
-					localStorageSettings = JSON.parse(localStorage.getItem('settings') ?? '{}');
-				} catch (e: unknown) {
-					console.error('Failed to parse settings from localStorage', e);
-				}
-
-				settings.set(localStorageSettings);
-
-				// Apply custom theme if selected
-				if (localStorage.theme === 'custom' && localStorageSettings?.customThemeColor) {
-					applyCustomThemeColors(localStorageSettings.customThemeColor);
-				}
+				setTimeout(loadDeferredData, 0);
 			}
-
-			models.set(
-				await getModels(
-					localStorage.token,
-					$config?.features?.enable_direct_connections && ($settings?.directConnections ?? null)
-				)
-			);
-
-			banners.set(await getBanners(localStorage.token));
-			tools.set(await getTools(localStorage.token));
-			toolServers.set(await getToolServersData($i18n, $settings?.toolServers ?? []));
 
 			document.addEventListener('keydown', async function (event) {
+				if (handleCommandPaletteHotkey(event)) {
+					return;
+				}
+
 				const isCtrlPressed = event.ctrlKey || event.metaKey; // metaKey is for Cmd key on Mac
 				// Check if the Shift key is pressed
 				const isShiftPressed = event.shiftKey;
@@ -232,9 +274,22 @@
 				}
 			});
 
-			if ($user?.role === 'admin' && ($settings?.showChangelog ?? true)) {
-				showChangelog.set($settings?.version !== $config.version);
-			}
+			// Check changelog - use localStorage.version first (set when user dismisses modal)
+			// This avoids the issue where settings load asynchronously
+			const checkChangelog = () => {
+				if ($user?.role === 'admin' && ($settings?.showChangelog ?? true)) {
+					const dismissedVersion = localStorage.version;
+					if (dismissedVersion === $config.version) {
+						showChangelog.set(false);
+					} else {
+						// Check settings.version after it loads
+						showChangelog.set($settings?.version !== $config.version);
+					}
+				}
+			};
+
+			// Check immediately (may be false if settings not loaded yet, but that's ok)
+			checkChangelog();
 
 			if ($user?.permissions?.chat?.temporary ?? true) {
 				if ($page.url.searchParams.get('temporary-chat') === 'true') {
@@ -246,18 +301,26 @@
 				}
 			}
 
-			// Check for version updates
+			// Defer version updates check (admin only, non-critical)
 			if ($user?.role === 'admin') {
-				// Check if the user has dismissed the update toast in the last 24 hours
-				if (localStorage.dismissedUpdateToast) {
-					const dismissedUpdateToast = new Date(Number(localStorage.dismissedUpdateToast));
-					const now = new Date();
+				const checkVersionUpdates = () => {
+					// Check if the user has dismissed the update toast in the last 24 hours
+					if (localStorage.dismissedUpdateToast) {
+						const dismissedUpdateToast = new Date(Number(localStorage.dismissedUpdateToast));
+						const now = new Date();
 
-					if (now - dismissedUpdateToast > 24 * 60 * 60 * 1000) {
+						if (now - dismissedUpdateToast > 24 * 60 * 60 * 1000) {
+							checkForVersionUpdates();
+						}
+					} else {
 						checkForVersionUpdates();
 					}
+				};
+
+				if (typeof requestIdleCallback !== 'undefined') {
+					requestIdleCallback(checkVersionUpdates, { timeout: 5000 });
 				} else {
-					checkForVersionUpdates();
+					setTimeout(checkVersionUpdates, 100);
 				}
 			}
 			await tick();
@@ -269,6 +332,75 @@
 		showSidebar = true;
 	});
 
+	function toggleCommandPalette() {
+		if (get(isCommandPaletteOpen)) {
+			isCommandPaletteOpen.set(false);
+			lastShiftPress = 0;
+		} else {
+			commandPaletteSubmenu.set([]);
+			commandPaletteQuery.set('');
+			isCommandPaletteOpen.set(true);
+		}
+	}
+
+	function handleCommandPaletteHotkey(event: KeyboardEvent): boolean {
+		const target = event.target as HTMLElement | null;
+		const isTextInput = Boolean(
+			target && (target.closest('input, textarea') || target.isContentEditable === true)
+		);
+
+		if (paletteShortcut === 'double-shift') {
+			if (isTextInput) {
+				return false;
+			}
+
+			if (
+				event.key === 'Shift' &&
+				!event.ctrlKey &&
+				!event.metaKey &&
+				!event.altKey &&
+				!event.repeat
+			) {
+				const now = Date.now();
+				if (now - lastShiftPress < 400) {
+					event.preventDefault();
+					lastShiftPress = 0;
+					toggleCommandPalette();
+					return true;
+				}
+				lastShiftPress = now;
+			}
+			return false;
+		}
+
+		const key = event.key.toLowerCase();
+		const isMeta = event.metaKey || event.ctrlKey;
+
+		if (!isMeta || event.altKey || event.repeat) {
+			return false;
+		}
+
+		if (isTextInput && paletteShortcut === 'cmd+e') {
+			return false;
+		}
+
+		if (
+			(paletteShortcut === 'cmd+p' && key === 'p') ||
+			(paletteShortcut === 'cmd+k' && key === 'k') ||
+			(paletteShortcut === 'cmd+e' && key === 'e')
+		) {
+			event.preventDefault();
+			toggleCommandPalette();
+			return true;
+		}
+
+		return false;
+	}
+
+	onDestroy(() => {
+		paletteShortcutUnsubscribe?.();
+	});
+
 	const checkForVersionUpdates = async () => {
 		version = await getVersionUpdates(localStorage.token).catch((error) => {
 			return {
@@ -277,10 +409,21 @@
 			};
 		});
 	};
+
+	// Reactive: Update changelog check when settings change (after they load from server)
+	$: if ($settings && $user?.role === 'admin') {
+		const dismissedVersion = localStorage.version;
+		if (dismissedVersion === $config.version) {
+			showChangelog.set(false);
+		} else {
+			showChangelog.set($settings?.version !== $config.version);
+		}
+	}
 </script>
 
 <SettingsModal bind:show={$showSettings} />
-<ChangelogModal bind:show={$showChangelog} />
+<!-- <ChangelogModal bind:show={$showChangelog} /> -->
+<CommandPalette />
 
 {#if version && compareVersion(version.latest, version.current) && ($settings?.showUpdateToast ?? true)}
 	<div class=" absolute bottom-8 right-8 z-50" in:fade={{ duration: 100 }}>

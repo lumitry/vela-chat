@@ -1,0 +1,6 @@
+---
+description: Backend and database access code
+alwaysApply: false
+---
+
+When writing backend code, avoid using the legacy `chat` column of the `chat` table to store message content. Instead, use the normalized chat storage design with the `chat_message` table.

@@ -36,7 +36,8 @@
 		chatTitle,
 		showArtifacts,
 		tools,
-		toolServers
+		toolServers,
+		chatCache
 	} from '$lib/stores';
 	import {
 		convertMessagesToHistory,
@@ -59,12 +60,34 @@
 		deleteTagById,
 		deleteTagsById,
 		getAllTags,
-		getChatById,
 		getChatList,
 		getTagsById,
-		updateChatById
+		updateChatById,
+		getChatMetaById,
+		getChatById,
+		getChatSync,
+		getMessagesBatch
 	} from '$lib/apis/chats';
+	import {
+		initMessageDB,
+		getMessagesByChatId,
+		getMessagesByIds,
+		bulkPutMessages,
+		deleteMessagesByChatId,
+		isIndexedDBAvailable
+	} from '$lib/utils/indexeddb';
+	import xxhashWasm from 'xxhash-wasm';
 	import { generateOpenAIChatCompletion } from '$lib/apis/openai';
+
+	// Initialize XXHash (async, but we'll await it when needed)
+	let xxhash64: ((data: string) => bigint) | null = null;
+	const getXXHash = async () => {
+		if (!xxhash64) {
+			const { h64 } = await xxhashWasm();
+			xxhash64 = (data: string) => h64(data);
+		}
+		return xxhash64;
+	};
 	import { processWeb, processWebSearch, processYoutubeVideo } from '$lib/apis/retrieval';
 	import { createOpenAITextStream } from '$lib/apis/streaming';
 	import { queryMemory } from '$lib/apis/memories';
@@ -88,12 +111,93 @@
 	import Placeholder from './Placeholder.svelte';
 	import NotificationToast from '../NotificationToast.svelte';
 	import Spinner from '../common/Spinner.svelte';
+	import ChevronLeft from '$lib/components/icons/ChevronLeft.svelte';
+	import ChevronRight from '$lib/components/icons/ChevronRight.svelte';
+	import XMark from '$lib/components/icons/XMark.svelte';
+	import Switch from '$lib/components/common/Switch.svelte';
 
 	export let chatIdProp = '';
+
+	// Helper function to strip files array and data.file_ids from collection objects
+	const stripCollectionFiles = (file) => {
+		if (file?.type === 'collection') {
+			const { files, data, ...rest } = file;
+			const stripped = { ...rest };
+			// Keep data but remove file_ids if present
+			if (data && typeof data === 'object') {
+				const { file_ids, ...dataRest } = data;
+				if (Object.keys(dataRest).length > 0) {
+					stripped.data = dataRest;
+				}
+			}
+			return stripped;
+		}
+		return file;
+	};
 
 	let loading = false;
 
 	const eventTarget = new EventTarget();
+
+	// Helper function to cache a message in IndexedDB
+	const cacheMessage = async (message: any, chatId: string) => {
+		if (!isIndexedDBAvailable() || !message?.id) {
+			return;
+		}
+
+		try {
+			// Compute cache key (same as backend - uses content length for performance)
+			// Use Array.from() to count Unicode code points (like Python len()), not UTF-16 code units
+			// Use XXHash for fast non-cryptographic hashing (much faster than SHA-256)
+			const content = message.content || '';
+			const content_length = Array.from(content).length; // Count code points, not UTF-16 units
+			const updated_at = String(message.timestamp || message.updated_at || Date.now());
+			const role = message.role || '';
+			const model_id = message.model || message.model_id || '';
+			const combined = `${content_length}${updated_at}${role}${model_id}`;
+			const hasher = await getXXHash();
+			const cache_key = hasher(combined).toString(16).padStart(16, '0');
+
+			// Build meta object, including merged property if present
+			// Backend stores merged in meta.merged, so we do the same for consistency
+			const meta = message.meta ? { ...message.meta } : {};
+			if (message.merged) {
+				meta.merged = message.merged;
+			}
+
+			const cachedMessage = {
+				id: message.id,
+				chat_id: chatId,
+				parent_id: message.parentId || null,
+				role: message.role,
+				model_id: message.model || message.model_id || null,
+				position: message.position || null,
+				content: message.content || '',
+				content_json: message.content_json || null,
+				status: message.status || null,
+				usage: message.usage || null,
+				meta: Object.keys(meta).length > 0 ? meta : null,
+				annotation: message.annotation || null,
+				feedback_id: message.feedbackId || message.feedback_id || null,
+				selected_model_id: message.selectedModelId || message.selected_model_id || null,
+				files: message.files || null,
+				sources: message.sources || null,
+				created_at: message.timestamp || message.created_at || Math.floor(Date.now() / 1000),
+				updated_at: message.timestamp || message.updated_at || Math.floor(Date.now() / 1000),
+				cache_key: cache_key,
+				cached_at: Date.now(),
+				modelIdx: message.modelIdx ?? null, // Root-level property, not in meta
+				modelName: message.modelName ?? null, // Root-level property, not in meta
+				models: message.models ?? null, // Root-level property for side-by-side chats
+				children_ids: message.childrenIds || [] // CRITICAL: Store children IDs for message tree structure
+			};
+
+			await bulkPutMessages([cachedMessage]);
+		} catch (error) {
+			console.warn('Failed to cache message in IndexedDB:', error);
+			// Don't throw - caching failure shouldn't break the app
+		}
+	};
 	let controlPane;
 	let controlPaneComponent;
 
@@ -191,6 +295,25 @@
 		loadAndLink();
 	}
 
+	// Watch for URL changes when on home page (no chatId) to trigger initNewChat
+	let lastUrlQuery = '';
+	$: if (!chatIdProp && $page.url.pathname === '/') {
+		const currentQuery = $page.url.searchParams.get('q') ?? '';
+		// Only call initNewChat if query changed and we're on home page
+		if (currentQuery !== lastUrlQuery) {
+			lastUrlQuery = currentQuery;
+			// Only call if there's a query or other params that need initNewChat
+			if (
+				currentQuery ||
+				$page.url.searchParams.has('web-search') ||
+				$page.url.searchParams.has('image-generation') ||
+				$page.url.searchParams.has('knowledge-base')
+			) {
+				initNewChat();
+			}
+		}
+	}
+
 	$: if (selectedModels && chatIdProp !== '') {
 		saveSessionSelectedModels();
 	}
@@ -203,8 +326,60 @@
 		console.log('saveSessionSelectedModels', selectedModels, sessionStorage.selectedModels);
 	};
 
-	$: if (selectedModels) {
-		setToolIds();
+	// When models load and we're on a new chat page, set the selected model
+	// Guard against race conditions with initNewChat
+	let modelSelectionInProgress = false;
+	$: if (
+		$models.length > 0 &&
+		!chatIdProp &&
+		!modelSelectionInProgress &&
+		(selectedModels.length === 0 || (selectedModels.length === 1 && selectedModels[0] === ''))
+	) {
+		// Models just loaded and we don't have a selected model yet
+		// Re-run the model selection logic from initNewChat
+		modelSelectionInProgress = true;
+		let newSelectedModels: string[] = [];
+
+		if ($page.url.searchParams.get('models')) {
+			newSelectedModels = $page.url.searchParams.get('models')?.split(',') || [];
+		} else if ($page.url.searchParams.get('model')) {
+			const urlModels = $page.url.searchParams.get('model')?.split(',') || [];
+			newSelectedModels = urlModels;
+		} else {
+			if (sessionStorage.selectedModels) {
+				try {
+					newSelectedModels = JSON.parse(sessionStorage.selectedModels);
+				} catch (e) {
+					newSelectedModels = [];
+				}
+			} else {
+				if ($settings?.models) {
+					newSelectedModels = $settings.models;
+				} else if ($config?.default_models) {
+					newSelectedModels = $config.default_models.split(',');
+				}
+			}
+		}
+
+		// Filter to only include models that exist
+		newSelectedModels = newSelectedModels.filter((modelId) =>
+			$models.map((m) => m.id).includes(modelId)
+		);
+
+		// If no valid models selected, use the first available model
+		if (
+			newSelectedModels.length === 0 ||
+			(newSelectedModels.length === 1 && newSelectedModels[0] === '')
+		) {
+			if ($models.length > 0) {
+				newSelectedModels = [$models[0].id];
+			}
+		}
+
+		if (newSelectedModels.length > 0 && newSelectedModels[0] !== '') {
+			selectedModels = newSelectedModels;
+		}
+		modelSelectionInProgress = false;
 	}
 
 	$: if (atSelectedModel || selectedModels) {
@@ -228,7 +403,11 @@
 		}
 	};
 
-	const showMessage = async (message) => {
+	const showMessage = async (
+		message,
+		options: { skipSave?: boolean; scrollToHighlight?: boolean; occurrenceIndex?: number } = {}
+	) => {
+		const { skipSave = false, scrollToHighlight = false, occurrenceIndex = 0 } = options;
 		const _chatId = JSON.parse(JSON.stringify($chatId));
 		let _messageId = JSON.parse(JSON.stringify(message.id));
 
@@ -254,11 +433,37 @@
 
 		const messageElement = document.getElementById(`message-${message.id}`);
 		if (messageElement) {
-			messageElement.scrollIntoView({ behavior: 'smooth' });
+			if (scrollToHighlight) {
+				// Wait a bit more for highlighting to be applied
+				await tick();
+				await new Promise((resolve) => setTimeout(resolve, 50));
+
+				// Find all highlighted text (mark elements) within this message
+				const highlightedElements = messageElement.querySelectorAll('mark');
+				if (highlightedElements.length > 0) {
+					// Navigate to the specific occurrence (or first if index is out of bounds)
+					const targetIndex = Math.min(occurrenceIndex, highlightedElements.length - 1);
+					const highlightedElement = highlightedElements[targetIndex];
+					if (highlightedElement) {
+						// Scroll to center the highlighted text
+						highlightedElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+					} else {
+						// Fallback to scrolling the message if no highlight found
+						messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+					}
+				} else {
+					// Fallback to scrolling the message if no highlight found
+					messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+				}
+			} else {
+				messageElement.scrollIntoView({ behavior: 'smooth' });
+			}
 		}
 
 		await tick();
-		saveChatHandler(_chatId, history);
+		if (!skipSave) {
+			saveChatHandler(_chatId, history);
+		}
 	};
 
 	const chatEventHandler = async (event, cb) => {
@@ -412,12 +617,36 @@
 		}
 	};
 
+	// Handle model updates from command palette
+	function handleModelUpdate(event: CustomEvent) {
+		const { chatId: updatedChatId, models: newModels } = event.detail;
+		if (updatedChatId === chatIdProp && newModels && newModels.length > 0) {
+			selectedModels = newModels;
+			// Also update the cache entry if it exists
+			chatCache.update((cache) => {
+				const cached = cache.get(updatedChatId);
+				if (cached && cached.chat) {
+					cached.chat.models = newModels;
+					cache.set(updatedChatId, cached);
+				}
+				return cache;
+			});
+		}
+	}
+
 	onMount(async () => {
+		window.addEventListener('chat-model-updated', handleModelUpdate as EventListener);
 		console.log('mounted');
 		window.addEventListener('message', onMessageHandler);
 		$socket?.on('chat-events', chatEventHandler);
 
 		if (!$chatId) {
+			// Initialize new chat on mount if we're on home page
+			if ($page.url.pathname === '/') {
+				await tick();
+				await initNewChat();
+			}
+
 			chatIdUnsubscriber = chatId.subscribe(async (value) => {
 				if (!value) {
 					await tick(); // Wait for DOM updates
@@ -474,6 +703,7 @@
 	});
 
 	onDestroy(() => {
+		window.removeEventListener('chat-model-updated', handleModelUpdate as EventListener);
 		chatIdUnsubscriber?.();
 		window.removeEventListener('message', onMessageHandler);
 		$socket?.off('chat-events', chatEventHandler);
@@ -666,6 +896,17 @@
 	//////////////////////////
 
 	const initNewChat = async () => {
+		// Wait for models to be loaded before proceeding
+		if ($models.length === 0) {
+			// Wait up to 5 seconds for models to load
+			let attempts = 0;
+			while ($models.length === 0 && attempts < 50) {
+				await tick();
+				await new Promise((resolve) => setTimeout(resolve, 100));
+				attempts++;
+			}
+		}
+
 		if ($page.url.searchParams.get('models')) {
 			selectedModels = $page.url.searchParams.get('models')?.split(',');
 		} else if ($page.url.searchParams.get('model')) {
@@ -711,7 +952,13 @@
 			if ($models.length > 0) {
 				selectedModels = [$models[0].id];
 			} else {
-				selectedModels = [''];
+				// If still no models, wait a bit more and try again
+				await new Promise((resolve) => setTimeout(resolve, 200));
+				if ($models.length > 0) {
+					selectedModels = [$models[0].id];
+				} else {
+					selectedModels = [''];
+				}
 			}
 		}
 
@@ -734,7 +981,35 @@
 			currentId: null
 		};
 
-		chatFiles = [];
+		// Handle knowledge base from URL or sessionStorage AFTER clearing chatFiles
+		const knowledgeBaseId = $page.url.searchParams.get('knowledge-base');
+		if (knowledgeBaseId) {
+			try {
+				const kbData = sessionStorage.getItem('commandPaletteKnowledgeBase');
+				if (kbData) {
+					const kb = JSON.parse(kbData);
+					console.log('kb', kb);
+					// Add knowledge base as a file attachment
+					// Knowledge bases use type: 'collection' (not 'knowledge')
+					// The structure should match what Knowledge.svelte creates
+					chatFiles = [
+						{
+							type: 'collection',
+							id: knowledgeBaseId,
+							name: kb.name || 'Knowledge Base',
+							description: kb.description,
+							collection_name: knowledgeBaseId,
+							status: 'processed'
+						}
+					];
+					sessionStorage.removeItem('commandPaletteKnowledgeBase');
+				}
+			} catch (error) {
+				console.error('Failed to attach knowledge base:', error);
+			}
+		} else {
+			chatFiles = [];
+		}
 		params = {};
 
 		if ($page.url.searchParams.get('youtube')) {
@@ -770,11 +1045,42 @@
 		}
 
 		if ($page.url.searchParams.get('q')) {
-			prompt = $page.url.searchParams.get('q') ?? '';
+			const queryPrompt = $page.url.searchParams.get('q') ?? '';
+			prompt = queryPrompt;
 
-			if (prompt) {
-				await tick();
-				submitPrompt(prompt);
+			console.log('queryPrompt', queryPrompt);
+
+			if (queryPrompt) {
+				// Wait for component to be fully ready before submitting
+				// Use a more robust waiting mechanism
+				const waitForReady = async (maxAttempts = 20) => {
+					for (let i = 0; i < maxAttempts; i++) {
+						await tick();
+						console.log('not yet ready, waiting for 100ms');
+						await new Promise((resolve) => setTimeout(resolve, 100));
+
+						// Check if models are ready and valid
+						const validModels = selectedModels.filter(
+							(modelId) => modelId && modelId !== '' && $models.map((m) => m.id).includes(modelId)
+						);
+
+						if (validModels.length > 0 && $models.length > 0 && !loading) {
+							selectedModels = validModels;
+							await tick();
+							return true;
+						}
+					}
+					return false;
+				};
+
+				const isReady = await waitForReady();
+				if (isReady) {
+					submitPrompt(queryPrompt);
+				} else {
+					// Fallback: set prompt and let user submit manually
+					prompt = queryPrompt;
+					console.warn('Component not ready for auto-submit, prompt set for manual submission');
+				}
 			}
 		}
 
@@ -782,31 +1088,54 @@
 			$models.map((m) => m.id).includes(modelId) ? modelId : ''
 		);
 
-		const userSettings = await getUserSettings(localStorage.token);
-
-		if (userSettings) {
-			settings.set(userSettings.ui);
-		} else {
-			settings.set(JSON.parse(localStorage.getItem('settings') ?? '{}'));
-		}
-
+		// Settings are already loaded in app layout, no need to fetch again
+		// Just focus the chat input
 		const chatInput = document.getElementById('chat-input');
 		setTimeout(() => chatInput?.focus(), 0);
 	};
 
 	const loadChat = async () => {
 		chatId.set(chatIdProp);
-		chat = await getChatById(localStorage.token, $chatId).catch(async (error) => {
-			await goto('/');
-			return null;
-		});
 
-		if (chat) {
+		// Check cache first for prefetched data
+		const cache = $chatCache;
+		let cachedFullChat = cache.get($chatId);
+
+		let chatMeta;
+		let fullChat;
+
+		if (cachedFullChat) {
+			// Use cached data - extract metadata from cached full chat
+			fullChat = cachedFullChat;
+			// Extract metadata from the cached chat structure
+			// getChatById returns { id, title, chat: { title, models, params, files, history } }
+			const chatData = cachedFullChat.chat || {};
+			chatMeta = {
+				title: chatData.title || cachedFullChat.title,
+				models: chatData.models,
+				params: chatData.params,
+				files: chatData.files
+			};
+			// Skip API call for metadata since we have the full chat
+		} else {
+			// Not in cache, fetch from API
+			chatMeta = await getChatMetaById(localStorage.token, $chatId).catch(async (error) => {
+				await goto('/');
+				return null;
+			});
+		}
+
+		if (chatMeta) {
 			tags = await getTagsById(localStorage.token, $chatId).catch(async (error) => {
 				return [];
 			});
 
-			const chatContent = chat.chat;
+			const chatContent = {
+				title: chatMeta.title,
+				models: chatMeta.models,
+				params: chatMeta.params,
+				files: chatMeta.files
+			};
 
 			if (chatContent) {
 				console.log(chatContent);
@@ -815,10 +1144,481 @@
 					(chatContent?.models ?? undefined) !== undefined
 						? chatContent.models
 						: [chatContent.models ?? ''];
-				history =
-					(chatContent?.history ?? undefined) !== undefined
-						? chatContent.history
-						: convertMessagesToHistory(chatContent.messages);
+
+				// Differential sync: Use IndexedDB cache if available, otherwise fall back to full fetch
+				try {
+					let useDifferentialSync = isIndexedDBAvailable();
+					let syncData = null;
+					let cachedMessages: any[] = [];
+					let messagesToFetch: string[] = [];
+
+					if (useDifferentialSync) {
+						try {
+							// Try differential sync
+							syncData = await getChatSync(localStorage.token, $chatId);
+
+							if (syncData && syncData.history && syncData.history.messages) {
+								// Get cached messages from IndexedDB
+								cachedMessages = await getMessagesByChatId($chatId);
+
+								// Build map of cached messages by ID
+								const cachedMap = new Map(cachedMessages.map((m) => [m.id, m]));
+
+								// Compare cache_keys to find missing/outdated messages
+								const serverMessages = syncData.history.messages;
+								const serverMessageIds = Object.keys(serverMessages);
+
+								// Check if server has fewer messages than cache (trust server)
+								if (serverMessageIds.length < cachedMessages.length) {
+									console.warn(
+										`Server has fewer messages (${serverMessageIds.length}) than cache (${cachedMessages.length}), clearing cache for chat ${$chatId}`
+									);
+									await deleteMessagesByChatId($chatId);
+									cachedMessages = [];
+									cachedMap.clear();
+								}
+
+								// Find messages that need to be fetched
+								for (const msgId of serverMessageIds) {
+									const serverMsg = serverMessages[msgId];
+									const cachedMsg = cachedMap.get(msgId);
+
+									if (!cachedMsg || cachedMsg.cache_key !== serverMsg.cache_key) {
+										messagesToFetch.push(msgId);
+									}
+								}
+
+								// Fetch missing messages in batches
+								if (messagesToFetch.length > 0) {
+									console.log(
+										`Fetching ${messagesToFetch.length} missing/outdated messages for chat ${$chatId}`
+									);
+									const batchResponse = await getMessagesBatch(
+										localStorage.token,
+										$chatId,
+										messagesToFetch
+									);
+
+									if (batchResponse && batchResponse.messages) {
+										// Convert batch messages to cached format
+										const messagesToCache = batchResponse.messages.map((msg: any) => {
+											// Extract modelIdx, modelName, and models from meta if present (backend stores them in meta)
+											// but frontend expects them at root level
+											let modelIdx = msg.modelIdx ?? null;
+											let modelName = msg.modelName ?? null;
+											let models = msg.models ?? null;
+											if (msg.meta && typeof msg.meta === 'object') {
+												if (modelIdx === null && 'modelIdx' in msg.meta) {
+													modelIdx = msg.meta.modelIdx;
+												}
+												if (modelName === null && 'modelName' in msg.meta) {
+													modelName = msg.meta.modelName;
+												}
+												if (models === null && 'models' in msg.meta) {
+													models = msg.meta.models;
+												}
+											}
+
+											// Extract statusHistory from status.statusHistory if present
+											// We store status as-is (with statusHistory inside it), but also need to handle
+											// the case where statusHistory might already be at root level from backend
+											let status = msg.status || null;
+											if (status && typeof status === 'object' && status.statusHistory) {
+												// status already has statusHistory inside it, which is what we want to store
+												// The extraction to root level happens when restoring from cache
+											}
+
+											return {
+												id: msg.id,
+												chat_id: $chatId,
+												parent_id: msg.parent_id,
+												role: msg.role,
+												model_id: msg.model_id,
+												position: msg.position ?? null,
+												content: msg.content_text || msg.content || '',
+												content_json: msg.content_json || null,
+												status: status, // Store status as-is (may contain statusHistory inside it)
+												usage: msg.usage || null,
+												meta: msg.meta || null,
+												annotation: msg.annotation || null,
+												feedback_id: msg.feedback_id || null,
+												selected_model_id: msg.selected_model_id || null,
+												files: msg.files || null,
+												sources: msg.sources || null,
+												created_at: msg.created_at || 0,
+												updated_at: msg.updated_at || 0,
+												cache_key: msg.cache_key,
+												cached_at: Date.now(),
+												modelIdx: modelIdx, // Root-level property
+												modelName: modelName, // Root-level property
+												models: models, // Root-level property for side-by-side chats
+												children_ids: syncData?.history?.messages?.[msg.id]?.children_ids || [] // Get children_ids from sync data
+											};
+										});
+
+										// Bulk insert/update in IndexedDB
+										await bulkPutMessages(messagesToCache);
+
+										// Update cached messages map
+										for (const msg of messagesToCache) {
+											cachedMap.set(msg.id, msg);
+										}
+									}
+								}
+
+								// Load all messages from IndexedDB (now up to date)
+								cachedMessages = await getMessagesByChatId($chatId);
+							} else {
+								// Sync endpoint returned legacy format or no messages, fall back
+								useDifferentialSync = false;
+							}
+						} catch (syncError) {
+							console.warn('Differential sync failed, falling back to full fetch:', syncError);
+							// If quota exceeded, clear cache and retry once
+							if (syncError instanceof DOMException && syncError.name === 'QuotaExceededError') {
+								console.warn('IndexedDB quota exceeded, clearing cache...');
+								try {
+									const { clearAllMessages } = await import('$lib/utils/indexeddb');
+									await clearAllMessages();
+								} catch (clearError) {
+									console.error('Failed to clear cache:', clearError);
+								}
+							}
+							useDifferentialSync = false;
+						}
+					}
+
+					// If differential sync didn't work, fall back to full fetch
+					if (!useDifferentialSync || cachedMessages.length === 0) {
+						if (!fullChat) {
+							fullChat = await getChatById(localStorage.token, $chatId);
+							// Cache the fetched data (LRU will evict oldest if at max size)
+							if (fullChat) {
+								chatCache.update((cache) => {
+									cache.set($chatId, fullChat);
+									return cache;
+								});
+							}
+						}
+
+						if (fullChat?.chat?.history?.messages) {
+							// Convert legacy format to frontend history structure
+							const messagesMap = fullChat.chat.history.messages;
+							let currentId = fullChat.chat.history.currentId || null;
+
+							// JOIN operation: Populate content, sources, and files in messages array from history.messages
+							if (fullChat.chat.messages && Array.isArray(fullChat.chat.messages)) {
+								for (const message of fullChat.chat.messages) {
+									if (message && message.id) {
+										const messageId = String(message.id);
+										if (messageId in messagesMap) {
+											const historyMsg = messagesMap[messageId];
+											if (!message.content && historyMsg.content) {
+												message.content = historyMsg.content;
+											}
+											if (!message.sources && historyMsg.sources) {
+												message.sources = historyMsg.sources;
+											}
+											if (!message.files && historyMsg.files) {
+												message.files = historyMsg.files;
+											}
+											for (const key in historyMsg) {
+												if (key !== 'id' && (message[key] === undefined || message[key] === null)) {
+													message[key] = historyMsg[key];
+												}
+											}
+										}
+									}
+								}
+							}
+
+							// Sort childrenIds for all messages (by position, then created_at - same as backend)
+							// This ensures sibling messages are displayed in the correct order
+							for (const msgId in messagesMap) {
+								const msg = messagesMap[msgId];
+								if (msg.childrenIds && msg.childrenIds.length > 0) {
+									msg.childrenIds = [...msg.childrenIds].sort((id1, id2) => {
+										const child1 = messagesMap[id1];
+										const child2 = messagesMap[id2];
+										if (!child1 || !child2) return 0;
+
+										// Sort by position first (ASC), then by created_at (ASC)
+										// Backend: order_by(ChatMessage.position.asc(), ChatMessage.created_at.asc())
+										// For legacy messages with null positions, treat null as coming before numeric positions
+										// This ensures older messages (with null) come before newer messages (with 0)
+										const pos1 = child1.position;
+										const pos2 = child2.position;
+
+										// Handle null positions: null comes before all numeric positions (for legacy compatibility)
+										if (pos1 === null && pos2 === null) {
+											// Both null - sort by created_at
+											const created1 = child1.timestamp || child1.created_at || 0;
+											const created2 = child2.timestamp || child2.created_at || 0;
+											return created1 - created2;
+										} else if (pos1 === null) {
+											return -1; // pos1 is null, comes before pos2 (legacy message)
+										} else if (pos2 === null) {
+											return 1; // pos2 is null, comes before pos1 (legacy message)
+										} else {
+											// Both are numeric
+											if (pos1 !== pos2) {
+												return pos1 - pos2;
+											}
+											// If positions are equal, sort by created_at
+											const created1 = child1.timestamp || child1.created_at || 0;
+											const created2 = child2.timestamp || child2.created_at || 0;
+											return created1 - created2;
+										}
+									});
+								}
+							}
+
+							// Validate currentId
+							if (currentId && !messagesMap[currentId]) {
+								console.warn(
+									`currentId ${currentId} not found in messages, finding valid leaf message`
+								);
+								const leafMessages = Object.values(messagesMap).filter((msg: any) => {
+									if (!msg.childrenIds || msg.childrenIds.length === 0) return true;
+									return !msg.childrenIds.some((childId: string) => messagesMap[childId]);
+								});
+								if (leafMessages.length > 0) {
+									leafMessages.sort((a: any, b: any) => (b.timestamp || 0) - (a.timestamp || 0));
+									currentId = leafMessages[0].id;
+								} else {
+									const allMessages = Object.values(messagesMap) as any[];
+									if (allMessages.length > 0) {
+										allMessages.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+										currentId = allMessages[0].id;
+									} else {
+										currentId = null;
+									}
+								}
+							}
+
+							history = {
+								messages: messagesMap,
+								currentId: currentId
+							};
+
+							// Cache messages in IndexedDB if available (for next time)
+							if (isIndexedDBAvailable() && messagesMap) {
+								try {
+									const hasher = await getXXHash();
+									const messagesToCache = await Promise.all(
+										Object.values(messagesMap).map(async (msg: any) => {
+											// Compute cache key (same as backend - uses content length for performance)
+											// Use Array.from() to count Unicode code points (like Python len()), not UTF-16 code units
+											// Use XXHash for fast non-cryptographic hashing (much faster than SHA-256)
+											const content = msg.content || '';
+											const content_length = Array.from(content).length; // Count code points, not UTF-16 units
+											const updated_at = String(msg.timestamp || msg.updated_at || 0);
+											const role = msg.role || '';
+											const model_id = msg.model || msg.model_id || '';
+											const combined = `${content_length}${updated_at}${role}${model_id}`;
+											const cache_key = hasher(combined).toString(16).padStart(16, '0');
+
+											// Build meta object, including merged property if present
+											// Backend stores merged in meta.merged, so we do the same for consistency
+											const meta = msg.meta ? { ...msg.meta } : {};
+											if (msg.merged) {
+												meta.merged = msg.merged;
+											}
+
+											return {
+												id: msg.id,
+												chat_id: $chatId,
+												parent_id: msg.parentId || null,
+												role: msg.role,
+												model_id: msg.model || msg.model_id || null,
+												position: msg.position || null,
+												content: msg.content || '',
+												content_json: msg.content_json || null,
+												status: msg.status || null,
+												usage: msg.usage || null,
+												meta: Object.keys(meta).length > 0 ? meta : null,
+												annotation: msg.annotation || null,
+												feedback_id: msg.feedbackId || msg.feedback_id || null,
+												selected_model_id: msg.selectedModelId || msg.selected_model_id || null,
+												files: msg.files || null,
+												sources: msg.sources || null,
+												created_at: msg.timestamp || msg.created_at || 0,
+												updated_at: msg.timestamp || msg.updated_at || 0,
+												cache_key: cache_key,
+												cached_at: Date.now(),
+												modelIdx: msg.modelIdx ?? null, // Root-level property
+												modelName: msg.modelName ?? null, // Root-level property
+												models: msg.models ?? null, // Root-level property for side-by-side chats
+												children_ids: msg.childrenIds || [] // CRITICAL: Store children IDs for message tree structure
+											};
+										})
+									);
+
+									await bulkPutMessages(messagesToCache);
+								} catch (cacheError) {
+									console.warn('Failed to cache messages in IndexedDB:', cacheError);
+								}
+							}
+						} else {
+							history = convertMessagesToHistory([]);
+						}
+					} else {
+						// Build history from IndexedDB cached messages
+						const messagesMap: Record<string, any> = {};
+
+						for (const cachedMsg of cachedMessages) {
+							// Extract statusHistory from status.statusHistory and put at root level
+							// Frontend expects both status and statusHistory at root level
+							let statusHistory = null;
+							let status = null;
+
+							if (cachedMsg.status && typeof cachedMsg.status === 'object') {
+								// Extract statusHistory if present
+								if (cachedMsg.status.statusHistory !== undefined) {
+									statusHistory = cachedMsg.status.statusHistory;
+								}
+
+								// Only set status if it has meaningful content
+								// If status only has statusHistory: null, treat it as null
+								const statusKeys = Object.keys(cachedMsg.status);
+								const hasMeaningfulContent = statusKeys.some((key) => {
+									const value = cachedMsg.status[key];
+									// Check if value is not null/undefined and not an empty array
+									if (value === null || value === undefined) return false;
+									if (Array.isArray(value) && value.length === 0) return false;
+									// statusHistory can be null, but if it's the only key, status should be null
+									if (key === 'statusHistory' && value === null && statusKeys.length === 1)
+										return false;
+									return true;
+								});
+
+								if (hasMeaningfulContent) {
+									status = cachedMsg.status;
+								}
+							}
+
+							// Convert cached message to frontend format
+							// Use cached children_ids if available, fall back to sync data
+							let childrenIds =
+								cachedMsg.children_ids && cachedMsg.children_ids.length > 0
+									? cachedMsg.children_ids
+									: syncData?.history?.messages?.[cachedMsg.id]?.children_ids || [];
+
+							// Sort childrenIds by position and created_at (same as backend)
+							// This ensures sibling messages are displayed in the correct order
+							// Backend orders by: position ASC, then created_at ASC
+							if (childrenIds.length > 0) {
+								// Create a map for faster lookups
+								const cachedMsgMap = new Map(cachedMessages.map((m) => [m.id, m]));
+
+								childrenIds = [...childrenIds].sort((id1, id2) => {
+									const msg1 = cachedMsgMap.get(id1);
+									const msg2 = cachedMsgMap.get(id2);
+									if (!msg1 || !msg2) return 0;
+
+									// Sort by position first (ASC), then by created_at (ASC)
+									// Backend: order_by(ChatMessage.position.asc(), ChatMessage.created_at.asc())
+									// For legacy messages with null positions, treat null as coming before numeric positions
+									// This ensures older messages (with null) come before newer messages (with 0)
+									const pos1 = msg1.position;
+									const pos2 = msg2.position;
+
+									// Handle null positions: null comes before all numeric positions (for legacy compatibility)
+									if (pos1 === null && pos2 === null) {
+										// Both null - sort by created_at
+										const created1 = msg1.created_at || 0;
+										const created2 = msg2.created_at || 0;
+										return created1 - created2;
+									} else if (pos1 === null) {
+										return -1; // pos1 is null, comes before pos2 (legacy message)
+									} else if (pos2 === null) {
+										return 1; // pos2 is null, comes before pos1 (legacy message)
+									} else {
+										// Both are numeric
+										if (pos1 !== pos2) {
+											return pos1 - pos2;
+										}
+										// If positions are equal, sort by created_at
+										const created1 = msg1.created_at || 0;
+										const created2 = msg2.created_at || 0;
+										return created1 - created2;
+									}
+								});
+							}
+
+							// Extract merged from meta.merged if present (backend stores it in meta.merged)
+							// Frontend expects it at root level, matching backend converter behavior
+							let merged = null;
+							if (
+								cachedMsg.meta &&
+								typeof cachedMsg.meta === 'object' &&
+								'merged' in cachedMsg.meta
+							) {
+								merged = cachedMsg.meta.merged;
+							}
+
+							messagesMap[cachedMsg.id] = {
+								id: cachedMsg.id,
+								parentId: cachedMsg.parent_id,
+								childrenIds: childrenIds,
+								role: cachedMsg.role,
+								content: cachedMsg.content,
+								content_json: cachedMsg.content_json,
+								model: cachedMsg.model_id,
+								timestamp: cachedMsg.created_at,
+								status: status, // Only set if status has meaningful content
+								statusHistory: statusHistory, // Duplicate statusHistory at root level for frontend compatibility
+								usage: cachedMsg.usage || null,
+								meta: cachedMsg.meta || null,
+								merged: merged, // Extract merged from meta.merged to root level
+								annotation: cachedMsg.annotation,
+								feedbackId: cachedMsg.feedback_id,
+								selectedModelId: cachedMsg.selected_model_id,
+								files: cachedMsg.files,
+								sources: cachedMsg.sources,
+								updated_at: cachedMsg.updated_at,
+								position: cachedMsg.position,
+								modelIdx: cachedMsg.modelIdx ?? null, // Root-level property, not in meta
+								modelName: cachedMsg.modelName ?? null, // Root-level property, not in meta
+								models: cachedMsg.models ?? null // Root-level property for side-by-side chats
+							};
+						}
+
+						// Get currentId from sync data
+						let currentId = syncData?.history?.currentId || null;
+
+						// Validate currentId - if it's null or doesn't exist, find a valid leaf message
+						if (!currentId || !messagesMap[currentId]) {
+							if (currentId && !messagesMap[currentId]) {
+								console.warn(`currentId ${currentId} not found in cached messages`);
+							}
+							// Find leaf messages (messages with no children or children that don't exist)
+							const leafMessages = cachedMessages.filter((msg) => {
+								const children = syncData?.history?.messages?.[msg.id]?.children_ids || [];
+								if (children.length === 0) return true;
+								// Check if all children exist in messagesMap
+								return !children.some((childId: string) => messagesMap[childId]);
+							});
+							if (leafMessages.length > 0) {
+								leafMessages.sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0));
+								currentId = leafMessages[0].id;
+							} else if (cachedMessages.length > 0) {
+								cachedMessages.sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0));
+								currentId = cachedMessages[0].id;
+							} else {
+								currentId = null;
+							}
+						}
+
+						history = {
+							messages: messagesMap,
+							currentId: currentId
+						};
+					}
+				} catch (e) {
+					console.warn('Failed to load chat:', e);
+					history = convertMessagesToHistory([]);
+				}
 
 				chatTitle.set(chatContent.title);
 
@@ -858,6 +1658,8 @@
 			} else {
 				return null;
 			}
+		} else {
+			return null;
 		}
 	};
 
@@ -902,6 +1704,8 @@
 							: {}),
 						...message
 					};
+					// Cache message in IndexedDB
+					await cacheMessage(history.messages[message.id], chatId);
 				}
 			}
 		}
@@ -910,12 +1714,22 @@
 
 		if ($chatId == chatId) {
 			if (!$temporaryChatEnabled) {
+				// Strip content, sources, and files from messages array to reduce bandwidth (backend will look them up from history.messages)
+				const messagesWithoutContent = messages.map((m) => {
+					const { content, sources, files, ...rest } = m;
+					return rest;
+				});
 				chat = await updateChatById(localStorage.token, chatId, {
 					models: selectedModels,
-					messages: messages,
+					messages: messagesWithoutContent,
 					history: history,
 					params: params,
 					files: chatFiles
+				});
+				// Invalidate cache since chat was updated
+				chatCache.update((cache) => {
+					cache.delete(chatId);
+					return cache;
 				});
 
 				currentChatPage.set(1);
@@ -1029,9 +1843,12 @@
 			if (parentMessage) {
 				parentMessage.childrenIds.push(userMessageId);
 				history.messages[parentMessage.id] = parentMessage;
+				await cacheMessage(parentMessage, $chatId);
 			}
 			history.messages[userMessageId] = userMessage;
 			history.messages[responseMessageId] = responseMessage;
+			await cacheMessage(userMessage, $chatId);
+			await cacheMessage(responseMessage, $chatId);
 
 			history.currentId = responseMessageId;
 
@@ -1344,6 +2161,9 @@
 		history.messages[message.id] = message;
 
 		if (done) {
+			// Cache message in IndexedDB only when streaming is complete (for performance)
+			await cacheMessage(message, chatId);
+
 			message.done = true;
 
 			if ($settings.responseAutoCopy) {
@@ -1415,14 +2235,57 @@
 			return;
 		}
 
-		if (messages.length != 0 && messages.at(-1).done != true) {
-			// Response not done
-			return;
+		// Determine the parent for the new user message
+		// In side-by-side chats, if currentId is an assistant message, use it as parent
+		// Otherwise, use the last message in the chain (standard behavior)
+		let parentId = null;
+		const currentMessage = history.currentId ? history.messages[history.currentId] : null;
+		if (currentMessage && currentMessage.role === 'assistant') {
+			// Side-by-side chat: continue from the selected assistant message
+			parentId = history.currentId;
+		} else if (messages.length !== 0) {
+			// Standard chat: use the last message in the chain
+			const lastMessage = messages.at(-1);
+			if (lastMessage && lastMessage.id) {
+				parentId = lastMessage.id;
+			}
 		}
-		if (messages.length != 0 && messages.at(-1).error && !messages.at(-1).content) {
-			// Error in response
-			toast.error($i18n.t(`Oops! There was an error in the previous response.`));
-			return;
+
+		// Fallback: if parentId is still null, find the most recent leaf message
+		// This can happen if currentId is invalid or messages list is empty
+		if (parentId === null && Object.keys(history.messages).length > 0) {
+			const allMessages = Object.values(history.messages) as any[];
+			// Find leaf messages (messages with no children or children that don't exist)
+			const leafMessages = allMessages.filter((msg) => {
+				if (!msg.childrenIds || msg.childrenIds.length === 0) return true;
+				return !msg.childrenIds.some((childId: string) => history.messages[childId]);
+			});
+			if (leafMessages.length > 0) {
+				// Sort by timestamp descending and use the most recent
+				leafMessages.sort(
+					(a, b) => (b.timestamp || b.updated_at || 0) - (a.timestamp || a.updated_at || 0)
+				);
+				parentId = leafMessages[0].id;
+			} else if (allMessages.length > 0) {
+				// If no leaf messages found, use the most recent message overall
+				allMessages.sort(
+					(a, b) => (b.timestamp || b.updated_at || 0) - (a.timestamp || a.updated_at || 0)
+				);
+				parentId = allMessages[0].id;
+			}
+		}
+
+		if (messages.length != 0) {
+			const lastMessage = messages.at(-1);
+			if (lastMessage.done != true) {
+				// Response not done
+				return;
+			}
+			if (lastMessage.error && !lastMessage.content) {
+				// Error in response
+				toast.error($i18n.t(`Oops! There was an error in the previous response.`));
+				return;
+			}
 		}
 		if (
 			files.length > 0 &&
@@ -1458,7 +2321,11 @@
 		}
 
 		const _files = JSON.parse(JSON.stringify(files));
-		chatFiles.push(..._files.filter((item) => ['doc', 'file', 'collection'].includes(item.type)));
+		// Strip files array and data.file_ids from collections before adding to chatFiles
+		const strippedFiles = _files.map(stripCollectionFiles);
+		chatFiles.push(
+			...strippedFiles.filter((item) => ['doc', 'file', 'collection'].includes(item.type))
+		);
 		chatFiles = chatFiles.filter(
 			// Remove duplicates
 			(item, index, array) =>
@@ -1472,11 +2339,11 @@
 		let userMessageId = uuidv4();
 		let userMessage = {
 			id: userMessageId,
-			parentId: messages.length !== 0 ? messages.at(-1).id : null,
+			parentId: parentId,
 			childrenIds: [],
 			role: 'user',
 			content: userPrompt,
-			files: _files.length > 0 ? _files : undefined,
+			files: _files.length > 0 ? strippedFiles : undefined,
 			timestamp: Math.floor(Date.now() / 1000), // Unix epoch
 			models: selectedModels
 		};
@@ -1484,10 +2351,13 @@
 		// Add message to history and Set currentId to messageId
 		history.messages[userMessageId] = userMessage;
 		history.currentId = userMessageId;
+		// Cache message in IndexedDB
+		await cacheMessage(userMessage, $chatId);
 
 		// Append messageId to childrenIds of parent message
-		if (messages.length !== 0) {
-			history.messages[messages.at(-1).id].childrenIds.push(userMessageId);
+		if (parentId !== null && history.messages[parentId]) {
+			history.messages[parentId].childrenIds.push(userMessageId);
+			await cacheMessage(history.messages[parentId], $chatId);
 		}
 
 		// focus on chat input
@@ -1549,6 +2419,9 @@
 				history.messages[responseMessageId] = responseMessage;
 				history.currentId = responseMessageId;
 
+				// Cache message in IndexedDB
+				await cacheMessage(responseMessage, _chatId || $chatId);
+
 				// Append messageId to childrenIds of parent message
 				if (parentId !== null && history.messages[parentId]) {
 					// Add null check before accessing childrenIds
@@ -1556,6 +2429,7 @@
 						...history.messages[parentId].childrenIds,
 						responseMessageId
 					];
+					await cacheMessage(history.messages[parentId], _chatId || $chatId);
 				}
 
 				responseMessageIds[`${modelId}-${modelIdx ? modelIdx : _modelIdx}`] = responseMessageId;
@@ -1642,11 +2516,11 @@
 		const responseMessage = _history.messages[responseMessageId];
 		const userMessage = _history.messages[responseMessage.parentId];
 
-		let files = JSON.parse(JSON.stringify(chatFiles));
+		let files = JSON.parse(JSON.stringify(chatFiles)).map(stripCollectionFiles);
 		files.push(
-			...(userMessage?.files ?? []).filter((item) =>
-				['doc', 'file', 'collection'].includes(item.type)
-			),
+			...(userMessage?.files ?? [])
+				.filter((item) => ['doc', 'file', 'collection'].includes(item.type))
+				.map(stripCollectionFiles),
 			...(responseMessage?.files ?? []).filter((item) => ['web_search_results'].includes(item.type))
 		);
 		// Remove duplicates
@@ -1710,6 +2584,8 @@
 		messages = messages
 			.map((message, idx, arr) => ({
 				role: message.role,
+				// Preserve the message ID so backend can use it when inserting into normalized storage
+				...(message.id ? { id: message.id } : {}),
 				...((message.files?.filter((file) => file.type === 'image').length > 0 ?? false) &&
 				message.role === 'user'
 					? {
@@ -2052,7 +2928,9 @@
 				localStorage.token,
 				message.model,
 				history.messages[message.parentId].content,
-				responses
+				responses,
+				_chatId,
+				messageId
 			);
 
 			if (res && res.ok && res.body) {
@@ -2089,6 +2967,8 @@
 				}
 
 				await saveChatHandler(_chatId, history);
+				// Cache the merged message to IndexedDB
+				await cacheMessage(message, _chatId);
 			} else {
 				console.error(res);
 			}
@@ -2107,10 +2987,9 @@
 				models: selectedModels,
 				system: $settings.system ?? undefined,
 				params: params,
-				history: history,
-				messages: createMessagesList(history, history.currentId),
+				// no history/messages in new chat payload
 				tags: [],
-				timestamp: Date.now()
+				timestamp: Math.floor(Date.now() / 1000) // Unix epoch in seconds
 			});
 
 			_chatId = chat.id;
@@ -2132,12 +3011,20 @@
 	const saveChatHandler = async (_chatId, history) => {
 		if ($chatId == _chatId) {
 			if (!$temporaryChatEnabled) {
+				// Lightweight update: do not send full history/messages anymore
+				// But still send currentId to keep active_message_id in sync
 				chat = await updateChatById(localStorage.token, _chatId, {
 					models: selectedModels,
-					history: history,
-					messages: createMessagesList(history, history.currentId),
 					params: params,
-					files: chatFiles
+					files: chatFiles,
+					history: {
+						currentId: history.currentId
+					}
+				});
+				// Invalidate cache since chat was updated
+				chatCache.update((cache) => {
+					cache.delete(_chatId);
+					return cache;
 				});
 				currentChatPage.set(1);
 				await chats.set(await getChatList(localStorage.token, $currentChatPage));
@@ -2148,7 +3035,8 @@
 	let searchActive = false;
 	let searchQuery = '';
 	let includeHidden = false;
-	let matches: string[] = [];
+	// Each match is { messageId: string, occurrenceIndex: number }
+	let matches: Array<{ messageId: string; occurrenceIndex: number }> = [];
 	let currentMatchIndex = -1;
 
 	function openSearch() {
@@ -2173,12 +3061,20 @@
 		}
 		const ids = Object.keys(history.messages);
 		const q = searchQuery.toLowerCase();
-		const found = [];
+		const found: Array<{ messageId: string; occurrenceIndex: number }> = [];
 		for (const id of ids) {
 			const msg = history.messages[id];
 			if (msg.content?.toLowerCase().includes(q)) {
 				if (includeHidden || document.getElementById(`message-${id}`)) {
-					found.push(id);
+					// Count all occurrences in this message
+					const content = msg.content.toLowerCase();
+					let searchIndex = content.indexOf(q);
+					let occurrenceIndex = 0;
+					while (searchIndex !== -1) {
+						found.push({ messageId: id, occurrenceIndex });
+						occurrenceIndex++;
+						searchIndex = content.indexOf(q, searchIndex + 1);
+					}
 				}
 			}
 		}
@@ -2187,20 +3083,52 @@
 		if (currentMatchIndex >= 0) navigateTo(found[0]);
 	}
 
-	function navigateTo(id: string) {
-		showMessage({ id });
-		currentMatchIndex = matches.indexOf(id);
+	function navigateTo(match: { messageId: string; occurrenceIndex: number } | string) {
+		// Handle both old string format (for backwards compatibility) and new match format
+		let messageId: string;
+		let occurrenceIndex = 0;
+
+		if (typeof match === 'string') {
+			messageId = match;
+			// Find first occurrence in this message
+			const firstMatch = matches.find((m) => m.messageId === messageId);
+			if (firstMatch) {
+				occurrenceIndex = firstMatch.occurrenceIndex;
+			}
+		} else {
+			messageId = match.messageId;
+			occurrenceIndex = match.occurrenceIndex;
+		}
+
+		showMessage({ id: messageId }, { skipSave: true, scrollToHighlight: true, occurrenceIndex });
+		currentMatchIndex = matches.findIndex(
+			(m) => m.messageId === messageId && m.occurrenceIndex === occurrenceIndex
+		);
+		if (currentMatchIndex === -1) {
+			// Fallback: find any match in this message
+			currentMatchIndex = matches.findIndex((m) => m.messageId === messageId);
+		}
 	}
 
 	function prevMatch() {
-		if (matches.length && currentMatchIndex > 0) {
-			navigateTo(matches[currentMatchIndex - 1]);
+		if (matches.length) {
+			if (currentMatchIndex > 0) {
+				navigateTo(matches[currentMatchIndex - 1]);
+			} else {
+				// Wrap around to last result
+				navigateTo(matches[matches.length - 1]);
+			}
 		}
 	}
 
 	function nextMatch() {
-		if (matches.length && currentMatchIndex < matches.length - 1) {
-			navigateTo(matches[currentMatchIndex + 1]);
+		if (matches.length) {
+			if (currentMatchIndex < matches.length - 1) {
+				navigateTo(matches[currentMatchIndex + 1]);
+			} else {
+				// Wrap around to first result
+				navigateTo(matches[0]);
+			}
 		}
 	}
 
@@ -2279,7 +3207,7 @@
 							system: $settings.system ?? undefined,
 							params: params,
 							history: history,
-							timestamp: Date.now()
+							timestamp: Math.floor(Date.now() / 1000) // Unix epoch in seconds
 						}
 					}}
 					{history}
@@ -2292,10 +3220,10 @@
 				{#if searchActive}
 					<div
 						class="absolute top-16 left-1/2 transform -translate-x-1/2 z-20
-						bg-white dark:bg-gray-800 p-2 rounded shadow
-						flex flex-col items-start space-y-2 min-w-[250px]"
+						bg-white dark:bg-gray-800 p-3 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700
+						flex flex-col items-start space-y-3 min-w-[320px] max-w-[500px]"
 					>
-						<div class="flex items-center space-x-2 w-full">
+						<div class="flex items-center gap-2 w-full">
 							<input
 								id="chat-search-input"
 								type="text"
@@ -2312,49 +3240,61 @@
 										}
 									}
 								}}
-								class="border rounded px-2 py-1 focus:outline-none flex-1"
+								class="flex-1 px-3 py-1.5 text-sm bg-white dark:bg-gray-900
+								text-gray-900 dark:text-gray-100
+								border border-gray-200 dark:border-gray-700 rounded-lg
+								focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-gray-600
+								placeholder-gray-400 dark:placeholder-gray-500"
 							/>
+							<div class="flex items-center gap-1">
+								<button
+									on:click={prevMatch}
+									disabled={matches.length === 0}
+									class="p-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700
+									disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent
+									transition-colors text-gray-700 dark:text-gray-300"
+									title="Previous match"
+								>
+									<ChevronLeft className="size-4" strokeWidth="2" />
+								</button>
+								<span
+									class="text-xs font-medium whitespace-nowrap flex-shrink-0 text-center min-w-[3ch]
+									text-gray-600 dark:text-gray-400"
+								>
+									{matches.length ? currentMatchIndex + 1 : 0}/{matches.length}
+								</span>
+								<button
+									on:click={nextMatch}
+									disabled={matches.length === 0}
+									class="p-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700
+									disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent
+									transition-colors text-gray-700 dark:text-gray-300"
+									title="Next match"
+								>
+									<ChevronRight className="size-4" strokeWidth="2" />
+								</button>
+							</div>
 							<button
-								on:click={prevMatch}
-								disabled={currentMatchIndex <= 0}
-								class="px-2 disabled:opacity-50"
+								on:click={closeSearch}
+								class="p-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700
+								transition-colors text-gray-600 dark:text-gray-400"
+								title="Close search"
 							>
-								&lt;
-							</button>
-							<span
-								class="text-sm whitespace-nowrap flex-shrink-0 text-center"
-								style="min-width: {`${
-									Math.max(String(currentMatchIndex + 1).length, String(matches.length).length) *
-										2 +
-									1
-								}ch`}"
-							>
-								{matches.length ? currentMatchIndex + 1 : 0}/{matches.length}
-							</span>
-							<button
-								on:click={nextMatch}
-								disabled={currentMatchIndex < 0 || currentMatchIndex >= matches.length - 1}
-								class="px-2 disabled:opacity-50"
-							>
-								&gt;
+								<XMark className="size-4" strokeWidth="2" />
 							</button>
 						</div>
 
-						<!-- second row: checkbox + close -->
+						<!-- second row: toggle switch -->
 						<div class="flex items-center justify-between w-full">
-							<label class="flex items-center text-sm whitespace-nowrap">
-								<input
-									type="checkbox"
-									bind:checked={includeHidden}
-									on:change={updateSearch}
-									class="mr-1"
-								/>
-								Include hidden
-							</label>
-							<button on:click={closeSearch} class="px-2 text-xl leading-none"> &times; </button>
+							<div class="text-xs font-medium text-gray-700 dark:text-gray-300">Include hidden</div>
+							<Switch
+								bind:state={includeHidden}
+								on:change={() => {
+									updateSearch();
+								}}
+							/>
 						</div>
 					</div>
-					<!-- </div> -->
 				{/if}
 
 				<div class="flex flex-col flex-auto z-10 w-full @container">
@@ -2362,6 +3302,7 @@
 						<div
 							class=" pb-2.5 flex flex-col justify-between w-full flex-auto overflow-auto h-0 max-w-full z-10 scrollbar-hidden"
 							id="messages-container"
+							style={`--chat-font-scale: ${$settings?.chatFontScale ?? 1};`}
 							bind:this={messagesContainerElement}
 							on:scroll={(e) => {
 								autoScroll =
@@ -2386,8 +3327,9 @@
 									{chatActionHandler}
 									{addMessages}
 									bottomPadding={files.length > 0}
-									searchMatches={matches}
-									currentMatchId={matches[currentMatchIndex]}
+									searchMatches={matches.map((m) => m.messageId)}
+									currentMatchId={matches[currentMatchIndex]?.messageId || ''}
+									{searchQuery}
 								/>
 							</div>
 						</div>
@@ -2396,6 +3338,7 @@
 							<MessageInput
 								{history}
 								{taskIds}
+								chatId={$chatId}
 								bind:selectedModels
 								bind:files
 								bind:prompt

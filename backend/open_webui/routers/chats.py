@@ -17,17 +17,33 @@ from open_webui.models.folders import Folders
 from open_webui.config import ENABLE_ADMIN_CHAT_ACCESS, ENABLE_ADMIN_EXPORT
 from open_webui.constants import ERROR_MESSAGES
 from open_webui.env import SRC_LOG_LEVELS
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Query, status
 from pydantic import BaseModel
 
 
 from open_webui.utils.auth import get_admin_user, get_verified_user
 from open_webui.utils.access_control import has_permission
+from open_webui.internal.db import get_db
 
 log = logging.getLogger(__name__)
 log.setLevel(SRC_LOG_LEVELS["MODELS"])
 
 router = APIRouter()
+
+
+############################
+# Response Models
+############################
+
+
+class ChatMetadataResponse(BaseModel):
+    """Lean response model with only essential fields for chat listing/selection"""
+    id: str
+    title: str
+    updated_at: int
+    created_at: int
+    pinned: Optional[bool] = False
+    folder_id: Optional[str] = None
 
 ############################
 # GetChatList
@@ -98,7 +114,32 @@ async def get_user_chat_list_by_user_id(
 @router.post("/new", response_model=Optional[ChatResponse])
 async def create_new_chat(form_data: ChatForm, user=Depends(get_verified_user)):
     try:
+        # Create chat with legacy format in chat.chat blob initially
+        # Messages will be inserted via middleware during streaming
         chat = Chats.insert_new_chat(user.id, form_data)
+        
+        # If the chat form has initial messages/history, convert to normalized format
+        # Legacy format includes BOTH history.messages (dict) AND messages (list)
+        # We should check for history.messages first as it contains all messages
+        has_messages = False
+        if form_data.chat and isinstance(form_data.chat, dict):
+            if "history" in form_data.chat:
+                history = form_data.chat["history"]
+                if isinstance(history, dict) and history.get("messages"):
+                    has_messages = True
+            # Also check for flat messages list as fallback
+            if not has_messages and "messages" in form_data.chat and isinstance(form_data.chat["messages"], list) and len(form_data.chat["messages"]) > 0:
+                has_messages = True
+        
+        if chat and chat.id and has_messages:
+            from open_webui.models.chat_converter import legacy_to_normalized_format
+            try:
+                # Regenerate message IDs during import to avoid collisions
+                legacy_to_normalized_format(chat.id, form_data.chat, regenerate_ids=True)
+            except Exception as e:
+                log.error(f"create_new_chat: Exception during legacy_to_normalized_format: {str(e)}", exc_info=True)
+                raise
+        
         return ChatResponse(**chat.model_dump())
     except Exception as e:
         log.exception(e)
@@ -126,6 +167,33 @@ async def import_chat(form_data: ChatImportForm, user=Depends(get_verified_user)
                     and Tags.get_tag_by_name_and_user_id(tag_name, user.id) is None
                 ):
                     Tags.insert_new_tag(tag_name, user.id)
+            
+            # Convert legacy format to normalized format if chat has messages
+            # Legacy format includes BOTH history.messages (dict) AND messages (list)
+            # We should check for history.messages first as it contains all messages
+            has_messages = False
+            if form_data.chat and isinstance(form_data.chat, dict):
+                if "history" in form_data.chat:
+                    history = form_data.chat["history"]
+                    if isinstance(history, dict) and history.get("messages"):
+                        has_messages = True
+                        log.debug(f"import_chat: Found messages in history.messages (dict format)")
+                # Also check for flat messages list as fallback
+                if not has_messages and "messages" in form_data.chat and isinstance(form_data.chat["messages"], list) and len(form_data.chat["messages"]) > 0:
+                    has_messages = True
+                    log.debug(f"import_chat: Found messages in messages list (flat format)")
+            
+            if chat.id and has_messages:
+                log.debug(f"import_chat: Converting legacy format to normalized format for chat {chat.id}")
+                from open_webui.models.chat_converter import legacy_to_normalized_format
+                try:
+                    # Regenerate message IDs during import to avoid collisions
+                    legacy_to_normalized_format(chat.id, form_data.chat, regenerate_ids=True)
+                except Exception as e:
+                    log.error(f"import_chat: Exception during legacy_to_normalized_format: {str(e)}", exc_info=True)
+                    raise
+            elif chat.id:
+                log.warning(f"import_chat: No messages found in imported chat {chat.id}. Chat keys: {list(form_data.chat.keys()) if isinstance(form_data.chat, dict) else 'not a dict'}")
 
         return ChatResponse(**chat.model_dump())
     except Exception as e:
@@ -203,16 +271,60 @@ async def get_user_pinned_chats(user=Depends(get_verified_user)):
 
 
 ############################
+# GetPinnedChatsMetadata
+############################
+
+
+@router.get("/pinned/metadata", response_model=list[ChatMetadataResponse])
+async def get_user_pinned_chats_metadata(user=Depends(get_verified_user)):
+    """
+    Returns a lean list of pinned chats with only essential fields.
+    Excludes full chat JSON and other heavy fields to reduce payload size.
+    Uses optimized query that avoids loading chat.chat JSON blobs.
+    """
+    import time
+    start_time = time.time()
+    
+    # Use fast metadata-only query that avoids loading chat.chat JSON blobs
+    pinned_chats_metadata = Chats.get_pinned_chats_metadata_by_user_id(user.id)
+    
+    total_time = time.time()
+    log.debug(f"[PERF] get_user_pinned_chats_metadata: took {(total_time - start_time) * 1000:.2f}ms for {len(pinned_chats_metadata)} chats")
+    
+    return [
+        ChatMetadataResponse(**chat_meta)
+        for chat_meta in pinned_chats_metadata
+    ]
+
+
+############################
 # GetChats
 ############################
 
 
 @router.get("/all", response_model=list[ChatResponse])
-async def get_user_chats(user=Depends(get_verified_user)):
-    return [
-        ChatResponse(**chat.model_dump())
-        for chat in Chats.get_chats_by_user_id(user.id)
-    ]
+async def get_user_chats(user=Depends(get_verified_user), export: bool = Query(False)):
+    from open_webui.models.chat_converter import normalized_to_legacy_format
+    from open_webui.models.chat_messages import ChatMessage
+    
+    chats = Chats.get_chats_by_user_id(user.id)
+    result = []
+    
+    for chat in chats:
+        # Check if this chat uses normalized storage (has messages in chat_message table)
+        with get_db() as db:
+            has_normalized = db.query(ChatMessage).filter_by(chat_id=chat.id).first() is not None
+        
+        if has_normalized:
+            # Convert from normalized tables to legacy format
+            # If export=True, embed files as base64 for portability
+            legacy_chat = normalized_to_legacy_format(chat.id, embed_files_as_base64=export)
+            # Merge with chat metadata
+            chat.chat = legacy_chat
+        
+        result.append(ChatResponse(**chat.model_dump()))
+    
+    return result
 
 
 ############################
@@ -221,11 +333,28 @@ async def get_user_chats(user=Depends(get_verified_user)):
 
 
 @router.get("/all/archived", response_model=list[ChatResponse])
-async def get_user_archived_chats(user=Depends(get_verified_user)):
-    return [
-        ChatResponse(**chat.model_dump())
-        for chat in Chats.get_archived_chats_by_user_id(user.id)
-    ]
+async def get_user_archived_chats(user=Depends(get_verified_user), export: bool = Query(False)):
+    from open_webui.models.chat_converter import normalized_to_legacy_format
+    from open_webui.models.chat_messages import ChatMessage
+    
+    chats = Chats.get_archived_chats_by_user_id(user.id)
+    result = []
+    
+    for chat in chats:
+        # Check if this chat uses normalized storage (has messages in chat_message table)
+        with get_db() as db:
+            has_normalized = db.query(ChatMessage).filter_by(chat_id=chat.id).first() is not None
+        
+        if has_normalized:
+            # Convert from normalized tables to legacy format
+            # If export=True, embed files as base64 for portability
+            legacy_chat = normalized_to_legacy_format(chat.id, embed_files_as_base64=export)
+            # Merge with chat metadata
+            chat.chat = legacy_chat
+        
+        result.append(ChatResponse(**chat.model_dump()))
+    
+    return result
 
 
 ############################
@@ -235,8 +364,12 @@ async def get_user_archived_chats(user=Depends(get_verified_user)):
 
 @router.get("/all/tags", response_model=list[TagModel])
 async def get_all_user_tags(user=Depends(get_verified_user)):
+    import time
+    start_time = time.time()
     try:
         tags = Tags.get_tags_by_user_id(user.id)
+        total_time = time.time()
+        log.debug(f"[PERF] get_all_user_tags: took {(total_time - start_time) * 1000:.2f}ms, returned {len(tags)} tags")
         return tags
     except Exception as e:
         log.exception(e)
@@ -251,13 +384,33 @@ async def get_all_user_tags(user=Depends(get_verified_user)):
 
 
 @router.get("/all/db", response_model=list[ChatResponse])
-async def get_all_user_chats_in_db(user=Depends(get_admin_user)):
+async def get_all_user_chats_in_db(user=Depends(get_admin_user), export: bool = Query(False)):
     if not ENABLE_ADMIN_EXPORT:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
         )
-    return [ChatResponse(**chat.model_dump()) for chat in Chats.get_chats()]
+    
+    from open_webui.models.chat_converter import normalized_to_legacy_format
+    from open_webui.models.chat_messages import ChatMessage
+    
+    chats = Chats.get_chats()
+    result = []
+    
+    for chat in chats:
+        # Check if this chat uses normalized storage (has messages in chat_message table)
+        with get_db() as db:
+            has_normalized = db.query(ChatMessage).filter_by(chat_id=chat.id).first() is not None
+        
+        if has_normalized:
+            # Convert from normalized tables to legacy format
+            legacy_chat = normalized_to_legacy_format(chat.id)
+            # Merge with chat metadata
+            chat.chat = legacy_chat
+        
+        result.append(ChatResponse(**chat.model_dump()))
+    
+    return result
 
 
 ############################
@@ -341,16 +494,413 @@ async def get_user_chat_list_by_tag_name(
 
 
 @router.get("/{id}", response_model=Optional[ChatResponse])
-async def get_chat_by_id(id: str, user=Depends(get_verified_user)):
+async def get_chat_by_id(id: str, user=Depends(get_verified_user), export: bool = Query(False)):
     chat = Chats.get_chat_by_id_and_user_id(id, user.id)
 
-    if chat:
-        return ChatResponse(**chat.model_dump())
-
-    else:
+    if not chat:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail=ERROR_MESSAGES.NOT_FOUND
         )
+    
+    # Check if this chat uses normalized storage (has messages in chat_message table)
+    from open_webui.models.chat_messages import ChatMessages
+    from open_webui.models.chat_converter import normalized_to_legacy_format
+    
+    # Check if chat has normalized messages
+    with get_db() as db:
+        from open_webui.models.chat_messages import ChatMessage
+        has_normalized = db.query(ChatMessage).filter_by(chat_id=id).first() is not None
+    
+    if has_normalized:
+        # Convert from normalized tables to legacy format
+        # If export=True, embed files as base64 for portability
+        legacy_chat = normalized_to_legacy_format(id, embed_files_as_base64=export)
+        # Merge with chat metadata
+        chat.chat = legacy_chat
+    else:
+        # Legacy chat, use existing chat.chat blob
+        pass
+    
+    return ChatResponse(**chat.model_dump())
+
+
+############################
+# GetChatMeta (lightweight)
+############################
+
+
+class ChatMetaResponse(BaseModel):
+    id: str
+    title: str
+    created_at: int
+    updated_at: int
+    share_id: Optional[str] = None
+    archived: bool
+    pinned: Optional[bool] = False
+    folder_id: Optional[str] = None
+    active_message_id: Optional[str] = None
+    # minimal chat-level fields commonly used by the UI
+    models: list[str] | None = None
+    params: dict | None = None
+    files: list[dict] | None = None
+
+
+@router.get("/{id}/meta", response_model=Optional[ChatMetaResponse])
+async def get_chat_meta_by_id(id: str, user=Depends(get_verified_user)):
+    import time
+    start_time = time.time()
+    
+    chat_metadata = Chats.get_chat_metadata_by_id_and_user_id(id, user.id)
+    if not chat_metadata:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
+        )
+    
+    metadata_time = time.time()
+    log.debug(f"[PERF] get_chat_meta_by_id: metadata query took {(metadata_time - start_time) * 1000:.2f}ms")
+    
+    # Check if this chat uses normalized storage (has messages in chat_message table)
+    from open_webui.models.chat_messages import ChatMessage
+    models = None
+    params = chat_metadata.get("params")
+    files = None
+    
+    with get_db() as db:
+        has_normalized = db.query(ChatMessage).filter_by(chat_id=id).first() is not None
+    
+    if has_normalized:
+        # For normalized chats, extract models from first user message's meta
+        # (models are stored in user message meta, not in chat.chat.models)
+        with get_db() as db:
+            first_user_msg = db.query(ChatMessage).filter_by(
+                chat_id=id,
+                role="user"
+            ).order_by(ChatMessage.created_at.asc()).first()
+            
+            if first_user_msg is not None:
+                msg_meta = getattr(first_user_msg, 'meta', None)
+                if msg_meta and isinstance(msg_meta, dict) and "models" in msg_meta:
+                    models = msg_meta["models"]
+        
+        # For normalized chats, params are stored in chat.params column, not chat.chat.params
+        if chat_metadata.get("params"):
+            params = chat_metadata["params"]
+        
+        # For normalized chats, files are stored in chat.chat.files
+        # Try to extract just the files field using PostgreSQL JSON path extraction for performance
+        # This avoids loading the entire chat.chat JSON blob
+        with get_db() as db:
+            from open_webui.models.chats import Chat
+            try:
+                dialect_name = db.bind.dialect.name
+            except (AttributeError, Exception):
+                dialect_name = None
+            
+            if dialect_name == "postgresql":
+                # Use PostgreSQL JSON path extraction to get only the files field
+                try:
+                    from sqlalchemy import text
+                    result = db.execute(
+                        text("SELECT chat->>'files' as files FROM chat WHERE id = :chat_id AND user_id = :user_id"),
+                        {"chat_id": id, "user_id": user.id}
+                    ).first()
+                    if result and result.files:
+                        import json
+                        files = json.loads(result.files) if isinstance(result.files, str) else result.files
+                    else:
+                        files = None
+                except Exception as e:
+                    log.debug(f"Failed to extract files using JSON path, falling back to full blob: {e}")
+                    # Fall back to loading the blob if JSON extraction fails
+                    chat_json = db.query(Chat.chat).filter_by(id=id, user_id=user.id).first()
+                    if chat_json and chat_json.chat and isinstance(chat_json.chat, dict):
+                        files = chat_json.chat.get("files")
+                    else:
+                        files = None
+            else:
+                # For SQLite or other databases, we need to load the blob
+                # SQLite doesn't support efficient JSON path extraction
+                chat_json = db.query(Chat.chat).filter_by(id=id, user_id=user.id).first()
+                if chat_json and chat_json.chat and isinstance(chat_json.chat, dict):
+                    files = chat_json.chat.get("files")
+                else:
+                    files = None
+    else:
+        # Legacy chat - we need to load chat.chat to get models/files, but only if absolutely necessary
+        # Try to get minimal info from meta first
+        meta = chat_metadata.get("meta", {})
+        if isinstance(meta, dict):
+            # Some legacy chats might store models in meta
+            if "models" in meta:
+                models = meta["models"]
+        
+        # If we still don't have models/files, we need to load chat.chat (unavoidable for legacy)
+        # But only load a small portion if possible
+        if models is None or files is None:
+            with get_db() as db:
+                from open_webui.models.chats import Chat
+                # Use SQL to extract just the fields we need from the JSON blob
+                chat_json = db.query(Chat.chat).filter_by(id=id, user_id=user.id).first()
+                if chat_json and chat_json.chat:
+                    chat_content = chat_json.chat if isinstance(chat_json.chat, dict) else {}
+                    if models is None:
+                        models = chat_content.get("models")
+                    if files is None:
+                        files = chat_content.get("files")
+                    if params is None:
+                        params = chat_content.get("params")
+    
+    total_time = time.time()
+    log.debug(f"[PERF] get_chat_meta_by_id: total took {(total_time - start_time) * 1000:.2f}ms")
+    
+    return ChatMetaResponse(
+        id=chat_metadata["id"],
+        title=chat_metadata["title"],
+        created_at=chat_metadata["created_at"],
+        updated_at=chat_metadata["updated_at"],
+        share_id=chat_metadata["share_id"],
+        archived=chat_metadata["archived"],
+        pinned=chat_metadata["pinned"],
+        folder_id=chat_metadata["folder_id"],
+        active_message_id=chat_metadata["active_message_id"],
+        models=models,
+        params=params,
+        files=files,
+    )
+
+
+############################
+# GetChatSync (lightweight with cache keys for differential sync)
+############################
+
+
+class MessageMetadata(BaseModel):
+    """Lightweight message metadata with cache key (no content/sources/files)"""
+    id: str
+    cache_key: str
+    parent_id: Optional[str] = None
+    role: str
+    model_id: Optional[str] = None
+    position: Optional[int] = None
+    created_at: int
+    updated_at: int
+    children_ids: list[str] = []
+
+
+class ChatSyncResponse(BaseModel):
+    id: str
+    title: str
+    models: list[str] | None = None
+    params: dict | None = None
+    files: list[dict] | None = None
+    history: dict  # { messages: { id: MessageMetadata }, currentId: str }
+    messages: list[dict]  # Array of message IDs with cache_keys (current branch, no content/sources/files)
+
+
+@router.get("/{id}/sync", response_model=Optional[ChatSyncResponse])
+async def get_chat_sync(id: str, user=Depends(get_verified_user)):
+    """
+    Get lightweight chat metadata with message cache keys for differential sync.
+    Returns message metadata (no content/sources/files) so client can determine what needs to be fetched.
+    """
+    from open_webui.models.chat_messages import ChatMessage, compute_cache_key
+    from open_webui.models.chats import Chat
+    
+    # Optimized: Only load minimal Chat fields (id, title, params, active_message_id) - skip huge chat.chat JSON blob
+    # All chats are normalized now, so we don't need the legacy fallback
+    # Use with_entities to select only specific columns (avoids loading chat.chat JSON blob)
+    with get_db() as db:
+        chat_row = db.query(
+            Chat.id,
+            Chat.title,
+            Chat.params,
+            Chat.user_id,
+            Chat.active_message_id
+        ).filter_by(id=id, user_id=user.id).first()
+        
+        if not chat_row:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
+            )
+        
+        # Extract only what we need (chat_row is a tuple-like Row object)
+        chat_id = str(chat_row.id) if chat_row.id else id
+        chat_title = str(chat_row.title) if chat_row.title else "New Chat"
+        chat_params = chat_row.params if chat_row.params and isinstance(chat_row.params, dict) else {}
+        chat_active_message_id = str(chat_row.active_message_id) if chat_row.active_message_id else None
+    
+    # Get all messages for this chat - only load columns we actually need!
+    # Use SQL LENGTH() function to get content length without loading the full content_text
+    # This avoids loading large JSON fields (meta, status, etc.) and huge TEXT fields
+    with get_db() as db:
+        from sqlalchemy import func
+        # Query with content_length computed in SQL to avoid loading huge content_text
+        messages_with_length = db.query(
+            ChatMessage.id,
+            ChatMessage.parent_id,
+            ChatMessage.role,
+            ChatMessage.model_id,
+            ChatMessage.position,
+            ChatMessage.created_at,
+            ChatMessage.updated_at,
+            func.coalesce(func.length(ChatMessage.content_text), 0).label('content_length')
+        ).filter_by(chat_id=id).order_by(ChatMessage.created_at.asc()).all()
+        
+        # Convert to a format we can work with
+        class MessageData:
+            def __init__(self, row):
+                self.id = row.id
+                self.parent_id = row.parent_id
+                self.role = row.role
+                self.model_id = row.model_id
+                self.position = row.position
+                self.created_at = row.created_at
+                self.updated_at = row.updated_at
+                self.content_length = row.content_length
+        
+        all_messages = [MessageData(row) for row in messages_with_length]
+    
+    # Batch fetch all children relationships at once (much faster than per-message queries)
+    # Only load id and parent_id columns
+    message_ids = [str(m.id) for m in all_messages if m.id]
+    children_map: dict[str, list[str]] = {}
+    if message_ids:
+        with get_db() as db:
+            all_children = db.query(
+                ChatMessage.id,
+                ChatMessage.parent_id,
+                ChatMessage.position,
+                ChatMessage.created_at
+            ).filter(
+                ChatMessage.parent_id.in_([m.id for m in all_messages if m.id])
+            ).order_by(
+                ChatMessage.position.asc(),
+                ChatMessage.created_at.asc()
+            ).all()
+            # Group children by parent_id (all_children is now Row objects with .id, .parent_id, etc.)
+            for child in all_children:
+                if child.parent_id:
+                    parent_id_str = str(child.parent_id)
+                    if parent_id_str not in children_map:
+                        children_map[parent_id_str] = []
+                    if child.id:
+                        children_map[parent_id_str].append(str(child.id))
+    
+    # Compute cache keys in parallel for better performance
+    from concurrent.futures import ThreadPoolExecutor
+    
+    def compute_cache_key_sync(msg) -> tuple[str, str]:
+        """Compute cache key for a message (synchronous version for ThreadPoolExecutor)"""
+        msg_id_str = str(msg.id) if msg.id else None
+        cache_key = compute_cache_key(msg)
+        return msg_id_str, cache_key
+    
+    # Use ThreadPoolExecutor to compute cache keys in parallel
+    cache_keys_map: dict[str, str] = {}
+    with ThreadPoolExecutor(max_workers=min(10, len(all_messages))) as executor:
+        futures = [executor.submit(compute_cache_key_sync, msg) for msg in all_messages if msg.id]
+        for future in futures:
+            msg_id_str, cache_key = future.result()
+            if msg_id_str:
+                cache_keys_map[msg_id_str] = cache_key
+    
+    # Build history.messages dict with metadata only (no content/sources/files)
+    messages_metadata: dict[str, MessageMetadata] = {}
+    for msg in all_messages:
+        msg_id_str = str(msg.id) if msg.id else None
+        if not msg_id_str:
+            continue
+        
+        # Get children IDs from pre-computed map
+        children_ids = children_map.get(msg_id_str, [])
+        
+        # Get cache key from pre-computed map
+        cache_key = cache_keys_map.get(msg_id_str, "")
+        
+        messages_metadata[msg_id_str] = MessageMetadata(
+            id=msg_id_str,
+            cache_key=cache_key,
+            parent_id=str(msg.parent_id) if msg.parent_id else None,
+            role=msg.role or "",
+            model_id=msg.model_id,
+            position=msg.position,
+            created_at=int(msg.created_at) if msg.created_at else 0,
+            updated_at=int(msg.updated_at) if msg.updated_at else 0,
+            children_ids=children_ids
+        )
+    
+    # Build messages array (current branch) with only IDs and cache_keys
+    current_id = chat_active_message_id
+    if not current_id and all_messages:
+        # Find the deepest leaf message
+        parent_ids = {str(c.parent_id) for c in all_messages if c.parent_id}
+        leaves = [m for m in all_messages if str(m.id) not in parent_ids]
+        if leaves:
+            leaves.sort(key=lambda m: int(m.created_at) if m.created_at else 0, reverse=True)
+            current_id = str(leaves[0].id) if leaves[0].id else None
+    
+    messages_list = []
+    if current_id:
+        # Walk back from currentId to build the branch
+        msg_map = {str(m.id): m for m in all_messages if m.id}
+        cur = msg_map.get(str(current_id))
+        branch = []
+        while cur:
+            branch.append(cur)
+            if cur.parent_id:
+                cur = msg_map.get(str(cur.parent_id))
+            else:
+                break
+        branch.reverse()
+        
+        for msg in branch:
+            msg_id_str = str(msg.id) if msg.id else None
+            if msg_id_str and msg_id_str in messages_metadata:
+                # Reuse cache key from messages_metadata instead of recomputing
+                cache_key = messages_metadata[msg_id_str].cache_key
+                messages_list.append({
+                    "id": msg_id_str,
+                    "cache_key": cache_key
+                })
+    
+    # Get models from first user message's meta
+    # Note: We need to query this separately since we didn't load meta in the main query
+    models = None
+    first_user_msg = next((m for m in all_messages if m.role == "user"), None)
+    if first_user_msg:
+        # Load meta only for the first user message
+        with get_db() as db:
+            first_user_msg_with_meta = db.query(ChatMessage.meta).filter_by(id=first_user_msg.id).first()
+            if first_user_msg_with_meta and first_user_msg_with_meta.meta and isinstance(first_user_msg_with_meta.meta, dict) and "models" in first_user_msg_with_meta.meta:
+                models = first_user_msg_with_meta.meta["models"]
+    
+    # Get params (already loaded above)
+    params = chat_params
+    
+    # Get files - for normalized chats, files are stored in chat.chat.files
+    # But we don't want to load the entire chat.chat JSON blob just for files
+    # For now, we'll skip files in sync endpoint (they're not needed for differential sync)
+    # If files are needed, we can add a separate lightweight query or store them elsewhere
+    files = None
+    
+    # Convert messages_metadata to dict format for response
+    history_messages_dict = {k: v.model_dump() for k, v in messages_metadata.items()}
+    
+    # Build response
+    return ChatSyncResponse(
+        id=chat_id,
+        title=chat_title,
+        models=models,
+        params=params,
+        files=files,  # None for now - files not needed for sync
+        history={
+            "messages": history_messages_dict,
+            "currentId": current_id
+        },
+        messages=messages_list
+    )
 
 
 ############################
@@ -363,15 +913,103 @@ async def update_chat_by_id(
     id: str, form_data: ChatForm, user=Depends(get_verified_user)
 ):
     chat = Chats.get_chat_by_id_and_user_id(id, user.id)
-    if chat:
-        updated_chat = {**chat.chat, **form_data.chat}
-        chat = Chats.update_chat_by_id(id, updated_chat)
-        return ChatResponse(**chat.model_dump())
-    else:
+    if not chat:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
         )
+    
+    # Check if this chat uses normalized storage
+    from open_webui.models.chat_messages import ChatMessage
+    from open_webui.models.chat_converter import legacy_to_normalized_format, normalized_to_legacy_format
+    from open_webui.models.chats import Chat
+    
+    with get_db() as db:
+        has_normalized = db.query(ChatMessage).filter_by(chat_id=id).first() is not None
+    
+    if has_normalized:
+        # Convert legacy format to normalized tables
+        legacy_to_normalized_format(id, form_data.chat)
+        
+        # Update chat metadata (title, params, etc.)
+        if "title" in form_data.chat:
+            Chats.update_chat_title_by_id(id, form_data.chat["title"])
+        if "params" in form_data.chat:
+            # Clean params - remove models if present (models should be in user message meta, not params)
+            params_clean = form_data.chat["params"].copy() if isinstance(form_data.chat["params"], dict) else {}
+            if "models" in params_clean:
+                del params_clean["models"]
+            with get_db() as db:
+                chat_item = db.query(Chat).filter_by(id=id).first()
+                if chat_item:
+                    # Type ignore: SQLAlchemy Column assignment works at runtime
+                    chat_item.params = params_clean  # type: ignore
+                    db.commit()
+        # Update models: store in first user message's meta (NOT in params)
+        if "models" in form_data.chat:
+            from open_webui.models.chat_messages import ChatMessages, ChatMessage
+            with get_db() as db:
+                # Find the first user message and update its meta
+                first_user_msg = db.query(ChatMessage).filter_by(
+                    chat_id=id,
+                    role="user"
+                ).order_by(ChatMessage.created_at.asc()).first()
+                
+                if first_user_msg:
+                    existing_meta = first_user_msg.meta if first_user_msg.meta else {}
+                    existing_meta["models"] = form_data.chat["models"]
+                    ChatMessages.update_message(first_user_msg.id, meta=existing_meta)
+        
+        # Update active_message_id if history.currentId is present
+        # This handles both full history updates and lightweight updates that only send currentId
+        if "history" in form_data.chat and isinstance(form_data.chat["history"], dict):
+            history_current_id = form_data.chat["history"].get("currentId")
+            if history_current_id:
+                Chats.update_chat_active_and_root_message_ids(id, active_message_id=history_current_id)
+        
+        # Generate legacy response for the API response (includes full message history)
+        legacy_chat_response = normalized_to_legacy_format(id)
+        
+        # Persist only minimal chat metadata (no message history) to the database
+        # Read current chat blob and merge only metadata fields
+        with get_db() as db:
+            from open_webui.models.chats import Chat
+            chat_item = db.query(Chat).filter_by(id=id).first()
+            if chat_item:
+                existing_chat = chat_item.chat if chat_item.chat else {}
+                # Update only metadata fields, preserve anything else that might be there
+                minimal_chat = dict(existing_chat)
+                # Strip collections from chat-level files to remove files array and data.file_ids
+                files_list = legacy_chat_response.get("files", [])
+                if isinstance(files_list, list):
+                    from open_webui.models.chat_converter import strip_collection_files
+                    minimal_chat["files"] = [strip_collection_files(f) for f in files_list]
+                else:
+                    minimal_chat["files"] = files_list
+                minimal_chat["params"] = legacy_chat_response.get("params", {})
+                minimal_chat["models"] = legacy_chat_response.get("models", [])
+                if "title" in legacy_chat_response:
+                    minimal_chat["title"] = legacy_chat_response["title"]
+                # Explicitly remove history and messages if present
+                if "history" in minimal_chat:
+                    del minimal_chat["history"]
+                if "messages" in minimal_chat:
+                    del minimal_chat["messages"]
+                chat_item.chat = minimal_chat
+                db.commit()
+
+        # Reload chat model for response with full legacy payload
+        chat = Chats.get_chat_by_id_and_user_id(id, user.id)
+        if chat:
+            chat_data = chat.model_dump()
+            chat_data["chat"] = legacy_chat_response
+            return ChatResponse(**chat_data)
+    else:
+        # Legacy chat, update the JSON blob
+        updated_chat = {**chat.chat, **form_data.chat}
+        chat = Chats.update_chat_by_id(id, updated_chat)
+    
+    return ChatResponse(**chat.model_dump())
 
 
 ############################
@@ -557,15 +1195,30 @@ async def clone_chat_by_id(
 ):
     chat = Chats.get_chat_by_id_and_user_id(id, user.id)
     if chat:
-        updated_chat = {
-            **chat.chat,
-            "originalChatId": chat.id,
-            "branchPointMessageId": chat.chat["history"]["currentId"],
-            "title": form_data.title if form_data.title else f"Clone of {chat.title}",
-        }
-
-        chat = Chats.insert_new_chat(user.id, ChatForm(**{"chat": updated_chat}))
-        return ChatResponse(**chat.model_dump())
+        # Use the new clone_chat method which handles normalized messages properly
+        new_title = form_data.title if form_data.title else None
+        cloned_chat = Chats.clone_chat(id, user.id, new_title)
+        
+        if cloned_chat:
+            # Convert to legacy format for response if needed
+            from open_webui.models.chat_converter import normalized_to_legacy_format
+            from open_webui.models.chat_messages import ChatMessage
+            from open_webui.internal.db import get_db
+            
+            with get_db() as db:
+                has_normalized = db.query(ChatMessage).filter_by(chat_id=cloned_chat.id).first() is not None
+            
+            if has_normalized:
+                # Convert from normalized tables to legacy format for response
+                legacy_chat = normalized_to_legacy_format(cloned_chat.id)
+                cloned_chat.chat = legacy_chat
+            
+            return ChatResponse(**cloned_chat.model_dump())
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+                detail="Failed to clone chat"
+            )
     else:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail=ERROR_MESSAGES.DEFAULT()
@@ -586,15 +1239,29 @@ async def clone_shared_chat_by_id(id: str, user=Depends(get_verified_user)):
         chat = Chats.get_chat_by_share_id(id)
 
     if chat:
-        updated_chat = {
-            **chat.chat,
-            "originalChatId": chat.id,
-            "branchPointMessageId": chat.chat["history"]["currentId"],
-            "title": f"Clone of {chat.title}",
-        }
-
-        chat = Chats.insert_new_chat(user.id, ChatForm(**{"chat": updated_chat}))
-        return ChatResponse(**chat.model_dump())
+        # Use the new clone_chat method which handles normalized messages properly
+        cloned_chat = Chats.clone_chat(chat.id, user.id, None)
+        
+        if cloned_chat:
+            # Convert to legacy format for response if needed
+            from open_webui.models.chat_converter import normalized_to_legacy_format
+            from open_webui.models.chat_messages import ChatMessage
+            from open_webui.internal.db import get_db
+            
+            with get_db() as db:
+                has_normalized = db.query(ChatMessage).filter_by(chat_id=cloned_chat.id).first() is not None
+            
+            if has_normalized:
+                # Convert from normalized tables to legacy format for response
+                legacy_chat = normalized_to_legacy_format(cloned_chat.id)
+                cloned_chat.chat = legacy_chat
+            
+            return ChatResponse(**cloned_chat.model_dump())
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+                detail="Failed to clone chat"
+            )
     else:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail=ERROR_MESSAGES.DEFAULT()
@@ -715,14 +1382,26 @@ async def update_chat_folder_id_by_id(
 
 @router.get("/{id}/tags", response_model=list[TagModel])
 async def get_chat_tags_by_id(id: str, user=Depends(get_verified_user)):
-    chat = Chats.get_chat_by_id_and_user_id(id, user.id)
-    if chat:
-        tags = chat.meta.get("tags", [])
-        return Tags.get_tags_by_ids_and_user_id(tags, user.id)
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail=ERROR_MESSAGES.NOT_FOUND
-        )
+    import time
+    start_time = time.time()
+    
+    from open_webui.models.chats import Chat
+    with get_db() as db:
+        chat_meta = db.query(Chat.meta).filter_by(id=id, user_id=user.id).first()
+        if not chat_meta:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail=ERROR_MESSAGES.NOT_FOUND
+            )
+        
+        meta = chat_meta.meta if chat_meta.meta and isinstance(chat_meta.meta, dict) else {}
+        tags = meta.get("tags", [])
+    
+    tags_result = Tags.get_tags_by_ids_and_user_id(tags, user.id)
+    
+    total_time = time.time()
+    log.debug(f"[PERF] get_chat_tags_by_id: took {(total_time - start_time) * 1000:.2f}ms")
+    
+    return tags_result
 
 
 ############################

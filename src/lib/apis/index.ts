@@ -1,4 +1,4 @@
-import { WEBUI_API_BASE_URL, WEBUI_BASE_URL } from '$lib/constants';
+import { WEBUI_API_BASE_URL, WEBUI_BASE_URL, WEBUI_VERSION } from '$lib/constants';
 import { convertOpenApiToToolPayload } from '$lib/utils';
 import { getOpenAIModelsDirect } from './openai';
 
@@ -770,7 +770,9 @@ export const generateAutoCompletion = async (
 	model: string,
 	prompt: string,
 	messages?: object[],
-	type: string = 'search query'
+	type: string = 'search query',
+	chatId?: string,
+	messageId?: string
 ) => {
 	const controller = new AbortController();
 	let error = null;
@@ -788,7 +790,9 @@ export const generateAutoCompletion = async (
 			prompt: prompt,
 			...(messages && { messages: messages }),
 			type: type,
-			stream: false
+			stream: false,
+			...(chatId && { chat_id: chatId }),
+			...(messageId && { message_id: messageId })
 		})
 	})
 		.then(async (res) => {
@@ -840,7 +844,9 @@ export const generateMoACompletion = async (
 	token: string = '',
 	model: string,
 	prompt: string,
-	responses: string[]
+	responses: string[],
+	chatId?: string,
+	messageId?: string
 ) => {
 	const controller = new AbortController();
 	let error = null;
@@ -857,7 +863,9 @@ export const generateMoACompletion = async (
 			model: model,
 			prompt: prompt,
 			responses: responses,
-			stream: true
+			stream: true,
+			...(chatId && { chat_id: chatId }),
+			...(messageId && { message_id: messageId })
 		})
 	}).catch((err) => {
 		console.log(err);
@@ -1217,30 +1225,11 @@ export const getChangelog = async () => {
 };
 
 export const getVersionUpdates = async (token: string) => {
-	let error = null;
-
-	const res = await fetch(`${WEBUI_BASE_URL}/api/version/updates`, {
-		method: 'GET',
-		headers: {
-			'Content-Type': 'application/json',
-			Authorization: `Bearer ${token}`
-		}
-	})
-		.then(async (res) => {
-			if (!res.ok) throw await res.json();
-			return res.json();
-		})
-		.catch((err) => {
-			console.log(err);
-			error = err;
-			return null;
-		});
-
-	if (error) {
-		throw error;
-	}
-
-	return res;
+	// this endpoint took WAY too long so i'm stubbing it. i'm not doing releases atm anyway.
+	return {
+		current: WEBUI_VERSION,
+		latest: WEBUI_VERSION
+	};
 };
 
 export const getModelFilterConfig = async (token: string) => {

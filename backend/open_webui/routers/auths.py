@@ -102,6 +102,10 @@ async def get_session_user(
         user.id, request.app.state.config.USER_PERMISSIONS
     )
 
+    # Convert relative file URLs to absolute URLs for user profile images
+    from open_webui.utils.model_images import convert_file_url_to_absolute
+    profile_image_url = convert_file_url_to_absolute(request, user.profile_image_url)
+
     return {
         "token": token,
         "token_type": "Bearer",
@@ -110,7 +114,7 @@ async def get_session_user(
         "email": user.email,
         "name": user.name,
         "role": user.role,
-        "profile_image_url": user.profile_image_url,
+        "profile_image_url": profile_image_url,
         "permissions": user_permissions,
     }
 
@@ -122,15 +126,30 @@ async def get_session_user(
 
 @router.post("/update/profile", response_model=UserResponse)
 async def update_profile(
-    form_data: UpdateProfileForm, session_user=Depends(get_verified_user)
+    request: Request,
+    form_data: UpdateProfileForm, 
+    session_user=Depends(get_verified_user)
 ):
     if session_user:
+        # Convert base64 image to filesystem storage if needed
+        from open_webui.utils.model_images import get_or_create_model_image_file
+        profile_image_url = form_data.profile_image_url
+        if profile_image_url:
+            profile_image_url = get_or_create_model_image_file(
+                request, session_user.id, profile_image_url
+            )
+        
         user = Users.update_user_by_id(
             session_user.id,
-            {"profile_image_url": form_data.profile_image_url, "name": form_data.name},
+            {"profile_image_url": profile_image_url, "name": form_data.name},
         )
         if user:
-            return user
+            # Convert relative file URL to absolute URL for response
+            from open_webui.utils.model_images import convert_file_url_to_absolute
+            user_dict = user.model_dump()
+            user_dict["profile_image_url"] = convert_file_url_to_absolute(request, user.profile_image_url)
+            from open_webui.models.users import UserModel
+            return UserModel(**user_dict)
         else:
             raise HTTPException(400, detail=ERROR_MESSAGES.DEFAULT())
     else:
@@ -306,6 +325,10 @@ async def ldap_auth(request: Request, response: Response, form_data: LdapForm):
                     user.id, request.app.state.config.USER_PERMISSIONS
                 )
 
+                # Convert relative file URLs to absolute URLs for user profile images
+                from open_webui.utils.model_images import convert_file_url_to_absolute
+                profile_image_url = convert_file_url_to_absolute(request, user.profile_image_url)
+
                 return {
                     "token": token,
                     "token_type": "Bearer",
@@ -313,7 +336,7 @@ async def ldap_auth(request: Request, response: Response, form_data: LdapForm):
                     "email": user.email,
                     "name": user.name,
                     "role": user.role,
-                    "profile_image_url": user.profile_image_url,
+                    "profile_image_url": profile_image_url,
                     "permissions": user_permissions,
                 }
             else:
