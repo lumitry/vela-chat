@@ -94,6 +94,26 @@ export const processResponseContent = (content: string) => {
 	return content.trim();
 };
 
+/**
+ * Escapes single tildes (~) that aren't part of double tildes (~~) to prevent
+ * them from being interpreted as strikethrough by Marked.
+ * This allows single tildes used for approximations (e.g., "~2 Month Timeline") to render correctly.
+ */
+export const escapeSingleTildes = (content: string): string => {
+	// Use a more unique placeholder that's unlikely to appear in content
+	// Using a combination that includes non-printable characters
+	const DOUBLE_TILDE_PLACEHOLDER = '\uE000\uE001\uE002';
+	let processed = content.replace(/~~/g, DOUBLE_TILDE_PLACEHOLDER);
+
+	// Now escape all remaining single tildes
+	processed = processed.replace(/~/g, '\\~');
+
+	// Restore the double tildes
+	processed = processed.replace(new RegExp(DOUBLE_TILDE_PLACEHOLDER, 'g'), '~~');
+
+	return processed;
+};
+
 export function unescapeHtml(html: string) {
 	const doc = new DOMParser().parseFromString(html, 'text/html');
 	return doc.documentElement.textContent;
@@ -733,33 +753,36 @@ export const getSiteTitleFromUrl = (url: string, maxLength: number = 30): string
 
 		// Remove common subdomains (www., en., m., mobile., api., etc.)
 		// This regex removes common subdomain prefixes
-		hostname = hostname.replace(/^(www\.|en\.|m\.|mobile\.|api\.|www2\.|secure\.|mail\.|blog\.|news\.|shop\.|store\.)/i, '');
+		hostname = hostname.replace(
+			/^(www\.|en\.|m\.|mobile\.|api\.|www2\.|secure\.|mail\.|blog\.|news\.|shop\.|store\.)/i,
+			''
+		);
 
 		// Extract the main domain name (e.g., "wikipedia.org" -> "wikipedia")
 		const parts = hostname.split('.');
-		
+
 		// Handle common TLDs and get the main domain part
 		// For most cases, the first part is the domain name
 		// For multi-part TLDs like .co.uk, we still want the first part
 		let domainName = parts[0];
-		
+
 		// Special handling for common sites
 		const siteNameMap: Record<string, string> = {
-			'wikipedia': 'Wikipedia',
-			'reddit': 'Reddit',
-			'stackoverflow': 'Stack Overflow',
-			'github': 'GitHub',
-			'youtube': 'YouTube',
-			'twitter': 'Twitter',
-			'x': 'X',
-			'facebook': 'Facebook',
-			'instagram': 'Instagram',
-			'linkedin': 'LinkedIn',
-			'medium': 'Medium',
-			'quora': 'Quora',
-			'stackexchange': 'Stack Exchange',
-			'news': 'News',
-			'blog': 'Blog'
+			wikipedia: 'Wikipedia',
+			reddit: 'Reddit',
+			stackoverflow: 'Stack Overflow',
+			github: 'GitHub',
+			youtube: 'YouTube',
+			twitter: 'Twitter',
+			x: 'X',
+			facebook: 'Facebook',
+			instagram: 'Instagram',
+			linkedin: 'LinkedIn',
+			medium: 'Medium',
+			quora: 'Quora',
+			stackexchange: 'Stack Exchange',
+			news: 'News',
+			blog: 'Blog'
 		};
 
 		// Check if we have a mapping for this domain
@@ -772,7 +795,7 @@ export const getSiteTitleFromUrl = (url: string, maxLength: number = 30): string
 		const capitalized = domainName
 			.replace(/([a-z])([A-Z])/g, '$1 $2') // Add space before capital letters
 			.split(' ')
-			.map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+			.map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
 			.join(' ');
 
 		// Truncate if necessary
@@ -786,10 +809,10 @@ export const getSiteTitleFromUrl = (url: string, maxLength: number = 30): string
 		const domain = url.replace(/^https?:\/\//, '').split(/[/?#]/)[0];
 		const parts = domain.split('.');
 		const domainName = parts[0] || domain;
-		
+
 		// Capitalize and truncate
 		const capitalized = domainName.charAt(0).toUpperCase() + domainName.slice(1).toLowerCase();
-		return capitalized.length > maxLength 
+		return capitalized.length > maxLength
 			? capitalized.substring(0, maxLength - 3) + '...'
 			: capitalized;
 	}
