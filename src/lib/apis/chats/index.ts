@@ -179,12 +179,14 @@ export const getArchivedChatList = async (token: string = '') => {
 export const getAllChats = async (token: string, forExport: boolean = false) => {
 	let error = null;
 
-	const url = new URL(`${WEBUI_API_BASE_URL}/chats/all`);
+	const searchParams = new URLSearchParams();
 	if (forExport) {
-		url.searchParams.append('export', 'true');
+		searchParams.append('export', 'true');
 	}
 
-	const res = await fetch(url.toString(), {
+	const url = `${WEBUI_API_BASE_URL}/chats/all${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
+
+	const res = await fetch(url, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',
@@ -294,12 +296,14 @@ export const getChatsByFolderId = async (token: string, folderId: string) => {
 export const getAllArchivedChats = async (token: string, forExport: boolean = false) => {
 	let error = null;
 
-	const url = new URL(`${WEBUI_API_BASE_URL}/chats/all/archived`);
+	const searchParams = new URLSearchParams();
 	if (forExport) {
-		url.searchParams.append('export', 'true');
+		searchParams.append('export', 'true');
 	}
 
-	const res = await fetch(url.toString(), {
+	const url = `${WEBUI_API_BASE_URL}/chats/all/archived${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
+
+	const res = await fetch(url, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',
@@ -574,12 +578,14 @@ export const getChatById = async (
 ) => {
 	let error = null;
 
-	const url = new URL(`${WEBUI_API_BASE_URL}/chats/${id}`);
+	const searchParams = new URLSearchParams();
 	if (forExport) {
-		url.searchParams.append('export', 'true');
+		searchParams.append('export', 'true');
 	}
 
-	const res = await fetch(url.toString(), {
+	const url = `${WEBUI_API_BASE_URL}/chats/${id}${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
+
+	const res = await fetch(url, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',
