@@ -12,12 +12,27 @@
 		TimeScale
 	} from 'chart.js';
 	import 'chartjs-adapter-date-fns';
-	import { getTimeScaleConfig, getTooltipConfig, getCurrencyTooltipConfig, getCurrencyYTicks, getChartColors, getChartDefaults } from '$lib/utils/charts';
+	import {
+		getTimeScaleConfig,
+		getTooltipConfig,
+		getCurrencyYTicks,
+		getChartColors,
+		getChartDefaults
+	} from '$lib/utils/charts';
 	import { formatSmartCurrency } from '$lib/utils/currency';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import Switch from '$lib/components/common/Switch.svelte';
 
-	ChartJS.register(Title, Tooltip, Legend, LineElement, CategoryScale, LinearScale, PointElement, TimeScale);
+	ChartJS.register(
+		Title,
+		Tooltip,
+		Legend,
+		LineElement,
+		CategoryScale,
+		LinearScale,
+		PointElement,
+		TimeScale
+	);
 
 	export let tokensData: Array<{
 		date: string;
@@ -56,7 +71,10 @@
 		return map;
 	})();
 
-	$: allDates = currentData && Array.isArray(currentData) ? [...new Set(currentData.map((d) => d.date).filter(Boolean))].sort() : [];
+	$: allDates =
+		currentData && Array.isArray(currentData)
+			? [...new Set(currentData.map((d) => d.date).filter(Boolean))].sort()
+			: [];
 
 	$: datasets = (() => {
 		if (!allDates.length || !modelMap.size) {
@@ -119,7 +137,18 @@
 				position: 'right' as const
 			},
 			tooltip: showCost
-				? getCurrencyTooltipConfig('Cost')
+				? {
+						...getTooltipConfig({
+							formatLabel: (context: any) => {
+								const value = context.parsed.y || 0;
+								return `${context.dataset.label}: ${formatSmartCurrency(value)}`;
+							}
+						}),
+						filter: (tooltipItem: any) => {
+							// Only show tooltip items with nonzero values
+							return (tooltipItem.parsed?.y || 0) > 0;
+						}
+					}
 				: {
 						...getTooltipConfig({
 							formatLabel: (context: any) => {
