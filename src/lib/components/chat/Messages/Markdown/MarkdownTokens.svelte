@@ -114,7 +114,12 @@
 		<hr class=" border-gray-100 dark:border-gray-850" />
 	{:else if token.type === 'heading'}
 		<svelte:element this={headerComponent(token.depth)} dir="auto">
-			<MarkdownInlineTokens id={`${id}-${tokenIdx}-h`} tokens={token.tokens} {onSourceClick} {searchQuery} />
+			<MarkdownInlineTokens
+				id={`${id}-${tokenIdx}-h`}
+				tokens={token.tokens}
+				{onSourceClick}
+				{searchQuery}
+			/>
 		</svelte:element>
 	{:else if token.type === 'code'}
 		{#if token.raw.includes('```')}
@@ -226,9 +231,15 @@
 		{#if alert}
 			<AlertRenderer {token} {alert} />
 		{:else}
-		<blockquote dir="auto">
-			<svelte:self id={`${id}-${tokenIdx}`} tokens={token.tokens} {onTaskClick} {onSourceClick} {searchQuery} />
-		</blockquote>
+			<blockquote dir="auto">
+				<svelte:self
+					id={`${id}-${tokenIdx}`}
+					tokens={token.tokens}
+					{onTaskClick}
+					{onSourceClick}
+					{searchQuery}
+				/>
+			</blockquote>
 		{/if}
 	{:else if token.type === 'list'}
 		{#if token.ordered}
@@ -334,7 +345,12 @@
 			title={token.fileId}
 			width="100%"
 			frameborder="0"
-			onload="this.style.height=(this.contentWindow.document.body.scrollHeight+20)+'px';"
+			on:load={(e) => {
+				const iframe = e.target as HTMLIFrameElement;
+				if (iframe.contentWindow?.document?.body) {
+					iframe.style.height = iframe.contentWindow.document.body.scrollHeight + 20 + 'px';
+				}
+			}}
 		></iframe>
 	{:else if token.type === 'paragraph'}
 		<p dir="auto">
@@ -349,7 +365,12 @@
 		{#if top}
 			<p>
 				{#if token.tokens}
-					<MarkdownInlineTokens id={`${id}-${tokenIdx}-t`} tokens={token.tokens} {onSourceClick} {searchQuery} />
+					<MarkdownInlineTokens
+						id={`${id}-${tokenIdx}-t`}
+						tokens={token.tokens}
+						{onSourceClick}
+						{searchQuery}
+					/>
 				{:else}
 					{unescapeHtml(token.text)}
 				{/if}

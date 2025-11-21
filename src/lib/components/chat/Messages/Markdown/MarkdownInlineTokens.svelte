@@ -121,7 +121,12 @@
 			title={token.fileId}
 			width="100%"
 			frameborder="0"
-			onload="this.style.height=(this.contentWindow.document.body.scrollHeight+20)+'px';"
+			on:load={(e) => {
+				const iframe = e.target as HTMLIFrameElement;
+				if (iframe.contentWindow?.document?.body) {
+					iframe.style.height = iframe.contentWindow.document.body.scrollHeight + 20 + 'px';
+				}
+			}}
 		></iframe>
 	{:else if token.type === 'text'}
 		{#if $settings?.showHexColorSwatches ?? true}

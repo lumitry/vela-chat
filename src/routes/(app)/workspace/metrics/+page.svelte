@@ -141,29 +141,26 @@
 	let isUpdatingURL = false;
 	let isInitialized = false;
 
-	// Generate cache key from params
-	const getCacheKey = (endpoint: string, params: MetricsParams): string => {
-		const keyParts = [
-			endpoint,
-			params.model_type || 'both',
-			params.start_date || '',
-			params.end_date || '',
-			params.limit?.toString() || ''
-		];
-		return keyParts.join('|');
-	};
-
 	// Fetch a single metric endpoint with race condition protection
-	const fetchMetric = async <T,>(
+	async function fetchMetric<T>(
 		endpoint: string,
 		fetcher: (token: string, params: MetricsParams) => Promise<T>,
 		params: MetricsParams,
 		loadingSetter: (value: boolean) => void,
 		dataSetter: (value: T) => void,
 		requestId: number
-	) => {
+	) {
+		// Store endpoint in const to ensure it's captured properly in Svelte 5
+		const endpointKey = endpoint;
 		const token = localStorage.token;
-		const cacheKey = getCacheKey(endpoint, params);
+		// Inline cache key generation to avoid Svelte 5 scoping issues
+		const cacheKey = [
+			endpointKey,
+			params.model_type || 'both',
+			params.start_date || '',
+			params.end_date || '',
+			params.limit?.toString() || ''
+		].join('|');
 		const cache = $metricsCache;
 		const cached = cache.get(cacheKey);
 
@@ -189,7 +186,7 @@
 		} catch (error) {
 			// Only show error if this is still the current request
 			if (requestId === currentRequestId) {
-				console.error(`Error fetching ${endpoint}:`, error);
+				console.error(`Error fetching ${endpointKey}:`, error);
 				toast.error($i18n.t('Failed to load metrics'));
 			}
 		} finally {
@@ -198,7 +195,7 @@
 				loadingSetter(false);
 			}
 		}
-	};
+	}
 
 	const fetchAllMetrics = async () => {
 		// Validate dates before fetching

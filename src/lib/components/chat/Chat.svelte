@@ -1712,8 +1712,8 @@
 
 		await tick();
 
-		if ($chatId == chatId) {
-			if (!$temporaryChatEnabled) {
+		if (get(chatId) == chatId) {
+			if (!get(temporaryChatEnabled)) {
 				// Strip content, sources, and files from messages array to reduce bandwidth (backend will look them up from history.messages)
 				const messagesWithoutContent = messages.map((m) => {
 					const { content, sources, files, ...rest } = m;
@@ -1733,7 +1733,7 @@
 				});
 
 				currentChatPage.set(1);
-				await chats.set(await getChatList(localStorage.token, $currentChatPage));
+				await chats.set(await getChatList(localStorage.token, get(currentChatPage)));
 			}
 		}
 
@@ -1777,8 +1777,8 @@
 			}
 		}
 
-		if ($chatId == chatId) {
-			if (!$temporaryChatEnabled) {
+		if (get(chatId) == chatId) {
+			if (!get(temporaryChatEnabled)) {
 				chat = await updateChatById(localStorage.token, chatId, {
 					models: selectedModels,
 					messages: messages,
@@ -1788,7 +1788,7 @@
 				});
 
 				currentChatPage.set(1);
-				await chats.set(await getChatList(localStorage.token, $currentChatPage));
+				await chats.set(await getChatList(localStorage.token, get(currentChatPage)));
 			}
 		}
 	};
@@ -1964,14 +1964,14 @@
 				} else {
 					message.content += value;
 
-					if (navigator.vibrate && ($settings?.hapticFeedback ?? false)) {
+					if (navigator.vibrate && (get(settings)?.hapticFeedback ?? false)) {
 						navigator.vibrate(5);
 					}
 
 					// Emit chat event for TTS
 					const messageContentParts = getMessageContentParts(
 						message.content,
-						$config?.audio?.tts?.split_on ?? 'punctuation'
+						get(config)?.audio?.tts?.split_on ?? 'punctuation'
 					);
 					messageContentParts.pop();
 
@@ -2014,14 +2014,14 @@
 
 			message.content = content;
 
-			if (navigator.vibrate && ($settings?.hapticFeedback ?? false)) {
+			if (navigator.vibrate && (get(settings)?.hapticFeedback ?? false)) {
 				navigator.vibrate(5);
 			}
 
 			// Emit chat event for TTS
 			const messageContentParts = getMessageContentParts(
 				message.content,
-				$config?.audio?.tts?.split_on ?? 'punctuation'
+				get(config)?.audio?.tts?.split_on ?? 'punctuation'
 			);
 			messageContentParts.pop();
 
@@ -2085,7 +2085,7 @@
 				// Skip cost estimation if usage.cost is already available
 				if (!usage.cost) {
 					// Calculate cost estimates if model pricing is available
-					const model = $models.find((m) => m.id === message.model);
+					const model = get(models).find((m) => m.id === message.model);
 					// console.log('Model for cost estimates:', model);
 					const inputTokens = usage.prompt_tokens || 0;
 					const outputTokens =
@@ -2131,7 +2131,7 @@
 			message.usage = usage;
 
 			// Update the entire chat in database when we receive completion with tokens info
-			if (done && $chatId) {
+			if (done && get(chatId)) {
 				// We need to update the entire chat record with the new usage data
 				const chatToUpdate = JSON.parse(JSON.stringify(history));
 
@@ -2141,7 +2141,7 @@
 				}
 
 				try {
-					updateChatById(localStorage.token, $chatId, {
+					updateChatById(localStorage.token, get(chatId), {
 						chat: {
 							models: selectedModels,
 							messages: createMessagesList(chatToUpdate, chatToUpdate.currentId),
@@ -3009,8 +3009,8 @@
 	};
 
 	const saveChatHandler = async (_chatId, history) => {
-		if ($chatId == _chatId) {
-			if (!$temporaryChatEnabled) {
+		if (get(chatId) == _chatId) {
+			if (!get(temporaryChatEnabled)) {
 				// Lightweight update: do not send full history/messages anymore
 				// But still send currentId to keep active_message_id in sync
 				chat = await updateChatById(localStorage.token, _chatId, {
@@ -3027,7 +3027,7 @@
 					return cache;
 				});
 				currentChatPage.set(1);
-				await chats.set(await getChatList(localStorage.token, $currentChatPage));
+				await chats.set(await getChatList(localStorage.token, get(currentChatPage)));
 			}
 		}
 	};

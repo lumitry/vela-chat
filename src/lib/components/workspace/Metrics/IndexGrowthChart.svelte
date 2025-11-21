@@ -1,21 +1,26 @@
 <script lang="ts">
-	import { Line } from 'svelte-chartjs';
+	import { onMount, onDestroy } from 'svelte';
 	import {
 		Chart as ChartJS,
 		Title,
 		Tooltip,
 		Legend,
 		LineElement,
+		LineController,
 		CategoryScale,
 		LinearScale,
 		PointElement,
-		TimeScale
+		TimeScale,
+		type ChartConfiguration
 	} from 'chart.js';
 	import 'chartjs-adapter-date-fns';
 	import { getTimeScaleConfig, getTooltipConfig, transformToTimeSeriesData, getChartColors, getChartDefaults } from '$lib/utils/charts';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 
-	ChartJS.register(Title, Tooltip, Legend, LineElement, CategoryScale, LinearScale, PointElement, TimeScale);
+	ChartJS.register(Title, Tooltip, Legend, LineElement, LineController, CategoryScale, LinearScale, PointElement, TimeScale);
+
+	let canvasElement: HTMLCanvasElement;
+	let chartInstance: ChartJS<'line'> | null = null;
 
 	export let data: Array<{ date: string; vector_count: number }> = [];
 	export let loading: boolean = false;
@@ -68,6 +73,31 @@
 			}
 		}
 	};
+
+	$: if (canvasElement && data && data.length > 0) {
+		if (chartInstance) {
+			chartInstance.data = chartData;
+			chartInstance.options = chartOptions;
+			chartInstance.update();
+		} else {
+			const config: ChartConfiguration<'line'> = {
+				type: 'line',
+				data: chartData,
+				options: chartOptions
+			};
+			chartInstance = new ChartJS(canvasElement, config);
+		}
+	} else if (chartInstance) {
+		chartInstance.destroy();
+		chartInstance = null;
+	}
+
+	onDestroy(() => {
+		if (chartInstance) {
+			chartInstance.destroy();
+			chartInstance = null;
+		}
+	});
 </script>
 
 <div class="w-full h-64">
@@ -76,7 +106,7 @@
 			<Spinner />
 		</div>
 	{:else if data && data.length > 0}
-		<Line data={chartData} options={chartOptions} />
+		<canvas bind:this={canvasElement}></canvas>
 	{:else}
 		<div class="flex flex-col items-center justify-center h-full text-gray-500 text-sm">
 			<div>No index growth data for this date range</div>

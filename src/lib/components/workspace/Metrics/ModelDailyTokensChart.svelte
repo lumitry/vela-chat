@@ -1,15 +1,17 @@
 <script lang="ts">
-	import { Line } from 'svelte-chartjs';
+	import { onMount, onDestroy } from 'svelte';
 	import {
 		Chart as ChartJS,
 		Title,
 		Tooltip,
 		Legend,
 		LineElement,
+		LineController,
 		CategoryScale,
 		LinearScale,
 		PointElement,
-		TimeScale
+		TimeScale,
+		type ChartConfiguration
 	} from 'chart.js';
 	import 'chartjs-adapter-date-fns';
 	import {
@@ -28,11 +30,15 @@
 		Tooltip,
 		Legend,
 		LineElement,
+		LineController,
 		CategoryScale,
 		LinearScale,
 		PointElement,
 		TimeScale
 	);
+
+	let canvasElement: HTMLCanvasElement;
+	let chartInstance: ChartJS<'line'> | null = null;
 
 	export let tokensData: Array<{
 		date: string;
@@ -171,6 +177,31 @@
 			}
 		}
 	};
+
+	$: if (canvasElement && datasets.length > 0) {
+		if (chartInstance) {
+			chartInstance.data = chartData;
+			chartInstance.options = chartOptions;
+			chartInstance.update();
+		} else {
+			const config: ChartConfiguration<'line'> = {
+				type: 'line',
+				data: chartData,
+				options: chartOptions
+			};
+			chartInstance = new ChartJS(canvasElement, config);
+		}
+	} else if (chartInstance) {
+		chartInstance.destroy();
+		chartInstance = null;
+	}
+
+	onDestroy(() => {
+		if (chartInstance) {
+			chartInstance.destroy();
+			chartInstance = null;
+		}
+	});
 </script>
 
 <div class="w-full h-64">
@@ -179,7 +210,7 @@
 			<Spinner />
 		</div>
 	{:else if datasets.length > 0}
-		<Line data={chartData} options={chartOptions} />
+		<canvas bind:this={canvasElement}></canvas>
 	{:else}
 		<div class="flex flex-col items-center justify-center h-full text-gray-500 text-sm">
 			<div>No model {showCost ? 'cost' : 'token usage'} data for this date range</div>

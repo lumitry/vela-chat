@@ -6,6 +6,7 @@
 	import TurndownService from 'turndown';
 
 	import { onMount, tick, getContext, createEventDispatcher, onDestroy } from 'svelte';
+	import { get } from 'svelte/store';
 	const dispatch = createEventDispatcher();
 	import { DropdownMenu } from 'bits-ui';
 	import { flyAndScale } from '$lib/utils/transitions';
@@ -35,11 +36,7 @@
 	import { generateAutoCompletion } from '$lib/apis';
 	import { deleteFileById } from '$lib/apis/files';
 
-import {
-	WEBUI_BASE_URL,
-	WEBUI_API_BASE_URL,
-	PASTED_TEXT_CHARACTER_LIMIT
-} from '$lib/constants';
+	import { WEBUI_BASE_URL, WEBUI_API_BASE_URL, PASTED_TEXT_CHARACTER_LIMIT } from '$lib/constants';
 
 	import InputMenu from './MessageInput/InputMenu.svelte';
 	import VoiceRecording from './MessageInput/VoiceRecording.svelte';
@@ -309,11 +306,11 @@ import {
 		} else {
 			console.log('Entering thinking mode');
 			// Enter thinking mode
-			const models = getReasoningTargetModel(currentModel, $models);
-			console.log('Reasoning models found:', models);
+			const reasoningModels = getReasoningTargetModel(currentModel, get(models));
+			console.log('Reasoning models found:', reasoningModels);
 
-			if (models) {
-				const { base, target } = models;
+			if (reasoningModels) {
+				const { base, target } = reasoningModels;
 
 				// Create reasoning state
 				reasoningState = createReasoningState(base, target);
@@ -1660,29 +1657,30 @@ import {
 													{#if isSetEffortBehavior}
 														<!-- Set effort behavior - show dropdown -->
 														<DropdownMenu.Root>
-															<DropdownMenu.Trigger asChild let:builder>
-																<Tooltip
-																	content={$i18n.t('Select reasoning effort')}
-																	placement="top"
-																>
-																	<button
-																		use:builder.action
-																		{...builder}
-																		type="button"
-																		disabled={!isThinkingEnabled}
-																		class="px-1.5 @xl:px-2.5 py-1.5 flex gap-1.5 items-center text-sm rounded-full font-medium transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden border {isThinkingIlluminated
-																			? 'bg-blue-100 dark:bg-blue-500/20 border-blue-400/20 text-blue-500 dark:text-blue-400'
-																			: !isThinkingEnabled
-																				? 'bg-transparent border-transparent text-gray-400 dark:text-gray-600 cursor-not-allowed'
-																				: 'bg-transparent border-transparent text-gray-600 dark:text-gray-300 border-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'}"
+															<DropdownMenu.Trigger>
+																{#snippet child(builder)}
+																	<Tooltip
+																		content={$i18n.t('Select reasoning effort')}
+																		placement="top"
 																	>
-																		<LightBlub className="size-5" strokeWidth="1.75" />
-																		<span
-																			class="hidden @xl:block whitespace-nowrap overflow-hidden text-ellipsis translate-y-[0.5px]"
-																			>{currentEffortDisplay}...</span
+																		<button
+																			{...builder.props}
+																			type="button"
+																			disabled={!isThinkingEnabled}
+																			class="px-1.5 @xl:px-2.5 py-1.5 flex gap-1.5 items-center text-sm rounded-full font-medium transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden border {isThinkingIlluminated
+																				? 'bg-blue-100 dark:bg-blue-500/20 border-blue-400/20 text-blue-500 dark:text-blue-400'
+																				: !isThinkingEnabled
+																					? 'bg-transparent border-transparent text-gray-400 dark:text-gray-600 cursor-not-allowed'
+																					: 'bg-transparent border-transparent text-gray-600 dark:text-gray-300 border-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'}"
 																		>
-																	</button>
-																</Tooltip>
+																			<LightBlub className="size-5" strokeWidth="1.75" />
+																			<span
+																				class="hidden @xl:block whitespace-nowrap overflow-hidden text-ellipsis translate-y-[0.5px]"
+																				>{currentEffortDisplay}...</span
+																			>
+																		</button>
+																	</Tooltip>
+																{/snippet}
 															</DropdownMenu.Trigger>
 
 															<DropdownMenu.Content
@@ -1691,13 +1689,12 @@ import {
 																alignOffset={0}
 																side="top"
 																align="end"
-																transition={flyAndScale}
 															>
 																<DropdownMenu.Item
 																	class="flex gap-2 items-center px-3 py-1.5 text-sm font-medium cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl {!history?.reasoningEffort
 																		? 'bg-gray-50 dark:bg-gray-700/50'
 																		: ''}"
-																	on:click={() => applyEffortChoice(null)}
+																	onSelect={() => applyEffortChoice(null)}
 																>
 																	<div class="w-4 h-4 flex items-center justify-center">
 																		{#if !history?.reasoningEffort}
@@ -1721,7 +1718,7 @@ import {
 																	'minimal'
 																		? 'bg-gray-50 dark:bg-gray-700/50'
 																		: ''}"
-																	on:click={() => applyEffortChoice('minimal')}
+																	onSelect={() => applyEffortChoice('minimal')}
 																>
 																	<div class="w-4 h-4 flex items-center justify-center">
 																		{#if history?.reasoningEffort === 'minimal'}
@@ -1745,7 +1742,7 @@ import {
 																	'low'
 																		? 'bg-gray-50 dark:bg-gray-700/50'
 																		: ''}"
-																	on:click={() => applyEffortChoice('low')}
+																	onSelect={() => applyEffortChoice('low')}
 																>
 																	<div class="w-4 h-4 flex items-center justify-center">
 																		{#if history?.reasoningEffort === 'low'}
@@ -1769,7 +1766,7 @@ import {
 																	'medium'
 																		? 'bg-gray-50 dark:bg-gray-700/50'
 																		: ''}"
-																	on:click={() => applyEffortChoice('medium')}
+																	onSelect={() => applyEffortChoice('medium')}
 																>
 																	<div class="w-4 h-4 flex items-center justify-center">
 																		{#if history?.reasoningEffort === 'medium'}
@@ -1793,7 +1790,7 @@ import {
 																	'high'
 																		? 'bg-gray-50 dark:bg-gray-700/50'
 																		: ''}"
-																	on:click={() => applyEffortChoice('high')}
+																	onSelect={() => applyEffortChoice('high')}
 																>
 																	<div class="w-4 h-4 flex items-center justify-center">
 																		{#if history?.reasoningEffort === 'high'}
@@ -1840,21 +1837,25 @@ import {
 												<!-- Verbosity dropdown -->
 												{#if supportsVerbosity}
 													<DropdownMenu.Root>
-														<DropdownMenu.Trigger asChild let:builder>
-															<Tooltip content={$i18n.t('Select verbosity level')} placement="top">
-																<button
-																	use:builder.action
-																	{...builder}
-																	type="button"
-																	class="px-1.5 @xl:px-2.5 py-1.5 flex gap-1.5 items-center text-sm rounded-full font-medium transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden border bg-transparent border-transparent text-gray-600 dark:text-gray-300 border-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800"
+														<DropdownMenu.Trigger>
+															{#snippet child(builder)}
+																<Tooltip
+																	content={$i18n.t('Select verbosity level')}
+																	placement="top"
 																>
-																	<ChatBubbleOvalEllipsis className="size-5" strokeWidth="1.75" />
-																	<span
-																		class="hidden @xl:block whitespace-nowrap overflow-hidden text-ellipsis translate-y-[0.5px]"
-																		>{currentVerbosityDisplay}...</span
+																	<button
+																		{...builder.props}
+																		type="button"
+																		class="px-1.5 @xl:px-2.5 py-1.5 flex gap-1.5 items-center text-sm rounded-full font-medium transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden border bg-transparent border-transparent text-gray-600 dark:text-gray-300 border-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800"
 																	>
-																</button>
-															</Tooltip>
+																		<ChatBubbleOvalEllipsis className="size-5" strokeWidth="1.75" />
+																		<span
+																			class="hidden @xl:block whitespace-nowrap overflow-hidden text-ellipsis translate-y-[0.5px]"
+																			>{currentVerbosityDisplay}...</span
+																		>
+																	</button>
+																</Tooltip>
+															{/snippet}
 														</DropdownMenu.Trigger>
 
 														<DropdownMenu.Content
@@ -1863,14 +1864,13 @@ import {
 															alignOffset={0}
 															side="top"
 															align="end"
-															transition={flyAndScale}
 														>
 															<DropdownMenu.Item
 																class="flex gap-2 items-center px-3 py-1.5 text-sm font-medium cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl {history?.verbosity ===
 																'low'
 																	? 'bg-gray-50 dark:bg-gray-700/50'
 																	: ''}"
-																on:click={() => applyVerbosityChoice('low')}
+																onSelect={() => applyVerbosityChoice('low')}
 															>
 																<div class="w-4 h-4 flex items-center justify-center">
 																	{#if history?.verbosity === 'low'}
@@ -1894,7 +1894,7 @@ import {
 																'medium'
 																	? 'bg-gray-50 dark:bg-gray-700/50'
 																	: ''}"
-																on:click={() => applyVerbosityChoice('medium')}
+																onSelect={() => applyVerbosityChoice('medium')}
 															>
 																<div class="w-4 h-4 flex items-center justify-center">
 																	{#if history?.verbosity === 'medium'}
@@ -1918,7 +1918,7 @@ import {
 																'high'
 																	? 'bg-gray-50 dark:bg-gray-700/50'
 																	: ''}"
-																on:click={() => applyVerbosityChoice('high')}
+																onSelect={() => applyVerbosityChoice('high')}
 															>
 																<div class="w-4 h-4 flex items-center justify-center">
 																	{#if history?.verbosity === 'high'}

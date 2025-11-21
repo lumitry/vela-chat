@@ -99,7 +99,6 @@
 			alignOffset={-8}
 			side="top"
 			align="start"
-			transition={flyAndScale}
 		>
 			{#if Object.keys(tools).length > 0}
 				<div class="  max-h-28 overflow-y-auto scrollbar-hidden">
