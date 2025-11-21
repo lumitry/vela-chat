@@ -4,7 +4,7 @@
 
 VelaChat is an opinionated fork of Open WebUI 0.6.5 designed to provide a more performant and user-friendly experience.
 
-Note: Do not use this fork with an Sqlite database! It will probably break things! Postgres is simple to set up and very fast. The migration isn't particularly difficult in my experience. See [MIGRATE_SQLITE_TO_PSQL.md](utils/sqlite_to_postgres/MIGRATE_SQLITE_TO_PSQL.md) for more details.
+Note: **Do not** use this fork with an Sqlite database! It will probably break things, and features _WILL_ be missing (e.g. metrics and fast FTS)! Postgres is simple to set up and very fast. The migration isn't particularly difficult in my experience. See [MIGRATE_SQLITE_TO_PSQL.md](utils/sqlite_to_postgres/MIGRATE_SQLITE_TO_PSQL.md) for more details.
 
 > **⚠️ WARNING**
 >
@@ -26,7 +26,7 @@ Note: Do not use this fork with an Sqlite database! It will probably break thing
 
 Dev environment:
 
-- VSCode remote ssh to my server (which means I can experience actual latency/perf issues firsthand)
+- VSCode remote ssh to my server (which means I can experience actual latency/perf issues firsthand, albeit still on a local network) (I use the `VITE_ALLOWED_HOSTS` environment variable to get this to work btw)
 - The database is a Postgres-migrated version of my actual production database (the 2GB Sqlite database I mention in several places) with 15k messages. In other words, it is a real-world scenario with a lot of actual data and edge cases.
 - I bounce back and forth between firefox and chrome. Both have devtools with varying degrees of oddity. Chrome doesn't tell you the HTTP method in the overview by default and doesn't let you search response/request JSON for single requests. Firefox has a worse waterfall that's never the right size. No need to pick your poison - ¿por que no los dos?
 - I mostly use external models for testing, lately Gemini 2.5 Flash Lite Preview because when I'm testing, I don't want to break flow waiting for a 10 tps free model or an Ollama cold start. 300+ TPS for cheap prices is pretty nice.
@@ -135,7 +135,9 @@ Future investigations include:
 - (feat) Maybe an "image library" for models? Would help for people who use official images (e.g. the OpenAI blossom, Gemini star, etc.) and don't want to have to locate the image on their computer every time (this would also help with deduplication/caching)
 - How to fix that one issue where if you upload images multiple times in the same chat without refreshing in between, it sometimes makes the page bug out and not show the response coming in?
 - (feat) Can we make it so that you can send a message and close the chat/tab/device (e.g. by streaming the response to the backend then forwarding it to the frontend while storing the response in memory then committing to DB when done)? this would be awesome for mobile users
-  - This actually already exists! There's an environment variable called [`ENABLE_REALTIME_CHAT_SAVE`](https://docs.openwebui.com/getting-started/env-configuration/#enable_realtime_chat_save). I haven't tested this but it _should_ work. That said, perhaps the feature here would be automatically toggling this on when the user is on a mobile device?
+  - This actually already exists! There's an environment variable called [`ENABLE_REALTIME_CHAT_SAVE`](https://docs.openwebui.com/getting-started/env-configuration/#enable_realtime_chat_save). ~~Perhaps the feature here would be automatically toggling this on when the user is on a mobile device?~~
+  - ... Actually, `ENABLE_REALTIME_CHAT_SAVE` does not make the _stream itself_ durable across page reloads or tab closing/reopening. That would require the backend handling the stream and forwarding it to the frontend/user with logic for how to handle the backend->user stream getting interrupted without warning, which is a whole other can of worms.
+  - For an example of durable streams, see [bmdavis419/river](https://github.com/bmdavis419/river). We could just use River, I guess, but I don't know how hard it would be to integrate it into VelaChat.
 - (feat) Could there be a "Scratchpad" sidebar where you can just dump a ton of text that will get chunked and vectorized for RAG without having to create a knowledge base, upload files, or use really long context length? Would be nice for adding reference information that isn't important enough to need to stay in context the full time, especially when using local models where quality degrades heavily after ~16k tokens.
 
 I chose Open-WebUI 0.6.5 because it is the last version that's been stable for me, and it's the last version before the contributor license agreement was introduced.

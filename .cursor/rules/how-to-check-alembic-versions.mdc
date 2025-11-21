@@ -1,0 +1,12 @@
+---
+description: When running Alembic commands
+alwaysApply: false
+---
+
+## How to check Alembic versions (or run other Alembic commands)
+
+To check the current Alembic version, you must do so from the backend/open_webui directory and within the open-webui conda environment. For example:
+
+```bash
+cd backend/open_webui && conda activate open-webui && alembic <command> <args>
+```

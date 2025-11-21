@@ -1336,16 +1336,20 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                         user_message_id_str = str(user_message_id) if user_message_id else None
                         assistant_id_str = str(assistant_id) if assistant_id else None
 
-                        ChatMessages.insert_message(chat_id, MessageCreateForm(
-                            parent_id=user_message_id_str,
-                            role="assistant",
-                            content_text="",
-                            content_json=None,
-                            model_id=form_data.get("model"),
-                            attachments=None,
-                            meta=assistant_meta,
-                            position=position_for_assistant
-                        ), message_id=assistant_id_str)
+                        ChatMessages.insert_message(
+                            chat_id,
+                            MessageCreateForm(
+                                parent_id=user_message_id_str,
+                                role="assistant",
+                                content_text="",
+                                content_json=None,
+                                model_id=form_data.get("model"),
+                                attachments=None,
+                                meta=assistant_meta,
+                                position=position_for_assistant,
+                            ),
+                            message_id=assistant_id_str,
+                        )
                         # Update active_message_id to point to this assistant message
                         Chats.update_chat_active_and_root_message_ids(chat_id, active_message_id=assistant_id_str)
         except Exception as e:
@@ -1915,7 +1919,8 @@ async def process_chat_response(
         try:
             ChatMessages.update_message(
                 metadata["message_id"],
-                model_id=model_id
+                model_id=model_id,
+                skip_metrics_rollup=ENABLE_REALTIME_CHAT_SAVE,
             )
         except Exception as e:
             log.debug(f"Failed to update normalized message model_id: {e}")
@@ -2308,7 +2313,8 @@ async def process_chat_response(
                         if "content" in event:
                             ChatMessages.update_message(
                                 metadata["message_id"],
-                                content_text=event["content"]
+                                content_text=event["content"],
+                                skip_metrics_rollup=ENABLE_REALTIME_CHAT_SAVE,
                             )
                         # Persist sources if present in event
                         if "sources" in event:
@@ -2326,6 +2332,33 @@ async def process_chat_response(
                     usage_data = None
 
                     response_tool_calls = []
+
+                    def persist_realtime_content(serialized_content=None):
+                        if not ENABLE_REALTIME_CHAT_SAVE:
+                            return
+
+                        if serialized_content is None:
+                            serialized_content = serialize_content_blocks(content_blocks)
+
+                        # Save message in the database
+                        Chats.upsert_message_to_chat_by_id_and_message_id(
+                            metadata["chat_id"],
+                            metadata["message_id"],
+                            {
+                                "content": serialized_content,
+                            },
+                        )
+                        # Update normalized table (usage will be saved when stream completes)
+                        try:
+                            ChatMessages.update_message(
+                                metadata["message_id"],
+                                content_text=serialized_content,
+                                skip_metrics_rollup=ENABLE_REALTIME_CHAT_SAVE,
+                            )
+                        except Exception as e:
+                            log.debug(
+                                f"Failed to update normalized message content (realtime): {e}"
+                            )
 
                     async for line in response.body_iterator:
                         line = line.decode("utf-8") if isinstance(line, bytes) else line
@@ -2370,7 +2403,8 @@ async def process_chat_response(
                                     try:
                                         ChatMessages.update_message(
                                             metadata["message_id"],
-                                            meta={"selectedModelId": model_id}
+                                            meta={"selectedModelId": model_id},
+                                            skip_metrics_rollup=ENABLE_REALTIME_CHAT_SAVE,
                                         )
                                     except Exception as e:
                                         log.debug(f"Failed to update normalized message selectedModelId: {e}")
@@ -2484,6 +2518,8 @@ async def process_chat_response(
                                             )
                                         }
 
+                                        persist_realtime_content(data["content"])
+
                                     if value:
                                         if (
                                             content_blocks
@@ -2554,29 +2590,15 @@ async def process_chat_response(
                                                 )
                                             )
 
+                                        serialized_content = serialize_content_blocks(
+                                            content_blocks
+                                        )
+
                                         if ENABLE_REALTIME_CHAT_SAVE:
-                                            # Save message in the database
-                                            serialized_content = serialize_content_blocks(content_blocks)
-                                            Chats.upsert_message_to_chat_by_id_and_message_id(
-                                                metadata["chat_id"],
-                                                metadata["message_id"],
-                                                {
-                                                    "content": serialized_content,
-                                                },
-                                            )
-                                            # Update normalized table (usage will be saved when stream completes)
-                                            try:
-                                                ChatMessages.update_message(
-                                                    metadata["message_id"],
-                                                    content_text=serialized_content
-                                                )
-                                            except Exception as e:
-                                                log.debug(f"Failed to update normalized message content (realtime): {e}")
+                                            persist_realtime_content(serialized_content)
                                         else:
                                             data = {
-                                                "content": serialize_content_blocks(
-                                                    content_blocks
-                                                ),
+                                                "content": serialized_content,
                                             }
 
                                 await event_emitter(
@@ -2966,7 +2988,20 @@ async def process_chat_response(
                     "title": title,
                 }
 
-                if not ENABLE_REALTIME_CHAT_SAVE:
+                if ENABLE_REALTIME_CHAT_SAVE:
+                    # Late-stage updates: persist usage once and update active_message_id
+                    try:
+                        if usage_data:
+                            ChatMessages.update_message(
+                                metadata["message_id"],
+                                usage=usage_data,
+                            )
+                        Chats.update_chat_active_and_root_message_ids(
+                            metadata["chat_id"], active_message_id=metadata["message_id"]
+                        )
+                    except Exception as e:
+                        log.debug(f"Failed to finalize realtime message content: {e}")
+                else:
                     # Save message in the database
                     serialized_content = serialize_content_blocks(content_blocks)
                     Chats.upsert_message_to_chat_by_id_and_message_id(

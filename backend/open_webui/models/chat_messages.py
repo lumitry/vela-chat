@@ -3,11 +3,27 @@ import uuid
 import xxhash
 from typing import Optional, List, Tuple
 
+import logging
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import BigInteger, Column, String, Text, JSON, Index, ForeignKey, Integer, func, Numeric, Date
+from sqlalchemy import (
+    BigInteger,
+    Column,
+    String,
+    Text,
+    JSON,
+    Index,
+    ForeignKey,
+    Integer,
+    func,
+    Numeric,
+    Date,
+    text,
+)
 
 from open_webui.internal.db import Base, get_db
 
+
+log = logging.getLogger(__name__)
 
 class ChatMessage(Base):
     __tablename__ = "chat_message"
@@ -257,8 +273,21 @@ class MessageCreateForm(BaseModel):
 
 
 class ChatMessagesTable:
-    def insert_message(self, chat_id: str, form: MessageCreateForm, message_id: Optional[str] = None, created_at: Optional[int] = None) -> Optional[ChatMessageModel]:
+    def insert_message(
+        self,
+        chat_id: str,
+        form: MessageCreateForm,
+        message_id: Optional[str] = None,
+        created_at: Optional[int] = None,
+        skip_metrics_rollup: bool = False,
+    ) -> Optional[ChatMessageModel]:
         with get_db() as db:
+            if skip_metrics_rollup and db.bind and db.bind.dialect.name == "postgresql":
+                try:
+                    db.execute(text("SET LOCAL open_webui.skip_metrics_rollup = 'on'"))
+                except Exception as e:
+                    log.debug(f"ChatMessages.insert_message: Failed to set skip_metrics_rollup flag: {e}")
+
             ts = int(time.time())
             # Use provided created_at if available (for imports), otherwise use current time
             msg_created_at = created_at if created_at is not None else ts
@@ -335,17 +364,33 @@ class ChatMessagesTable:
             m = db.get(ChatMessage, id)
             return ChatMessageModel.model_validate(m) if m else None
 
-    def update_message(self, message_id: str, content_text: Optional[str] = None, 
-                      content_json: Optional[dict] = None, model_id: Optional[str] = None,
-                      status: Optional[dict] = None, usage: Optional[dict] = None,
-                      meta: Optional[dict] = None, position: Optional[int] = None,
-                      parent_id: Optional[str] = None, annotation: Optional[dict] = None,
-                      feedback_id: Optional[str] = None, selected_model_id: Optional[str] = None) -> Optional[ChatMessageModel]:
+    def update_message(
+        self,
+        message_id: str,
+        content_text: Optional[str] = None,
+        content_json: Optional[dict] = None,
+        model_id: Optional[str] = None,
+        status: Optional[dict] = None,
+        usage: Optional[dict] = None,
+        meta: Optional[dict] = None,
+        position: Optional[int] = None,
+        parent_id: Optional[str] = None,
+        annotation: Optional[dict] = None,
+        feedback_id: Optional[str] = None,
+        selected_model_id: Optional[str] = None,
+        skip_metrics_rollup: bool = False,
+    ) -> Optional[ChatMessageModel]:
         """Update an existing message with new content or metadata."""
         import logging
         log = logging.getLogger(__name__)
         
         with get_db() as db:
+            if skip_metrics_rollup and db.bind and db.bind.dialect.name == "postgresql":
+                try:
+                    db.execute(text("SET LOCAL open_webui.skip_metrics_rollup = 'on'"))
+                except Exception as e:
+                    log.debug(f"ChatMessages.update_message: Failed to set skip_metrics_rollup flag: {e}")
+
             message = db.get(ChatMessage, message_id)
             if not message:
                 log.warning(f"ChatMessages.update_message: Message {message_id} not found")
