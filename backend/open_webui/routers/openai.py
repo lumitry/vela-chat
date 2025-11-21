@@ -2,16 +2,15 @@ import asyncio
 import hashlib
 import json
 import logging
-from pathlib import Path
-from typing import Literal, Optional, overload
+from copy import deepcopy
+from typing import Optional
 
 import aiohttp
 from aiocache import cached
 import requests
 
 
-from fastapi import Depends, FastAPI, HTTPException, Request, APIRouter
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import Depends, HTTPException, Request, APIRouter
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from starlette.background import BackgroundTask
@@ -29,7 +28,7 @@ from open_webui.env import (
 from open_webui.models.users import UserModel
 
 from open_webui.constants import ERROR_MESSAGES
-from open_webui.env import ENV, SRC_LOG_LEVELS
+from open_webui.env import SRC_LOG_LEVELS
 
 
 from open_webui.utils.payload import (
@@ -48,6 +47,44 @@ log = logging.getLogger(__name__)
 log.setLevel(SRC_LOG_LEVELS["OPENAI"])
 
 
+INTERNAL_MESSAGE_FIELDS = {
+    "id",
+    "parent_id",
+    "parentId",
+    "childrenIds",
+    "children",
+    "files",
+    "models",
+    "meta",
+    "status",
+    "statusHistory",
+    "attachments",
+    "selectedModelId",
+    "position",
+    "created_at",
+    "updated_at",
+}
+
+
+def sanitize_openai_messages(messages):
+    if not isinstance(messages, list):
+        return messages
+
+    sanitized = []
+    for message in messages:
+        if not isinstance(message, dict):
+            sanitized.append(message)
+            continue
+
+        msg_copy = deepcopy(message)
+        for field in INTERNAL_MESSAGE_FIELDS:
+            msg_copy.pop(field, None)
+
+        sanitized.append(msg_copy)
+
+    return sanitized
+
+
 ##########################################
 #
 # Utility functions
@@ -55,7 +92,7 @@ log.setLevel(SRC_LOG_LEVELS["OPENAI"])
 ##########################################
 
 
-async def send_get_request(url, key=None, user: UserModel = None):
+async def send_get_request(url, key=None, user: Optional[UserModel] = None):
     timeout = aiohttp.ClientTimeout(total=AIOHTTP_CLIENT_TIMEOUT_MODEL_LIST)
     try:
         async with aiohttp.ClientSession(timeout=timeout, trust_env=True) as session:
@@ -601,6 +638,11 @@ async def generate_chat_completion(
     metadata = payload.pop("metadata", None)
 
     model_id = form_data.get("model")
+    if not isinstance(model_id, str) or not model_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Model not specified",
+        )
     model_info = Models.get_model_by_id(model_id)
 
     # Check model info and override the payload
@@ -678,6 +720,10 @@ async def generate_chat_completion(
 
     if "max_tokens" in payload and "max_completion_tokens" in payload:
         del payload["max_tokens"]
+
+    # Sanitize messages to avoid leaking internal-only fields (e.g., message IDs)
+    if "messages" in payload:
+        payload["messages"] = sanitize_openai_messages(payload["messages"])
 
     # Convert the modified body back to JSON
     if "logit_bias" in payload:
