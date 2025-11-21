@@ -1,4 +1,5 @@
 import { WEBUI_API_BASE_URL } from '$lib/constants';
+import { normalizeProfileImageFields } from '$lib/utils/profileImage';
 
 export const getModels = async (token: string = '') => {
 	let error = null;
@@ -28,7 +29,7 @@ export const getModels = async (token: string = '') => {
 		throw error;
 	}
 
-	return res;
+	return normalizeProfileImageFields(res);
 };
 
 export const getModelsMetadata = async (token: string = '') => {
@@ -59,7 +60,7 @@ export const getModelsMetadata = async (token: string = '') => {
 		throw error;
 	}
 
-	return res;
+	return normalizeProfileImageFields(res);
 };
 
 export const getBaseModels = async (token: string = '') => {
@@ -90,7 +91,7 @@ export const getBaseModels = async (token: string = '') => {
 		throw error;
 	}
 
-	return res;
+	return normalizeProfileImageFields(res);
 };
 
 export const createNewModel = async (token: string, model: object) => {
@@ -119,7 +120,7 @@ export const createNewModel = async (token: string, model: object) => {
 		throw error;
 	}
 
-	return res;
+	return normalizeProfileImageFields(res);
 };
 
 export const getModelById = async (token: string, id: string) => {
@@ -154,7 +155,7 @@ export const getModelById = async (token: string, id: string) => {
 		throw error;
 	}
 
-	return res;
+	return normalizeProfileImageFields(res);
 };
 
 export const toggleModelById = async (token: string, id: string) => {
@@ -189,7 +190,7 @@ export const toggleModelById = async (token: string, id: string) => {
 		throw error;
 	}
 
-	return res;
+	return normalizeProfileImageFields(res);
 };
 
 export const updateModelById = async (token: string, id: string, model: object) => {
@@ -225,7 +226,7 @@ export const updateModelById = async (token: string, id: string, model: object) 
 		throw error;
 	}
 
-	return res;
+	return normalizeProfileImageFields(res);
 };
 
 export const deleteModelById = async (token: string, id: string) => {
@@ -260,7 +261,7 @@ export const deleteModelById = async (token: string, id: string) => {
 		throw error;
 	}
 
-	return res;
+	return normalizeProfileImageFields(res);
 };
 
 export const deleteAllModels = async (token: string) => {

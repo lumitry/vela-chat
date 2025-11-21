@@ -5,7 +5,6 @@
 	import { tick, getContext } from 'svelte';
 
 	import { models } from '$lib/stores';
-	import { WEBUI_BASE_URL, getImageBaseUrl } from '$lib/constants';
 
 	const i18n = getContext('i18n');
 
@@ -77,8 +76,7 @@
 			>
 				<div class="m-1 overflow-y-auto p-1 rounded-r-lg space-y-0.5 scrollbar-hidden">
 					{#each filteredItems as model, modelIdx}
-						{@const imageUrl = model?.info?.meta?.profile_image_url ?? '/static/favicon.png'}
-						{@const imageSrc = imageUrl.startsWith('/') ? `${getImageBaseUrl(imageUrl)}${imageUrl}` : imageUrl}
+						{@const imageSrc = model?.info?.meta?.profile_image_url ?? '/static/favicon.png'}
 						<button
 							class="px-3 py-1.5 rounded-xl w-full text-left {modelIdx === selectedIdx
 								? 'bg-gray-50 dark:bg-gray-850 selected-command-option-button'

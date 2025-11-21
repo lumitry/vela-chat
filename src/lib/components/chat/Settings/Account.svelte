@@ -12,7 +12,6 @@
 	import Plus from '$lib/components/icons/Plus.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import SensitiveInput from '$lib/components/common/SensitiveInput.svelte';
-	import { WEBUI_BASE_URL, getImageBaseUrl } from '$lib/constants';
 
 	const i18n = getContext('i18n');
 
@@ -22,12 +21,7 @@
 	let profileImageUrl = '';
 	let name = '';
 
-	$: profileImageSrc =
-		profileImageUrl !== ''
-			? profileImageUrl.startsWith('/') && !profileImageUrl.startsWith(WEBUI_BASE_URL)
-				? `${getImageBaseUrl(profileImageUrl)}${profileImageUrl}`
-				: profileImageUrl
-			: generateInitialsImage(name);
+$: profileImageSrc = profileImageUrl !== '' ? profileImageUrl : generateInitialsImage(name);
 
 	let webhookUrl = '';
 	let showAPIKeys = false;

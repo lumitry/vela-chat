@@ -6,7 +6,6 @@
 
 	import { onMount, getContext } from 'svelte';
 	import { models } from '$lib/stores';
-	import { WEBUI_BASE_URL, getImageBaseUrl } from '$lib/constants';
 
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
@@ -349,10 +348,7 @@
 			</thead>
 			<tbody class="">
 				{#each rankedModels as model, modelIdx (model.id)}
-					{@const imageUrl = model?.info?.meta?.profile_image_url ?? '/favicon.png'}
-					{@const imageSrc = imageUrl.startsWith('/')
-						? `${getImageBaseUrl(imageUrl)}${imageUrl}`
-						: imageUrl}
+					{@const imageSrc = model?.info?.meta?.profile_image_url ?? '/favicon.png'}
 					<tr class="bg-white dark:bg-gray-900 dark:border-gray-850 text-xs group">
 						<td class="px-3 py-1.5 text-left font-medium text-gray-900 dark:text-white w-fit">
 							<div class=" line-clamp-1">

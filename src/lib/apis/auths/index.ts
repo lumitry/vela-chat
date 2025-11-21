@@ -1,4 +1,5 @@
 import { WEBUI_API_BASE_URL } from '$lib/constants';
+import { normalizeProfileImageFields } from '$lib/utils/profileImage';
 
 export const getAdminDetails = async (token: string) => {
 	let error = null;
@@ -107,7 +108,7 @@ export const getSessionUser = async (token: string) => {
 		throw error;
 	}
 
-	return res;
+	return normalizeProfileImageFields(res);
 };
 
 export const ldapUserSignIn = async (user: string, password: string) => {
@@ -139,7 +140,7 @@ export const ldapUserSignIn = async (user: string, password: string) => {
 		throw error;
 	}
 
-	return res;
+	return normalizeProfileImageFields(res);
 };
 
 export const getLdapConfig = async (token: string = '') => {
@@ -283,7 +284,7 @@ export const userSignIn = async (email: string, password: string) => {
 		throw error;
 	}
 
-	return res;
+	return normalizeProfileImageFields(res);
 };
 
 export const userSignUp = async (
@@ -321,7 +322,7 @@ export const userSignUp = async (
 		throw error;
 	}
 
-	return res;
+	return normalizeProfileImageFields(res);
 };
 
 export const userSignOut = async () => {
@@ -385,7 +386,7 @@ export const addUser = async (
 		throw error;
 	}
 
-	return res;
+	return normalizeProfileImageFields(res);
 };
 
 export const updateUserProfile = async (token: string, name: string, profileImageUrl: string) => {
@@ -416,7 +417,7 @@ export const updateUserProfile = async (token: string, name: string, profileImag
 		throw error;
 	}
 
-	return res;
+	return normalizeProfileImageFields(res);
 };
 
 export const updateUserPassword = async (token: string, password: string, newPassword: string) => {

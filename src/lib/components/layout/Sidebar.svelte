@@ -51,7 +51,6 @@
 		batchUpdateFolderIsExpanded
 	} from '$lib/apis/folders';
 	import { setBatchUpdateFunction } from '$lib/utils/folderBatch';
-	import { WEBUI_BASE_URL, getImageBaseUrl } from '$lib/constants';
 	import { sidebarNavigationCommand, type SidebarNavigationCommand } from '$lib/stores/sidebar';
 	import { getTimeRange } from '$lib/utils';
 
@@ -82,11 +81,7 @@
 	let selectedChatId = null;
 	let showDropdown = false;
 
-	$: userImageSrc = $user?.profile_image_url
-		? $user.profile_image_url.startsWith('/')
-			? `${getImageBaseUrl($user.profile_image_url)}${$user.profile_image_url}`
-			: $user.profile_image_url
-		: '';
+$: userImageSrc = $user?.profile_image_url ?? '';
 	let showPinnedChat = true;
 
 	let showCreateChannel = false;
@@ -863,7 +858,7 @@
 				<div class="flex items-center">
 					<div class="self-center mx-1.5">
 						<img
-							src="{getImageBaseUrl('/static/favicon.png')}/static/favicon.png"
+							src="/static/favicon.png"
 							class=" size-5 -translate-x-1.5 rounded-full"
 							alt="logo"
 						/>

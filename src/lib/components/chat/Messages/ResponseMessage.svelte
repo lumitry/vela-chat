@@ -27,7 +27,6 @@
 		removeDetails,
 		removeAllDetails
 	} from '$lib/utils';
-	import { WEBUI_BASE_URL, getImageBaseUrl } from '$lib/constants';
 
 	import Name from './Name.svelte';
 	import ProfileImage from './ProfileImage.svelte';
@@ -563,7 +562,7 @@
 		<div class={`shrink-0 ltr:mr-3 rtl:ml-3`}>
 			<ProfileImage
 				src={model?.info?.meta?.profile_image_url ??
-					($i18n.language === 'dg-DG' ? `/doge.png` : `${getImageBaseUrl('/static/favicon.png')}/static/favicon.png`)}
+					($i18n.language === 'dg-DG' ? `/doge.png` : `/static/favicon.png`)}
 				className={'size-8'}
 			/>
 		</div>

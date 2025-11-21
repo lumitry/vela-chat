@@ -1,5 +1,6 @@
 import { WEBUI_API_BASE_URL, WEBUI_BASE_URL, WEBUI_VERSION } from '$lib/constants';
 import { convertOpenApiToToolPayload } from '$lib/utils';
+import { normalizeProfileImageFields } from '$lib/utils/profileImage';
 import { getOpenAIModelsDirect } from './openai';
 
 import { parse } from 'yaml';
@@ -146,7 +147,7 @@ export const getModels = async (
 		models = Object.values(modelsMap);
 	}
 
-	return models;
+	return normalizeProfileImageFields(models);
 };
 
 type ChatCompletedForm = {

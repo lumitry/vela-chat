@@ -4,7 +4,6 @@
 	import { onMount, getContext } from 'svelte';
 	import { addUser } from '$lib/apis/auths';
 
-	import { WEBUI_BASE_URL, getImageBaseUrl } from '$lib/constants';
 
 	import Modal from '$lib/components/common/Modal.svelte';
 
@@ -269,7 +268,7 @@
 									)}
 									<a
 										class="underline dark:text-gray-200"
-										href="{getImageBaseUrl('/static/user-import.csv')}/static/user-import.csv"
+										href="/static/user-import.csv"
 									>
 										{$i18n.t('Click here to download user import template file.')}
 									</a>

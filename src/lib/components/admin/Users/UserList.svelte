@@ -1,5 +1,4 @@
 <script>
-	import { WEBUI_BASE_URL, getImageBaseUrl } from '$lib/constants';
 	import { WEBUI_NAME, config, user, showSidebar } from '$lib/stores';
 	import { goto } from '$app/navigation';
 	import { onMount, getContext } from 'svelte';
@@ -360,19 +359,7 @@
 		</thead>
 		<tbody class="">
 			{#each filteredUsers as user, userIdx}
-				{@const userImageUrl = user.profile_image_url || ''}
-				{@const userImageSrc =
-					userImageUrl === ''
-						? `${getImageBaseUrl('/user.png')}/user.png`
-						: userImageUrl.startsWith(WEBUI_BASE_URL) ||
-							  userImageUrl.startsWith('https://www.gravatar.com/avatar/') ||
-							  userImageUrl.startsWith('data:') ||
-							  userImageUrl.startsWith('http://') ||
-							  userImageUrl.startsWith('https://')
-							? userImageUrl
-							: userImageUrl.startsWith('/')
-								? `${getImageBaseUrl(userImageUrl)}${userImageUrl}`
-								: userImageUrl}
+				{@const userImageSrc = user.profile_image_url || '/user.png'}
 				<tr class="bg-white dark:bg-gray-900 dark:border-gray-850 text-xs">
 					<td class="px-3 py-1 min-w-[7rem] w-28">
 						<button

@@ -1,5 +1,6 @@
 import { WEBUI_API_BASE_URL } from '$lib/constants';
 import { t } from 'i18next';
+import { normalizeProfileImageFields } from '$lib/utils/profileImage';
 
 type ChannelForm = {
 	name: string;
@@ -37,7 +38,7 @@ export const createNewChannel = async (token: string = '', channel: ChannelForm)
 		throw error;
 	}
 
-	return res;
+	return normalizeProfileImageFields(res);
 };
 
 export const getChannels = async (token: string = '') => {
@@ -68,7 +69,7 @@ export const getChannels = async (token: string = '') => {
 		throw error;
 	}
 
-	return res;
+	return normalizeProfileImageFields(res);
 };
 
 export const getChannelById = async (token: string = '', channel_id: string) => {
@@ -99,7 +100,7 @@ export const getChannelById = async (token: string = '', channel_id: string) => 
 		throw error;
 	}
 
-	return res;
+	return normalizeProfileImageFields(res);
 };
 
 export const updateChannelById = async (
@@ -135,7 +136,7 @@ export const updateChannelById = async (
 		throw error;
 	}
 
-	return res;
+	return normalizeProfileImageFields(res);
 };
 
 export const deleteChannelById = async (token: string = '', channel_id: string) => {
@@ -166,7 +167,7 @@ export const deleteChannelById = async (token: string = '', channel_id: string) 
 		throw error;
 	}
 
-	return res;
+	return normalizeProfileImageFields(res);
 };
 
 export const getChannelMessages = async (
@@ -205,7 +206,7 @@ export const getChannelMessages = async (
 		throw error;
 	}
 
-	return res;
+	return normalizeProfileImageFields(res);
 };
 
 export const getChannelThreadMessages = async (
@@ -245,7 +246,7 @@ export const getChannelThreadMessages = async (
 		throw error;
 	}
 
-	return res;
+	return normalizeProfileImageFields(res);
 };
 
 type MessageForm = {
@@ -284,7 +285,7 @@ export const sendMessage = async (token: string = '', channel_id: string, messag
 		throw error;
 	}
 
-	return res;
+	return normalizeProfileImageFields(res);
 };
 
 export const updateMessage = async (
@@ -324,7 +325,7 @@ export const updateMessage = async (
 		throw error;
 	}
 
-	return res;
+	return normalizeProfileImageFields(res);
 };
 
 export const addReaction = async (
@@ -364,7 +365,7 @@ export const addReaction = async (
 		throw error;
 	}
 
-	return res;
+	return normalizeProfileImageFields(res);
 };
 
 export const removeReaction = async (
@@ -404,7 +405,7 @@ export const removeReaction = async (
 		throw error;
 	}
 
-	return res;
+	return normalizeProfileImageFields(res);
 };
 
 export const deleteMessage = async (token: string = '', channel_id: string, message_id: string) => {
@@ -438,5 +439,5 @@ export const deleteMessage = async (token: string = '', channel_id: string, mess
 		throw error;
 	}
 
-	return res;
+	return normalizeProfileImageFields(res);
 };

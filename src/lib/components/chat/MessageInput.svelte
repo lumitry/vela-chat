@@ -35,12 +35,11 @@
 	import { generateAutoCompletion } from '$lib/apis';
 	import { deleteFileById } from '$lib/apis/files';
 
-	import {
-		WEBUI_BASE_URL,
-		WEBUI_API_BASE_URL,
-		PASTED_TEXT_CHARACTER_LIMIT,
-		getImageBaseUrl
-	} from '$lib/constants';
+import {
+	WEBUI_BASE_URL,
+	WEBUI_API_BASE_URL,
+	PASTED_TEXT_CHARACTER_LIMIT
+} from '$lib/constants';
 
 	import InputMenu from './MessageInput/InputMenu.svelte';
 	import VoiceRecording from './MessageInput/VoiceRecording.svelte';
@@ -702,16 +701,10 @@
 							class="px-3 pb-0.5 pt-1.5 text-left w-full flex flex-col absolute bottom-0 left-0 right-0 bg-linear-to-t from-white dark:from-gray-900 z-10"
 						>
 							{#if atSelectedModel !== undefined}
-								{@const imageUrl =
+								{@const imageSrc =
 									$models.find((model) => model.id === atSelectedModel.id)?.info?.meta
 										?.profile_image_url ??
-									($i18n.language === 'dg-DG'
-										? `/doge.png`
-										: `${getImageBaseUrl('/static/favicon.png')}/static/favicon.png`)}
-								{@const imageSrc =
-									imageUrl.startsWith('/') && !imageUrl.startsWith(WEBUI_BASE_URL)
-										? `${getImageBaseUrl(imageUrl)}${imageUrl}`
-										: imageUrl}
+									($i18n.language === 'dg-DG' ? `/doge.png` : `/static/favicon.png`)}
 								<div class="flex items-center justify-between w-full">
 									<div class="pl-[1px] flex items-center gap-2 text-sm dark:text-gray-500">
 										<img

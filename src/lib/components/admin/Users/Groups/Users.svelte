@@ -4,7 +4,6 @@
 
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import Plus from '$lib/components/icons/Plus.svelte';
-	import { WEBUI_BASE_URL, getImageBaseUrl } from '$lib/constants';
 	import Checkbox from '$lib/components/common/Checkbox.svelte';
 	import Badge from '$lib/components/common/Badge.svelte';
 
@@ -75,19 +74,7 @@
 		<div class="flex flex-col gap-2.5">
 			{#if filteredUsers.length > 0}
 				{#each filteredUsers as user, userIdx (user.id)}
-					{@const userImageUrl = user.profile_image_url || ''}
-					{@const userImageSrc =
-						userImageUrl === ''
-							? `${getImageBaseUrl('/user.png')}/user.png`
-							: userImageUrl.startsWith(WEBUI_BASE_URL) ||
-								  userImageUrl.startsWith('https://www.gravatar.com/avatar/') ||
-								  userImageUrl.startsWith('data:') ||
-								  userImageUrl.startsWith('http://') ||
-								  userImageUrl.startsWith('https://')
-								? userImageUrl
-								: userImageUrl.startsWith('/')
-									? `${getImageBaseUrl(userImageUrl)}${userImageUrl}`
-									: userImageUrl}
+					{@const userImageSrc = user.profile_image_url || '/user.png'}
 					<div class="flex flex-row items-center gap-3 w-full text-sm">
 						<div class="flex items-center">
 							<Checkbox

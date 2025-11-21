@@ -3,7 +3,6 @@
 	import { formatSmartCurrency } from '$lib/utils/currency';
 	import { models as modelsStore } from '$lib/stores';
 	import Spinner from '$lib/components/common/Spinner.svelte';
-	import { WEBUI_BASE_URL, getImageBaseUrl } from '$lib/constants';
 
 	const i18n = getContext('i18n');
 
@@ -90,8 +89,7 @@
 	// Get model icon URL from models store
 	const getModelIcon = (modelId: string): string => {
 		const model = $modelsStore?.find((m: any) => m.id === modelId);
-		const imageUrl = model?.info?.meta?.profile_image_url || '/static/favicon.png';
-		return imageUrl.startsWith('/') ? `${getImageBaseUrl(imageUrl)}${imageUrl}` : imageUrl;
+		return model?.info?.meta?.profile_image_url || '/static/favicon.png';
 	};
 </script>
 

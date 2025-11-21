@@ -19,7 +19,6 @@
 	import Pagination from '$lib/components/common/Pagination.svelte';
 	import FeedbackMenu from './FeedbackMenu.svelte';
 	import EllipsisHorizontal from '$lib/components/icons/EllipsisHorizontal.svelte';
-	import { WEBUI_BASE_URL, getImageBaseUrl } from '$lib/constants';
 
 	export let feedbacks = [];
 
@@ -168,13 +167,7 @@
 			</thead>
 			<tbody class="">
 				{#each paginatedFeedbacks as feedback (feedback.id)}
-					{@const userImageUrl = feedback?.user?.profile_image_url ?? ''}
-					{@const userImageSrc =
-						userImageUrl === ''
-							? `${getImageBaseUrl('/static/favicon.png')}/static/favicon.png`
-							: userImageUrl.startsWith('/')
-								? `${getImageBaseUrl(userImageUrl)}${userImageUrl}`
-								: userImageUrl}
+					{@const userImageSrc = feedback?.user?.profile_image_url ?? '/static/favicon.png'}
 					<tr class="bg-white dark:bg-gray-900 dark:border-gray-850 text-xs">
 						<td class=" py-0.5 text-right font-semibold">
 							<div class="flex justify-center">

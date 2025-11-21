@@ -1,5 +1,6 @@
 import { WEBUI_API_BASE_URL } from '$lib/constants';
 import { getUserPosition } from '$lib/utils';
+import { normalizeProfileImageFields } from '$lib/utils/profileImage';
 
 export const getUserGroups = async (token: string) => {
 	let error = null;
@@ -25,7 +26,7 @@ export const getUserGroups = async (token: string) => {
 		throw error;
 	}
 
-	return res;
+	return normalizeProfileImageFields(res);
 };
 
 export const getUserDefaultPermissions = async (token: string) => {
@@ -52,7 +53,7 @@ export const getUserDefaultPermissions = async (token: string) => {
 		throw error;
 	}
 
-	return res;
+	return normalizeProfileImageFields(res);
 };
 
 export const updateUserDefaultPermissions = async (token: string, permissions: object) => {
@@ -82,7 +83,7 @@ export const updateUserDefaultPermissions = async (token: string, permissions: o
 		throw error;
 	}
 
-	return res;
+	return normalizeProfileImageFields(res);
 };
 
 export const updateUserRole = async (token: string, id: string, role: string) => {
@@ -113,7 +114,7 @@ export const updateUserRole = async (token: string, id: string, role: string) =>
 		throw error;
 	}
 
-	return res;
+	return normalizeProfileImageFields(res);
 };
 
 export const getUsers = async (token: string) => {
@@ -140,7 +141,7 @@ export const getUsers = async (token: string) => {
 		throw error;
 	}
 
-	return res ? res : [];
+	return normalizeProfileImageFields(res ?? []);
 };
 
 export const getUserSettings = async (token: string) => {
@@ -166,7 +167,7 @@ export const getUserSettings = async (token: string) => {
 		throw error;
 	}
 
-	return res;
+	return normalizeProfileImageFields(res);
 };
 
 export const updateUserSettings = async (token: string, settings: object) => {
@@ -196,7 +197,7 @@ export const updateUserSettings = async (token: string, settings: object) => {
 		throw error;
 	}
 
-	return res;
+	return normalizeProfileImageFields(res);
 };
 
 export const getUserById = async (token: string, userId: string) => {
@@ -223,7 +224,7 @@ export const getUserById = async (token: string, userId: string) => {
 		throw error;
 	}
 
-	return res;
+	return normalizeProfileImageFields(res);
 };
 
 export const getUserInfo = async (token: string) => {
@@ -249,7 +250,7 @@ export const getUserInfo = async (token: string) => {
 		throw error;
 	}
 
-	return res;
+	return normalizeProfileImageFields(res);
 };
 
 export const updateUserInfo = async (token: string, info: object) => {
@@ -279,7 +280,7 @@ export const updateUserInfo = async (token: string, info: object) => {
 		throw error;
 	}
 
-	return res;
+	return normalizeProfileImageFields(res);
 };
 
 export const getAndUpdateUserLocation = async (token: string) => {
@@ -321,7 +322,7 @@ export const deleteUserById = async (token: string, userId: string) => {
 		throw error;
 	}
 
-	return res;
+	return normalizeProfileImageFields(res);
 };
 
 type UserUpdateForm = {
@@ -361,5 +362,5 @@ export const updateUserById = async (token: string, userId: string, user: UserUp
 		throw error;
 	}
 
-	return res;
+	return normalizeProfileImageFields(res);
 };

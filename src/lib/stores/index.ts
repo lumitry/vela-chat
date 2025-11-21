@@ -3,13 +3,30 @@ import { type Writable, writable } from 'svelte/store';
 import type { ModelConfig } from '$lib/apis';
 import type { Banner } from '$lib/types';
 import type { Socket } from 'socket.io-client';
+import { normalizeProfileImageFields } from '$lib/utils/profileImage';
 
 import emojiShortCodes from '$lib/emoji-shortcodes.json';
 
 // Backend
 export const WEBUI_NAME = writable(APP_NAME);
 export const config: Writable<Config | undefined> = writable(undefined);
-export const user: Writable<SessionUser | undefined> = writable(undefined);
+
+const createUserStore = () => {
+	const { subscribe, set, update } = writable<SessionUser | undefined>(undefined);
+
+	return {
+		subscribe,
+		set: (value: SessionUser | undefined) =>
+			set(value ? normalizeProfileImageFields(value) : value),
+		update: (updater: (value: SessionUser | undefined) => SessionUser | undefined) =>
+			update((current) => {
+				const next = updater(current);
+				return next ? normalizeProfileImageFields(next) : next;
+			})
+	};
+};
+
+export const user = createUserStore();
 
 // Electron App
 export const isApp = writable(false);
@@ -52,7 +69,18 @@ export const pinnedChats = writable([]);
 export const tags = writable([]);
 export const folders: Writable<Record<string, any>> = writable({});
 
-export const models: Writable<Model[]> = writable([]);
+const createModelsStore = () => {
+	const { subscribe, set, update } = writable<Model[]>([]);
+
+	return {
+		subscribe,
+		set: (value: Model[]) => set(normalizeProfileImageFields(value)),
+		update: (updater: (value: Model[]) => Model[]) =>
+			update((current) => normalizeProfileImageFields(updater(current)))
+	};
+};
+
+export const models = createModelsStore();
 
 export const prompts: Writable<null | Prompt[]> = writable(null);
 

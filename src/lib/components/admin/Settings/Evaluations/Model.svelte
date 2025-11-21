@@ -2,7 +2,6 @@
 	import { getContext, createEventDispatcher } from 'svelte';
 	const dispatch = createEventDispatcher();
 	const i18n = getContext('i18n');
-	import { WEBUI_BASE_URL, getImageBaseUrl } from '$lib/constants';
 
 	import Cog6 from '$lib/components/icons/Cog6.svelte';
 	import ArenaModelModal from './ArenaModelModal.svelte';
@@ -10,8 +9,7 @@
 
 	let showModel = false;
 
-	$: imageUrl = model.meta.profile_image_url;
-	$: imageSrc = imageUrl.startsWith('/') ? `${getImageBaseUrl(imageUrl)}${imageUrl}` : imageUrl;
+$: imageSrc = model.meta.profile_image_url ?? '/static/favicon.png';
 </script>
 
 <ArenaModelModal

@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { WEBUI_BASE_URL, getImageBaseUrl } from '$lib/constants';
 	import { marked } from 'marked';
 
 	import { config, user, models as _models, temporaryChatEnabled } from '$lib/stores';
@@ -39,11 +38,8 @@
 		<div class="flex justify-start">
 			<div class="flex -space-x-4 mb-0.5" in:fade={{ duration: 200 }}>
 				{#each models as model, modelIdx}
-					{@const imageUrl = model?.info?.meta?.profile_image_url ??
-						($i18n.language === 'dg-DG'
-							? `/doge.png`
-							: `${getImageBaseUrl('/static/favicon.png')}/static/favicon.png`)}
-					{@const imageSrc = imageUrl.startsWith('/') && !imageUrl.startsWith(WEBUI_BASE_URL) ? `${getImageBaseUrl(imageUrl)}${imageUrl}` : imageUrl}
+					{@const imageSrc = model?.info?.meta?.profile_image_url ??
+						($i18n.language === 'dg-DG' ? `/doge.png` : `/static/favicon.png`)}
 					<button
 						on:click={() => {
 							selectedModelIdx = modelIdx;
