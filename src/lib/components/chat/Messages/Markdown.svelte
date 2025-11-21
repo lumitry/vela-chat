@@ -1,4 +1,6 @@
-<script>
+<script lang="ts">
+	import { run } from 'svelte/legacy';
+
 	import { marked } from 'marked';
 	import { replaceTokens, processResponseContent, escapeSingleTildes } from '$lib/utils';
 	import { user } from '$lib/stores';
@@ -11,18 +13,31 @@
 
 	const dispatch = createEventDispatcher();
 
-	export let id = '';
-	export let content;
-	export let model = null;
-	export let save = false;
 
-	export let sourceIds = [];
 
-	export let onSourceClick = () => {};
-	export let onTaskClick = () => {};
-	export let searchQuery = '';
+	interface Props {
+		id?: string;
+		content: any;
+		model?: any;
+		save?: boolean;
+		sourceIds?: any;
+		onSourceClick?: any;
+		onTaskClick?: any;
+		searchQuery?: string;
+	}
 
-	let tokens = [];
+	let {
+		id = '',
+		content,
+		model = null,
+		save = false,
+		sourceIds = [],
+		onSourceClick = () => {},
+		onTaskClick = () => {},
+		searchQuery = ''
+	}: Props = $props();
+
+	let tokens = $state([]);
 
 	const options = {
 		throwOnError: false
@@ -31,14 +46,16 @@
 	marked.use(markedKatexExtension(options));
 	marked.use(markedExtension(options));
 
-	$: (async () => {
-		if (content) {
-			const processedContent = escapeSingleTildes(
-				replaceTokens(processResponseContent(content), sourceIds, model?.name, $user?.name)
-			);
-			tokens = marked.lexer(processedContent);
-		}
-	})();
+	run(() => {
+		(async () => {
+			if (content) {
+				const processedContent = escapeSingleTildes(
+					replaceTokens(processResponseContent(content), sourceIds, model?.name, $user?.name)
+				);
+				tokens = marked.lexer(processedContent);
+			}
+		})();
+	});
 </script>
 
 {#key id}

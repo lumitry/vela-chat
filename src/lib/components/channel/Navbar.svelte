@@ -14,11 +14,11 @@
 
 	const i18n = getContext('i18n');
 
-	export let channel;
+	let { channel } = $props();
 
-	$: userImageSrc = $user?.profile_image_url 
+	let userImageSrc = $derived($user?.profile_image_url 
 		? ($user.profile_image_url.startsWith('/') ? `${WEBUI_BASE_URL}${$user.profile_image_url}` : $user.profile_image_url)
-		: '';
+		: '');
 </script>
 
 <nav class="sticky top-0 z-30 w-full px-1.5 py-1.5 -mb-8 flex items-center drag-region">
@@ -36,7 +36,7 @@
 				<button
 					id="sidebar-toggle-button"
 					class="cursor-pointer px-2 py-2 flex rounded-xl hover:bg-gray-50 dark:hover:bg-gray-850 transition"
-					on:click={() => {
+					onclick={() => {
 						showSidebar.set(!$showSidebar);
 					}}
 					aria-label="Toggle Sidebar"

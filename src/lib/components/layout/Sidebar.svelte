@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { run } from 'svelte/legacy';
+
 	import { toast } from 'svelte-sonner';
 	import { v4 as uuidv4 } from 'uuid';
 
@@ -73,31 +75,31 @@
 
 	const BREAKPOINT = 768;
 
-	let navElement;
-	let search = '';
+	let navElement = $state();
+	let search = $state('');
 
-	let shiftKey = false;
+	let shiftKey = $state(false);
 
-	let selectedChatId = null;
-	let showDropdown = false;
+	let selectedChatId = $state(null);
+	let showDropdown = $state(false);
 
-$: userImageSrc = $user?.profile_image_url ?? '';
-	let showPinnedChat = true;
+let userImageSrc = $derived($user?.profile_image_url ?? '');
+	let showPinnedChat = $state(true);
 
-	let showCreateChannel = false;
+	let showCreateChannel = $state(false);
 
 	// Pagination variables
-	let chatListLoading = false;
-	let allChatsLoaded = false;
+	let chatListLoading = $state(false);
+	let allChatsLoaded = $state(false);
 
-	let folders = {};
+	let folders = $state({});
 	let newFolderId = null;
 
 	// Sorted chats list
-	let sortedChats: any[] = [];
+	let sortedChats: any[] = $state([]);
 
 	// Sort chats based on selected sort option
-	$: {
+	run(() => {
 		if ($chats && Array.isArray($chats)) {
 			sortedChats = [...$chats]
 				.map((chat) => {
@@ -130,35 +132,37 @@ $: userImageSrc = $user?.profile_image_url ?? '';
 		} else {
 			sortedChats = [];
 		}
-	}
+	});
 
 	// Save sort preference to localStorage when it changes
-	$: if ($chatListSortBy) {
-		localStorage.setItem('chatListSortBy', $chatListSortBy);
-		// Re-sort folder chats when sort preference changes
-		if (folders && Object.keys(folders).length > 0) {
-			for (const folderId in folders) {
-				if (folders[folderId]?.items?.chats && Array.isArray(folders[folderId].items.chats)) {
-					folders[folderId].items.chats.sort((a: any, b: any) => {
-						switch ($chatListSortBy) {
-							case 'created':
-								return (b.created_at ?? 0) - (a.created_at ?? 0);
-							case 'title':
-								return a.title.localeCompare(b.title, undefined, {
-									numeric: true,
-									sensitivity: 'base'
-								});
-							case 'updated':
-							default:
-								return (b.updated_at ?? 0) - (a.updated_at ?? 0);
-						}
-					});
+	run(() => {
+		if ($chatListSortBy) {
+			localStorage.setItem('chatListSortBy', $chatListSortBy);
+			// Re-sort folder chats when sort preference changes
+			if (folders && Object.keys(folders).length > 0) {
+				for (const folderId in folders) {
+					if (folders[folderId]?.items?.chats && Array.isArray(folders[folderId].items.chats)) {
+						folders[folderId].items.chats.sort((a: any, b: any) => {
+							switch ($chatListSortBy) {
+								case 'created':
+									return (b.created_at ?? 0) - (a.created_at ?? 0);
+								case 'title':
+									return a.title.localeCompare(b.title, undefined, {
+										numeric: true,
+										sensitivity: 'base'
+									});
+								case 'updated':
+								default:
+									return (b.updated_at ?? 0) - (a.updated_at ?? 0);
+							}
+						});
+					}
 				}
+				// Trigger reactivity
+				folders = { ...folders };
 			}
-			// Trigger reactivity
-			folders = { ...folders };
 		}
-	}
+	});
 
 	const initFolders = async () => {
 		const folderList = await getFolders(localStorage.token).catch((error) => {
@@ -777,17 +781,17 @@ $: userImageSrc = $user?.profile_image_url ?? '';
 	}}
 />
 
-<!-- svelte-ignore a11y-no-static-element-interactions -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 
 {#if $showSidebar}
 	<div
 		class=" {$isApp
 			? ' ml-[4.5rem] md:ml-0'
 			: ''} fixed md:hidden z-40 top-0 right-0 left-0 bottom-0 bg-black/60 w-full min-h-screen h-screen flex justify-center overflow-hidden overscroll-contain"
-		on:mousedown={() => {
+		onmousedown={() => {
 			showSidebar.set(!$showSidebar);
 		}}
-	/>
+	></div>
 {/if}
 
 <div
@@ -809,7 +813,7 @@ $: userImageSrc = $user?.profile_image_url ?? '';
 		<div class="px-1.5 flex justify-between space-x-1 text-gray-600 dark:text-gray-400">
 			<button
 				class=" cursor-pointer p-[7px] flex rounded-xl hover:bg-gray-100 dark:hover:bg-gray-900 transition"
-				on:click={() => {
+				onclick={() => {
 					showSidebar.set(!$showSidebar);
 				}}
 			>
@@ -836,7 +840,7 @@ $: userImageSrc = $user?.profile_image_url ?? '';
 				class="flex justify-between items-center flex-1 rounded-lg px-2 py-1 h-full text-right hover:bg-gray-100 dark:hover:bg-gray-900 transition no-drag-region"
 				href="/"
 				draggable="false"
-				on:click={async (e) => {
+				onclick={async (e) => {
 					if (e.metaKey || e.ctrlKey) {
 						// Open in a new tab
 						e.preventDefault();
@@ -905,7 +909,7 @@ $: userImageSrc = $user?.profile_image_url ?? '';
 				<a
 					class="grow flex items-center space-x-3 rounded-lg px-2 py-[7px] hover:bg-gray-100 dark:hover:bg-gray-900 transition"
 					href="/workspace"
-					on:click={() => {
+					onclick={() => {
 						selectedChatId = null;
 						chatId.set('');
 
@@ -1261,7 +1265,7 @@ $: userImageSrc = $user?.profile_image_url ?? '';
 					>
 						<button
 							class=" flex items-center rounded-xl py-2.5 px-2.5 w-full hover:bg-gray-100 dark:hover:bg-gray-900 transition"
-							on:click={() => {
+							onclick={() => {
 								showDropdown = !showDropdown;
 							}}
 						>

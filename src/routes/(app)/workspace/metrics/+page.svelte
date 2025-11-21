@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { run } from 'svelte/legacy';
+
 	import { onMount, getContext } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { page } from '$app/stores';
@@ -41,14 +43,6 @@
 
 	const i18n = getContext('i18n');
 
-	// Calculate summary statistics
-	$: totalSpend = dailySpend.reduce((sum, d) => sum + (d.cost || 0), 0);
-	$: totalInputTokens = dailyTokenUsage.reduce((sum, d) => sum + (d.input_tokens || 0), 0);
-	$: totalOutputTokens = dailyTokenUsage.reduce((sum, d) => sum + (d.output_tokens || 0), 0);
-	$: totalTokens = totalInputTokens + totalOutputTokens;
-	$: totalMessages = messageCountDaily.reduce((sum, d) => sum + (d.count || 0), 0);
-	$: avgCostPerMessage = totalMessages > 0 ? totalSpend / totalMessages : 0;
-	$: uniqueModels = new Set(modelMetrics.map((m) => m.model_id)).size;
 
 	// Export functions
 	const exportToCSV = (data: any[], filename: string, headers: string[]) => {
@@ -100,70 +94,67 @@
 		exportToCSV(data, filename, headers);
 	};
 
-	let startDate = '';
-	let endDate = '';
-	let modelType: 'local' | 'external' | 'both' = 'both';
-	let showCost = false;
-	let includeEmbeddings = false;
-	let showEmbeddingsVisualizer = false;
-	let previousIncludeEmbeddings = false;
+	let startDate = $state('');
+	let endDate = $state('');
+	let modelType: 'local' | 'external' | 'both' = $state('both');
+	let showCost = $state(false);
+	let includeEmbeddings = $state(false);
+	let showEmbeddingsVisualizer = $state(false);
+	let previousIncludeEmbeddings = $state(false);
 
 	// Data stores
-	let modelMetrics: any[] = [];
-	let dailyTokenUsage: any[] = [];
-	let dailySpend: any[] = [];
-	let modelDailyTokens: any[] = [];
-	let modelDailyCost: any[] = [];
-	let costPerMessageDaily: any[] = [];
-	let messageCountDaily: any[] = [];
-	let modelPopularity: any[] = [];
-	let costPerTokenDaily: any[] = [];
-	let taskGenerationTypesDaily: any[] = [];
-	let indexGrowthDaily: any[] = [];
+	let modelMetrics: any[] = $state([]);
+	let dailyTokenUsage: any[] = $state([]);
+	let dailySpend: any[] = $state([]);
+	let modelDailyTokens: any[] = $state([]);
+	let modelDailyCost: any[] = $state([]);
+	let costPerMessageDaily: any[] = $state([]);
+	let messageCountDaily: any[] = $state([]);
+	let modelPopularity: any[] = $state([]);
+	let costPerTokenDaily: any[] = $state([]);
+	let taskGenerationTypesDaily: any[] = $state([]);
+	let indexGrowthDaily: any[] = $state([]);
 
 	// Loading states for each component
-	let loadingModels = false;
-	let loadingTokens = false;
-	let loadingSpend = false;
-	let loadingModelTokens = false;
-	let loadingModelCost = false;
-	let loadingCostPerMessage = false;
-	let loadingMessageCount = false;
-	let loadingPopularity = false;
-	let loadingCostPerToken = false;
-	let loadingTaskGenerationTypes = false;
-	let loadingIndexGrowth = false;
+	let loadingModels = $state(false);
+	let loadingTokens = $state(false);
+	let loadingSpend = $state(false);
+	let loadingModelTokens = $state(false);
+	let loadingModelCost = $state(false);
+	let loadingCostPerMessage = $state(false);
+	let loadingMessageCount = $state(false);
+	let loadingPopularity = $state(false);
+	let loadingCostPerToken = $state(false);
+	let loadingTaskGenerationTypes = $state(false);
+	let loadingIndexGrowth = $state(false);
 
 	// Track request IDs to prevent race conditions
 	let currentRequestId = 0;
 
 	// Track if we're updating URL to avoid reactive loop
-	let isUpdatingURL = false;
-	let isInitialized = false;
-
-	// Generate cache key from params
-	const getCacheKey = (endpoint: string, params: MetricsParams): string => {
-		const keyParts = [
-			endpoint,
-			params.model_type || 'both',
-			params.start_date || '',
-			params.end_date || '',
-			params.limit?.toString() || ''
-		];
-		return keyParts.join('|');
-	};
+	let isUpdatingURL = $state(false);
+	let isInitialized = $state(false);
 
 	// Fetch a single metric endpoint with race condition protection
-	const fetchMetric = async <T,>(
+	async function fetchMetric<T>(
 		endpoint: string,
 		fetcher: (token: string, params: MetricsParams) => Promise<T>,
 		params: MetricsParams,
 		loadingSetter: (value: boolean) => void,
 		dataSetter: (value: T) => void,
 		requestId: number
-	) => {
+	) {
+		// Store endpoint in const to ensure it's captured properly in Svelte 5
+		const endpointKey = endpoint;
 		const token = localStorage.token;
-		const cacheKey = getCacheKey(endpoint, params);
+		// Inline cache key generation to avoid Svelte 5 scoping issues
+		const cacheKey = [
+			endpointKey,
+			params.model_type || 'both',
+			params.start_date || '',
+			params.end_date || '',
+			params.limit?.toString() || ''
+		].join('|');
 		const cache = $metricsCache;
 		const cached = cache.get(cacheKey);
 
@@ -189,7 +180,7 @@
 		} catch (error) {
 			// Only show error if this is still the current request
 			if (requestId === currentRequestId) {
-				console.error(`Error fetching ${endpoint}:`, error);
+				console.error(`Error fetching ${endpointKey}:`, error);
 				toast.error($i18n.t('Failed to load metrics'));
 			}
 		} finally {
@@ -198,7 +189,7 @@
 				loadingSetter(false);
 			}
 		}
-	};
+	}
 
 	const fetchAllMetrics = async () => {
 		// Validate dates before fetching
@@ -393,37 +384,49 @@
 		}
 	};
 
-	// Watch for includeEmbeddings changes and update URL/metrics (but not during initialization)
-	$: if (isInitialized && includeEmbeddings !== previousIncludeEmbeddings) {
-		previousIncludeEmbeddings = includeEmbeddings;
-		if (!isUpdatingURL) {
-			updateURL();
-			fetchAllMetrics();
-		}
-	}
 
-	// Watch for URL changes (e.g., browser back/forward)
-	$: if ($page.url.searchParams && !isUpdatingURL && isInitialized) {
-		const params = $page.url.searchParams;
-		const urlStartDate = params.get('start_date') || '';
-		const urlEndDate = params.get('end_date') || '';
-		const urlModelType = params.get('model_type') || 'both';
-		const urlIncludeEmbeddings = params.get('include_embeddings') === 'true';
-
-		// Check if URL params differ from current state
-		if (
-			urlStartDate !== startDate ||
-			urlEndDate !== endDate ||
-			urlModelType !== modelType ||
-			urlIncludeEmbeddings !== includeEmbeddings
-		) {
-			initializeFromURL();
-		}
-	}
 
 	onMount(() => {
 		initializeFromURL();
 		isInitialized = true;
+	});
+	// Calculate summary statistics
+	let totalSpend = $derived(dailySpend.reduce((sum, d) => sum + (d.cost || 0), 0));
+	let totalInputTokens = $derived(dailyTokenUsage.reduce((sum, d) => sum + (d.input_tokens || 0), 0));
+	let totalOutputTokens = $derived(dailyTokenUsage.reduce((sum, d) => sum + (d.output_tokens || 0), 0));
+	let totalTokens = $derived(totalInputTokens + totalOutputTokens);
+	let totalMessages = $derived(messageCountDaily.reduce((sum, d) => sum + (d.count || 0), 0));
+	let avgCostPerMessage = $derived(totalMessages > 0 ? totalSpend / totalMessages : 0);
+	let uniqueModels = $derived(new Set(modelMetrics.map((m) => m.model_id)).size);
+	// Watch for includeEmbeddings changes and update URL/metrics (but not during initialization)
+	run(() => {
+		if (isInitialized && includeEmbeddings !== previousIncludeEmbeddings) {
+			previousIncludeEmbeddings = includeEmbeddings;
+			if (!isUpdatingURL) {
+				updateURL();
+				fetchAllMetrics();
+			}
+		}
+	});
+	// Watch for URL changes (e.g., browser back/forward)
+	run(() => {
+		if ($page.url.searchParams && !isUpdatingURL && isInitialized) {
+			const params = $page.url.searchParams;
+			const urlStartDate = params.get('start_date') || '';
+			const urlEndDate = params.get('end_date') || '';
+			const urlModelType = params.get('model_type') || 'both';
+			const urlIncludeEmbeddings = params.get('include_embeddings') === 'true';
+
+			// Check if URL params differ from current state
+			if (
+				urlStartDate !== startDate ||
+				urlEndDate !== endDate ||
+				urlModelType !== modelType ||
+				urlIncludeEmbeddings !== includeEmbeddings
+			) {
+				initializeFromURL();
+			}
+		}
 	});
 </script>
 
@@ -440,7 +443,7 @@
 		</div>
 		<button
 			class="px-4 py-2 text-sm rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition"
-			on:click={() => (showEmbeddingsVisualizer = true)}
+			onclick={() => (showEmbeddingsVisualizer = true)}
 		>
 			{$i18n.t('Open Embeddings Visualizer')}
 		</button>
@@ -512,7 +515,7 @@
 					{#if !loadingModels && modelMetrics.length > 0}
 						<button
 							class="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition"
-							on:click={exportModelUsage}
+							onclick={exportModelUsage}
 						>
 							<Download className="w-4 h-4" strokeWidth="1.5" />
 							{$i18n.t('Export CSV')}

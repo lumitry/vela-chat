@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { run } from 'svelte/legacy';
+
 	import { v4 as uuidv4 } from 'uuid';
 	import {
 		chats,
@@ -24,40 +26,67 @@
 
 	const i18n = getContext('i18n');
 
-	export let className = 'h-full flex pt-8';
 
-	export let chatId = '';
-	export let user = $_user;
 
-	export let prompt;
-	export let history = {};
-	export let selectedModels;
-	export let atSelectedModel;
 
-	let messages = [];
+	let messages = $state([]);
 
-	export let sendPrompt: Function;
-	export let continueResponse: Function;
-	export let regenerateResponse: Function;
-	export let mergeResponses: Function;
 
-	export let chatActionHandler: Function;
-	export let showMessage: Function = () => {};
-	export let submitMessage: Function = () => {};
-	export let addMessages: Function = () => {};
-	export let refreshChatMeta: Function = () => {};
 
-	export let readOnly = false;
 
-	export let bottomPadding = false;
-	export let autoScroll;
 
-	export let searchMatches = [];
-	export let currentMatchId = '';
-	export let searchQuery = '';
+	interface Props {
+		className?: string;
+		chatId?: string;
+		user?: any;
+		prompt: any;
+		history?: any;
+		selectedModels: any;
+		atSelectedModel: any;
+		sendPrompt: Function;
+		continueResponse: Function;
+		regenerateResponse: Function;
+		mergeResponses: Function;
+		chatActionHandler: Function;
+		showMessage?: Function;
+		submitMessage?: Function;
+		addMessages?: Function;
+		refreshChatMeta?: Function;
+		readOnly?: boolean;
+		bottomPadding?: boolean;
+		autoScroll: any;
+		searchMatches?: any;
+		currentMatchId?: string;
+		searchQuery?: string;
+	}
 
-	let messagesCount = 20;
-	let messagesLoading = false;
+	let {
+		className = 'h-full flex pt-8',
+		chatId = '',
+		user = $_user,
+		prompt = $bindable(),
+		history = $bindable({}),
+		selectedModels,
+		atSelectedModel,
+		sendPrompt,
+		continueResponse,
+		regenerateResponse,
+		mergeResponses,
+		chatActionHandler,
+		showMessage = () => {},
+		submitMessage = () => {},
+		addMessages = () => {},
+		refreshChatMeta = () => {},
+		readOnly = false,
+		bottomPadding = false,
+		autoScroll = $bindable(),
+		searchMatches = [],
+		currentMatchId = '',
+		searchQuery = ''
+	}: Props = $props();
+
+	let messagesCount = $state(20);
+	let messagesLoading = $state(false);
 
 	const loadMoreMessages = async () => {
 		// scroll slightly down to disable continuous loading
@@ -72,38 +101,7 @@
 		messagesLoading = false;
 	};
 
-	$: if (history.currentId) {
-		let _messages = [];
 
-		let message = history.messages[history.currentId];
-		while (message && _messages.length <= messagesCount) {
-			_messages.unshift({ ...message });
-			if (message.parentId !== null) {
-				const parentMessage = history.messages[message.parentId];
-				if (!parentMessage) {
-					console.warn(
-						`Parent message ${message.parentId} not found in history.messages for message ${message.id}`
-					);
-					// Stop walking if parent is missing to avoid infinite loop
-					break;
-				}
-				message = parentMessage;
-			} else {
-				message = null;
-			}
-		}
-
-		messages = _messages;
-	} else {
-		messages = [];
-	}
-
-	$: if (autoScroll && bottomPadding) {
-		(async () => {
-			await tick();
-			scrollToBottom();
-		})();
-	}
 
 	const scrollToBottom = () => {
 		const element = document.getElementById('messages-container');
@@ -413,6 +411,41 @@
 			}, 100);
 		}
 	};
+	run(() => {
+		if (history.currentId) {
+			let _messages = [];
+
+			let message = history.messages[history.currentId];
+			while (message && _messages.length <= messagesCount) {
+				_messages.unshift({ ...message });
+				if (message.parentId !== null) {
+					const parentMessage = history.messages[message.parentId];
+					if (!parentMessage) {
+						console.warn(
+							`Parent message ${message.parentId} not found in history.messages for message ${message.id}`
+						);
+						// Stop walking if parent is missing to avoid infinite loop
+						break;
+					}
+					message = parentMessage;
+				} else {
+					message = null;
+				}
+			}
+
+			messages = _messages;
+		} else {
+			messages = [];
+		}
+	});
+	run(() => {
+		if (autoScroll && bottomPadding) {
+			(async () => {
+				await tick();
+				scrollToBottom();
+			})();
+		}
+	});
 </script>
 
 <div class={className}>
@@ -486,9 +519,9 @@
 						/>
 					{/each}
 				</div>
-				<div class="pb-12" />
+				<div class="pb-12"></div>
 				{#if bottomPadding}
-					<div class="  pb-6" />
+					<div class="  pb-6"></div>
 				{/if}
 			{/key}
 		</div>

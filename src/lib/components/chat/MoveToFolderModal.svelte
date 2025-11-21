@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { run } from 'svelte/legacy';
+
 	import { getContext, createEventDispatcher } from 'svelte';
 	import Modal from '$lib/components/common/Modal.svelte';
 	import { getFolders } from '$lib/apis/folders';
@@ -9,9 +11,13 @@
 	const i18n = getContext('i18n');
 	const dispatch = createEventDispatcher();
 
-	export let show = false;
+	interface Props {
+		show?: boolean;
+	}
 
-	let selectedFolderId: string | null = null;
+	let { show = $bindable(false) }: Props = $props();
+
+	let selectedFolderId: string | null = $state(null);
 
 	interface FolderOption {
 		id: string | null;
@@ -20,7 +26,7 @@
 		parent_id: string | null;
 	}
 
-	let folderOptions: FolderOption[] = [];
+	let folderOptions: FolderOption[] = $state([]);
 
 	const buildFolderOptions = (folders: Record<string, any>) => {
 		// Convert folders object to array
@@ -102,10 +108,12 @@
 		show = false;
 	};
 
-	$: if (show) {
-		loadFolders();
-		selectedFolderId = null;
-	}
+	run(() => {
+		if (show) {
+			loadFolders();
+			selectedFolderId = null;
+		}
+	});
 </script>
 
 <Modal bind:show size="sm">
@@ -121,7 +129,7 @@
 					option.id
 						? 'bg-gray-200 dark:bg-gray-800'
 						: 'hover:bg-gray-100 dark:hover:bg-gray-900'}"
-					on:click={() => {
+					onclick={() => {
 						selectedFolderId = option.id;
 					}}
 				>
@@ -156,13 +164,13 @@
 		<div class="mt-5 flex justify-end gap-2">
 			<button
 				class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition"
-				on:click={handleCancel}
+				onclick={handleCancel}
 			>
 				{$i18n.t('Cancel')}
 			</button>
 			<button
 				class="px-4 py-2 text-sm font-medium bg-gray-900 dark:bg-white text-white dark:text-black rounded-lg hover:bg-gray-800 dark:hover:bg-gray-100 transition disabled:opacity-50 disabled:cursor-not-allowed"
-				on:click={handleConfirm}
+				onclick={handleConfirm}
 				disabled={selectedFolderId === undefined}
 			>
 				{$i18n.t('Move')}

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import MarkdownInlineTokens from './MarkdownInlineTokens.svelte';
 	import DOMPurify from 'dompurify';
 	import { toast } from 'svelte-sonner';
 
@@ -15,10 +16,19 @@
 	import KatexRenderer from './KatexRenderer.svelte';
 	import Source from './Source.svelte';
 
-	export let id: string;
-	export let tokens: Token[];
-	export let onSourceClick: Function = () => {};
-	export let searchQuery: string = '';
+	interface Props {
+		id: string;
+		tokens: Token[];
+		onSourceClick?: Function;
+		searchQuery?: string;
+	}
+
+	let {
+		id,
+		tokens,
+		onSourceClick = () => {},
+		searchQuery = ''
+	}: Props = $props();
 
 	const hexColorRegex = /(#[0-9a-fA-F]{6,8})\b/g;
 
@@ -69,7 +79,7 @@
 	{:else if token.type === 'link'}
 		{#if token.tokens}
 			<a href={token.href} target="_blank" rel="nofollow" title={token.title}>
-				<svelte:self id={`${id}-a`} tokens={token.tokens} {onSourceClick} {searchQuery} />
+				<MarkdownInlineTokens id={`${id}-a`} tokens={token.tokens} {onSourceClick} {searchQuery} />
 			</a>
 		{:else}
 			<a href={token.href} target="_blank" rel="nofollow" title={token.title}>
@@ -94,15 +104,15 @@
 	{:else if token.type === 'image'}
 		<Image src={token.href} alt={token.text} />
 	{:else if token.type === 'strong'}
-		<strong><svelte:self id={`${id}-strong`} tokens={token.tokens} {onSourceClick} {searchQuery} /></strong>
+		<strong><MarkdownInlineTokens id={`${id}-strong`} tokens={token.tokens} {onSourceClick} {searchQuery} /></strong>
 	{:else if token.type === 'em'}
-		<em><svelte:self id={`${id}-em`} tokens={token.tokens} {onSourceClick} {searchQuery} /></em>
+		<em><MarkdownInlineTokens id={`${id}-em`} tokens={token.tokens} {onSourceClick} {searchQuery} /></em>
 	{:else if token.type === 'codespan'}
-		<!-- svelte-ignore a11y-click-events-have-key-events -->
-		<!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
+		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 		<code
 			class="codespan cursor-pointer"
-			on:click={() => {
+			onclick={() => {
 				copyToClipboard(unescapeHtml(token.text));
 				toast.success($i18n.t('Copied to clipboard'));
 			}}>{unescapeHtml(token.text)}</code
@@ -110,7 +120,7 @@
 	{:else if token.type === 'br'}
 		<br />
 	{:else if token.type === 'del'}
-		<del><svelte:self id={`${id}-del`} tokens={token.tokens} {onSourceClick} {searchQuery} /></del>
+		<del><MarkdownInlineTokens id={`${id}-del`} tokens={token.tokens} {onSourceClick} {searchQuery} /></del>
 	{:else if token.type === 'inlineKatex'}
 		{#if token.text}
 			<KatexRenderer content={token.text} displayMode={false} />
@@ -121,19 +131,24 @@
 			title={token.fileId}
 			width="100%"
 			frameborder="0"
-			onload="this.style.height=(this.contentWindow.document.body.scrollHeight+20)+'px';"
+			onload={(e) => {
+				const iframe = e.target as HTMLIFrameElement;
+				if (iframe.contentWindow?.document?.body) {
+					iframe.style.height = iframe.contentWindow.document.body.scrollHeight + 20 + 'px';
+				}
+			}}
 		></iframe>
 	{:else if token.type === 'text'}
 		{#if $settings?.showHexColorSwatches ?? true}
 			{#each token.raw.split(hexColorRegex) as part, i}
 				{#if i % 2 === 1}
 					<span class="inline-flex items-center">
-						<!-- svelte-ignore a11y-click-events-have-key-events -->
-						<!-- svelte-ignore a11y-no-static-element-interactions -->
+						<!-- svelte-ignore a11y_click_events_have_key_events -->
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<span
 							class="inline-block w-4 h-4 mr-1 border border-gray-300 dark:border-gray-600 rounded-sm cursor-pointer"
 							style="background-color: {part};"
-							on:click={() => {
+							onclick={() => {
 								copyToClipboard(part);
 								toast.success($i18n.t('Copied to clipboard'));
 							}}

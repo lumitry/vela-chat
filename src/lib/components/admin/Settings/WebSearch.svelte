@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { preventDefault } from 'svelte/legacy';
+
 	import { getRAGConfig, updateRAGConfig } from '$lib/apis/retrieval';
 	import Switch from '$lib/components/common/Switch.svelte';
 
@@ -10,15 +12,19 @@
 
 	const i18n = getContext('i18n');
 
-	export let saveHandler: Function;
+	interface Props {
+		saveHandler: Function;
+	}
 
-	let webSearchEmbeddingEngine = '';
-	let webSearchEmbeddingModel = '';
-	let webSearchEmbeddingBatchSize = 1;
-	let webSearchOpenAIUrl = '';
-	let webSearchOpenAIKey = '';
-	let webSearchOllamaUrl = '';
-	let webSearchOllamaKey = '';
+	let { saveHandler }: Props = $props();
+
+	let webSearchEmbeddingEngine = $state('');
+	let webSearchEmbeddingModel = $state('');
+	let webSearchEmbeddingBatchSize = $state(1);
+	let webSearchOpenAIUrl = $state('');
+	let webSearchOpenAIKey = $state('');
+	let webSearchOllamaUrl = $state('');
+	let webSearchOllamaKey = $state('');
 
 	let webSearchEngines = [
 		'searxng',
@@ -42,7 +48,7 @@
 	];
 	let webLoaderEngines = ['playwright', 'firecrawl', 'tavily'];
 
-	let webConfig = null;
+	let webConfig = $state(null);
 
 	const submitHandler = async () => {
 		// Convert domain filter string to array before sending
@@ -107,10 +113,10 @@
 
 <form
 	class="flex flex-col h-full justify-between space-y-3 text-sm"
-	on:submit|preventDefault={async () => {
+	onsubmit={preventDefault(async () => {
 		await submitHandler();
 		saveHandler();
-	}}
+	})}
 >
 	<div class=" space-y-3 overflow-y-scroll scrollbar-hidden h-full">
 		{#if webConfig}
@@ -543,7 +549,7 @@
 											class="dark:bg-gray-900 w-fit pr-8 rounded-sm px-2 p-1 text-xs bg-transparent outline-hidden text-right"
 											bind:value={webSearchEmbeddingEngine}
 											placeholder="Select an embedding model engine"
-											on:change={(e) => {
+											onchange={(e) => {
 												if (e.target.value === 'ollama') {
 													webSearchEmbeddingModel = '';
 												} else if (e.target.value === 'openai') {

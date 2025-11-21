@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { run } from 'svelte/legacy';
+
 	import { marked } from 'marked';
 
 	import { config, user, models as _models, temporaryChatEnabled } from '$lib/stores';
@@ -13,20 +15,26 @@
 
 	const i18n = getContext('i18n');
 
-	export let modelIds = [];
-	export let models = [];
-	export let atSelectedModel;
 
-	export let submitPrompt;
+	let {
+		modelIds = [],
+		models = $bindable([]),
+		atSelectedModel,
+		submitPrompt
+	} = $props();
 
-	let mounted = false;
-	let selectedModelIdx = 0;
+	let mounted = $state(false);
+	let selectedModelIdx = $state(0);
 
-	$: if (modelIds.length > 0) {
-		selectedModelIdx = models.length - 1;
-	}
+	run(() => {
+		if (modelIds.length > 0) {
+			selectedModelIdx = models.length - 1;
+		}
+	});
 
-	$: models = modelIds.map((id) => $_models.find((m) => m.id === id));
+	run(() => {
+		models = modelIds.map((id) => $_models.find((m) => m.id === id));
+	});
 
 	onMount(() => {
 		mounted = true;
@@ -41,7 +49,7 @@
 					{@const imageSrc = model?.info?.meta?.profile_image_url ??
 						($i18n.language === 'dg-DG' ? `/doge.png` : `/static/favicon.png`)}
 					<button
-						on:click={() => {
+						onclick={() => {
 							selectedModelIdx = modelIdx;
 						}}
 					>

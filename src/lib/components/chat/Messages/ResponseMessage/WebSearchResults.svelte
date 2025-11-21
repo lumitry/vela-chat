@@ -5,17 +5,21 @@
 	import Collapsible from '$lib/components/common/Collapsible.svelte';
 	import { getSiteTitleFromUrl } from '$lib/utils/index';
 
-	export let status = { urls: [], query: '' };
-	let state = false;
+	interface Props {
+		status?: { urls: string[]; query: string };
+	}
+
+	let { status = { urls: [], query: '' } }: Props = $props();
+	let isOpen = $state(false);
 </script>
 
-<Collapsible bind:open={state} className="w-full space-y-1">
+<Collapsible bind:open={isOpen} className="w-full space-y-1">
 	<div
 		class="flex items-center gap-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition"
 	>
 		<slot />
 
-		{#if state}
+		{#if isOpen}
 			<ChevronUp strokeWidth="3.5" className="size-3.5 " />
 		{:else}
 			<ChevronDown strokeWidth="3.5" className="size-3.5 " />

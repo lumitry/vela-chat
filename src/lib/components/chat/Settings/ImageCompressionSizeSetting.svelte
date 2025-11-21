@@ -2,8 +2,12 @@
 	import { getContext } from 'svelte';
 	const i18n = getContext('i18n');
 
-	export let imageCompressionSize: { width: string; height: string };
-	export let saveSettings: Function;
+	interface Props {
+		imageCompressionSize: { width: string; height: string };
+		saveSettings: Function;
+	}
+
+	let { imageCompressionSize = $bindable(), saveSettings }: Props = $props();
 
 	const handleBlur = () => {
 		saveSettings({ imageCompressionSize });
@@ -20,7 +24,7 @@
 				class="w-20 bg-transparent outline-hidden text-center"
 				min="0"
 				placeholder="Width"
-				on:blur={handleBlur}
+				onblur={handleBlur}
 			/>x
 			<input
 				bind:value={imageCompressionSize.height}
@@ -28,7 +32,7 @@
 				class="w-20 bg-transparent outline-hidden text-center"
 				min="0"
 				placeholder="Height"
-				on:blur={handleBlur}
+				onblur={handleBlur}
 			/>
 		</div>
 	</div>

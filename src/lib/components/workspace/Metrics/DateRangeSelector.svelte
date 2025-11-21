@@ -1,33 +1,41 @@
 <script lang="ts">
+	import { run } from 'svelte/legacy';
+
 	import { getContext } from 'svelte';
 	import { createEventDispatcher } from 'svelte';
 
 	const i18n = getContext('i18n');
 	const dispatch = createEventDispatcher();
 
-	export let startDate: string = '';
-	export let endDate: string = '';
+	interface Props {
+		startDate?: string;
+		endDate?: string;
+	}
+
+	let { startDate = $bindable(''), endDate = $bindable('') }: Props = $props();
 
 	type Preset = '7d' | '30d' | '90d' | 'custom';
 
 	// Local copies for the inputs (can be modified)
-	let localStartDate: string = '';
-	let localEndDate: string = '';
-	let lastPropStartDate: string = '';
-	let lastPropEndDate: string = '';
+	let localStartDate: string = $state('');
+	let localEndDate: string = $state('');
+	let lastPropStartDate: string = $state('');
+	let lastPropEndDate: string = $state('');
 
-	let selectedPreset: Preset = '30d';
-	let showCustom = false;
-	let userSelectedCustom = false; // Track if user explicitly selected custom
+	let selectedPreset: Preset = $state('30d');
+	let showCustom = $state(false);
+	let userSelectedCustom = $state(false); // Track if user explicitly selected custom
 
 	// Sync local dates with props ONLY when props actually change (not when local changes)
-	$: if (startDate !== lastPropStartDate || endDate !== lastPropEndDate) {
-		// Props changed externally, update local dates
-		localStartDate = startDate;
-		localEndDate = endDate;
-		lastPropStartDate = startDate;
-		lastPropEndDate = endDate;
-	}
+	run(() => {
+		if (startDate !== lastPropStartDate || endDate !== lastPropEndDate) {
+			// Props changed externally, update local dates
+			localStartDate = startDate;
+			localEndDate = endDate;
+			lastPropStartDate = startDate;
+			lastPropEndDate = endDate;
+		}
+	});
 
 	// Detect which preset matches the current date range
 	const detectPreset = (start: string, end: string): Preset => {
@@ -62,28 +70,32 @@
 	};
 
 	// Update preset when dates change (but don't override if user explicitly selected custom)
-	$: if (startDate && endDate && !userSelectedCustom) {
-		const detectedPreset = detectPreset(startDate, endDate);
-		selectedPreset = detectedPreset;
-		showCustom = detectedPreset === 'custom';
-	}
+	run(() => {
+		if (startDate && endDate && !userSelectedCustom) {
+			const detectedPreset = detectPreset(startDate, endDate);
+			selectedPreset = detectedPreset;
+			showCustom = detectedPreset === 'custom';
+		}
+	});
 
 	// Calculate default dates (last 30 days)
-	$: if (!startDate || !endDate) {
-		const end = new Date();
-		const start = new Date();
-		start.setDate(start.getDate() - 30);
-		const newStartDate = start.toISOString().split('T')[0];
-		const newEndDate = end.toISOString().split('T')[0];
-		startDate = newStartDate;
-		endDate = newEndDate;
-		// Also update local dates and tracked prop values
-		localStartDate = newStartDate;
-		localEndDate = newEndDate;
-		lastPropStartDate = newStartDate;
-		lastPropEndDate = newEndDate;
-		dispatch('change', { startDate: newStartDate, endDate: newEndDate });
-	}
+	run(() => {
+		if (!startDate || !endDate) {
+			const end = new Date();
+			const start = new Date();
+			start.setDate(start.getDate() - 30);
+			const newStartDate = start.toISOString().split('T')[0];
+			const newEndDate = end.toISOString().split('T')[0];
+			startDate = newStartDate;
+			endDate = newEndDate;
+			// Also update local dates and tracked prop values
+			localStartDate = newStartDate;
+			localEndDate = newEndDate;
+			lastPropStartDate = newStartDate;
+			lastPropEndDate = newEndDate;
+			dispatch('change', { startDate: newStartDate, endDate: newEndDate });
+		}
+	});
 
 	const setPreset = (preset: Preset) => {
 		selectedPreset = preset;
@@ -157,7 +169,7 @@
 			class="px-3 py-1.5 rounded-xl text-sm font-medium transition {selectedPreset === '7d'
 				? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white'
 				: 'bg-transparent hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400'}"
-			on:click={() => setPreset('7d')}
+			onclick={() => setPreset('7d')}
 		>
 			{$i18n.t('Last 7 days')}
 		</button>
@@ -165,7 +177,7 @@
 			class="px-3 py-1.5 rounded-xl text-sm font-medium transition {selectedPreset === '30d'
 				? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white'
 				: 'bg-transparent hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400'}"
-			on:click={() => setPreset('30d')}
+			onclick={() => setPreset('30d')}
 		>
 			{$i18n.t('Last 30 days')}
 		</button>
@@ -173,7 +185,7 @@
 			class="px-3 py-1.5 rounded-xl text-sm font-medium transition {selectedPreset === '90d'
 				? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white'
 				: 'bg-transparent hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400'}"
-			on:click={() => setPreset('90d')}
+			onclick={() => setPreset('90d')}
 		>
 			{$i18n.t('Last 90 days')}
 		</button>
@@ -181,7 +193,7 @@
 			class="px-3 py-1.5 rounded-xl text-sm font-medium transition {selectedPreset === 'custom'
 				? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white'
 				: 'bg-transparent hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400'}"
-			on:click={() => setPreset('custom')}
+			onclick={() => setPreset('custom')}
 		>
 			{$i18n.t('Custom')}
 		</button>
@@ -193,7 +205,7 @@
 					bind:value={localStartDate}
 					max={localEndDate || today}
 					class="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm"
-					on:change={handleCustomChange}
+					onchange={handleCustomChange}
 				/>
 			</label>
 			<label class="text-sm text-gray-600 dark:text-gray-400 flex items-center gap-1">
@@ -204,7 +216,7 @@
 					min={localStartDate}
 					max={today}
 					class="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm"
-					on:change={handleCustomChange}
+					onchange={handleCustomChange}
 				/>
 			</label>
 		{/if}

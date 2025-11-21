@@ -13,20 +13,24 @@
 	import Textarea from '$lib/components/common/Textarea.svelte';
 	import Switch from '$lib/components/common/Switch.svelte';
 
-	export let saveSettings: Function;
-	export let getModels: Function;
+	interface Props {
+		saveSettings: Function;
+		getModels: Function;
+	}
+
+	let { saveSettings, getModels }: Props = $props();
 
 	// General
-	let selectedTheme = 'system';
-	let customThemeColor = '#6366f1'; // Default indigo color
-	let pendingCustomColor = '#6366f1'; // Color being edited but not yet applied
+	let selectedTheme = $state('system');
+	let customThemeColor = $state('#6366f1'); // Default indigo color
+	let pendingCustomColor = $state('#6366f1'); // Color being edited but not yet applied
 
-	let languages: Awaited<ReturnType<typeof getLanguages>> = [];
-	let lang = $i18n.language;
-	let notificationEnabled = false;
-	let system = '';
+	let languages: Awaited<ReturnType<typeof getLanguages>> = $state([]);
+	let lang = $state($i18n.language);
+	let notificationEnabled = $state(false);
+	let system = $state('');
 
-	let showAdvanced = false;
+	let showAdvanced = $state(false);
 
 	const toggleNotification = async () => {
 		const permission = await Notification.requestPermission();
@@ -44,10 +48,10 @@
 	};
 
 	// Advanced
-	let requestFormat = null;
-	let keepAlive: string | null = null;
+	let requestFormat = $state(null);
+	let keepAlive: string | null = $state(null);
 
-	let params = {
+	let params = $state({
 		// Advanced
 		stream_response: null,
 		function_calling: null,
@@ -91,7 +95,7 @@
 		// transforms: null, // ORT-specific. compress prompts > than max ctx length
 		// plugins: null // ORT-specific. List of plugins to use for this request. Useful for web search via "plugins": [{ "id": "web" }]
 		// web_search_options: null, // Options for web search plugins. if enabled, create an object with {search_context_size: "high"} (or "medium", "low") to set the search context size.
-	};
+	});
 
 	const validateJSON = (json) => {
 		try {
@@ -312,7 +316,7 @@
 	};
 
 	// Check if the current pending color is different from applied color
-	$: isColorChanged = pendingCustomColor !== customThemeColor;
+	let isColorChanged = $derived(pendingCustomColor !== customThemeColor);
 </script>
 
 <div class="flex flex-col h-full justify-between text-sm">
@@ -327,7 +331,7 @@
 						class=" dark:bg-gray-900 w-fit pr-8 rounded-sm py-2 px-2 text-xs bg-transparent outline-hidden text-right"
 						bind:value={selectedTheme}
 						placeholder="Select a theme"
-						on:change={() => themeChangeHandler(selectedTheme)}
+						onchange={() => themeChangeHandler(selectedTheme)}
 					>
 						<option value="system">⚙️ {$i18n.t('System')}</option>
 						<option value="dark">🌑 {$i18n.t('Dark')}</option>
@@ -347,7 +351,7 @@
 				<div class="flex items-center space-x-2">
 					<button
 						type="button"
-						on:click={randomizeThemeColor}
+						onclick={randomizeThemeColor}
 						class="w-8 h-6 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition flex items-center justify-center text-sm"
 						title="Randomize theme color"
 					>
@@ -356,13 +360,13 @@
 					<input
 						type="color"
 						bind:value={pendingCustomColor}
-						on:input={(e) => handleCustomColorChange(e.target.value)}
+						oninput={(e) => handleCustomColorChange(e.target.value)}
 						class="w-8 h-6 rounded border border-gray-300 dark:border-gray-600 cursor-pointer"
 						title="Choose custom theme color"
 					/>
 					<button
 						type="button"
-						on:click={applyCustomTheme}
+						onclick={applyCustomTheme}
 						class="text-xs px-2 py-1 rounded-sm border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition"
 						class:opacity-50={!isColorChanged && selectedTheme === 'custom'}
 						disabled={!isColorChanged && selectedTheme === 'custom'}
@@ -379,7 +383,7 @@
 						class=" dark:bg-gray-900 w-fit pr-8 rounded-sm py-2 px-2 text-xs bg-transparent outline-hidden text-right"
 						bind:value={lang}
 						placeholder="Select a language"
-						on:change={(e) => {
+						onchange={(e) => {
 							changeLanguage(lang);
 						}}
 					>
@@ -430,7 +434,7 @@
 					<button
 						class=" text-xs font-medium text-gray-500"
 						type="button"
-						on:click={() => {
+						onclick={() => {
 							showAdvanced = !showAdvanced;
 						}}>{showAdvanced ? $i18n.t('Hide') : $i18n.t('Show')}</button
 					>
@@ -447,7 +451,7 @@
 							<button
 								class="p-1 px-3 text-xs flex rounded-sm transition"
 								type="button"
-								on:click={() => {
+								onclick={() => {
 									keepAlive = keepAlive === null ? '5m' : null;
 								}}
 							>
@@ -477,7 +481,7 @@
 
 							<button
 								class="p-1 px-3 text-xs flex rounded-sm transition"
-								on:click={() => {
+								onclick={() => {
 									toggleRequestFormat();
 								}}
 							>
@@ -517,7 +521,7 @@
 	<div class="flex justify-end pt-3 text-sm font-medium">
 		<button
 			class="px-3.5 py-1.5 text-sm font-medium bg-black hover:bg-gray-900 text-white dark:bg-white dark:text-black dark:hover:bg-gray-100 transition rounded-full"
-			on:click={() => {
+			onclick={() => {
 				saveHandler();
 			}}
 		>

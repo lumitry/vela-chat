@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { run } from 'svelte/legacy';
+
 	import { onMount, onDestroy, tick } from 'svelte';
 	import { getContext } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -10,18 +12,22 @@
 
 	const i18n = getContext('i18n');
 
-	export let show = false;
+	interface Props {
+		show?: boolean;
+	}
 
-	let loading = false;
+	let { show = $bindable(false) }: Props = $props();
+
+	let loading = $state(false);
 	let deckLoaded = false;
-	let deck: any = null;
-	let plotDiv: HTMLDivElement;
-	let plotData: any = null;
-	let deckInstance: any = null;
+	let deck: any = $state(null);
+	let plotDiv: HTMLDivElement = $state();
+	let plotData: any = $state(null);
+	let deckInstance: any = $state(null);
 	let isDark = false;
 	let darkModeObserver: MutationObserver | null = null;
-	let tooltip: HTMLDivElement;
-	let searchQuery = '';
+	let tooltip: HTMLDivElement = $state();
+	let searchQuery = $state('');
 
 	const COLOR_PALETTE = [
 		[31, 119, 180],
@@ -291,15 +297,19 @@
 		searchQuery = '';
 	};
 
-	$: if (show) {
-		fetchAndVisualize();
-	} else {
-		cleanup();
-	}
+	run(() => {
+		if (show) {
+			fetchAndVisualize();
+		} else {
+			cleanup();
+		}
+	});
 
-	$: if (deckInstance && plotData && deck && searchQuery !== undefined) {
-		updateLayersForSearch();
-	}
+	run(() => {
+		if (deckInstance && plotData && deck && searchQuery !== undefined) {
+			updateLayersForSearch();
+		}
+	});
 
 	onMount(() => {
 		if (!browser) return;
@@ -335,7 +345,7 @@
 			</h2>
 			<button
 				class="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition"
-				on:click={() => (show = false)}
+				onclick={() => (show = false)}
 			>
 				<XMark className="w-5 h-5 text-gray-500 dark:text-gray-400" />
 			</button>
@@ -364,7 +374,7 @@
 				<input
 					type="text"
 					bind:value={searchQuery}
-					on:input={() => {
+					oninput={() => {
 						if (deckInstance && plotData && deck) {
 							updateLayersForSearch();
 						}

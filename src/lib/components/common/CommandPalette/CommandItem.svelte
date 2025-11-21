@@ -1,14 +1,19 @@
 <script lang="ts">
+	import { run } from 'svelte/legacy';
+
 import type { ComponentType } from 'svelte';
 	import type { Command } from '$lib/utils/commandPalette/types';
 	import { loadIcon } from '$lib/utils/commandPalette/iconCache';
 
-	export let command: Command;
-	export let selected = false;
+	interface Props {
+		command: Command;
+		selected?: boolean;
+	}
 
-	let iconComponent: ComponentType | null = null;
+	let { command, selected = false }: Props = $props();
 
-	$: loadCommandIcon(command.icon);
+	let iconComponent: ComponentType | null = $state(null);
+
 
 	async function loadCommandIcon(source) {
 		if (!source) {
@@ -18,6 +23,9 @@ import type { ComponentType } from 'svelte';
 		const loaded = await loadIcon(source);
 		iconComponent = loaded;
 	}
+	run(() => {
+		loadCommandIcon(command.icon);
+	});
 </script>
 
 <li
@@ -29,8 +37,8 @@ import type { ComponentType } from 'svelte';
 >
 	<div class="flex items-center gap-3 w-full">
 		{#if iconComponent}
-			<svelte:component
-				this={iconComponent}
+			{@const SvelteComponent = iconComponent}
+			<SvelteComponent
 				class="w-4 h-4 text-gray-500 dark:text-gray-400 shrink-0"
 			/>
 		{/if}

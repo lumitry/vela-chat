@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { run } from 'svelte/legacy';
+
 	import fileSaver from 'file-saver';
 	const { saveAs } = fileSaver;
 
@@ -22,41 +24,24 @@
 
 	const i18n = getContext('i18n');
 
-	export let saveSettings: Function;
+	interface Props {
+		saveSettings: Function;
+	}
+
+	let { saveSettings }: Props = $props();
 
 	// Chats
-	let importFiles;
+	let importFiles = $state();
 
-	let showArchiveConfirm = false;
-	let showDeleteConfirm = false;
-	let showArchivedChatsModal = false;
-	let showClearCacheConfirm = false;
+	let showArchiveConfirm = $state(false);
+	let showDeleteConfirm = $state(false);
+	let showArchivedChatsModal = $state(false);
+	let showClearCacheConfirm = $state(false);
 
-	let chatImportInputElement: HTMLInputElement;
-	let cacheStats = { totalMessages: 0, estimatedSize: null };
-	let cacheStatsLoading = false;
+	let chatImportInputElement: HTMLInputElement = $state();
+	let cacheStats = $state({ totalMessages: 0, estimatedSize: null });
+	let cacheStatsLoading = $state(false);
 
-	$: if (importFiles) {
-		console.log(importFiles);
-
-		let reader = new FileReader();
-		reader.onload = (event) => {
-			let chats = JSON.parse(event.target.result);
-			console.log(chats);
-			if (getImportOrigin(chats) == 'openai') {
-				try {
-					chats = convertOpenAIChats(chats);
-				} catch (error) {
-					console.log('Unable to import chats:', error);
-				}
-			}
-			importChats(chats);
-		};
-
-		if (importFiles.length > 0) {
-			reader.readAsText(importFiles[0]);
-		}
-	}
 
 	const importChats = async (_chats) => {
 		for (const chat of _chats) {
@@ -157,6 +142,29 @@
 	onMount(async () => {
 		await loadCacheStats();
 	});
+	run(() => {
+		if (importFiles) {
+			console.log(importFiles);
+
+			let reader = new FileReader();
+			reader.onload = (event) => {
+				let chats = JSON.parse(event.target.result);
+				console.log(chats);
+				if (getImportOrigin(chats) == 'openai') {
+					try {
+						chats = convertOpenAIChats(chats);
+					} catch (error) {
+						console.log('Unable to import chats:', error);
+					}
+				}
+				importChats(chats);
+			};
+
+			if (importFiles.length > 0) {
+				reader.readAsText(importFiles[0]);
+			}
+		}
+	});
 </script>
 
 <ArchivedChatsModal bind:show={showArchivedChatsModal} on:change={handleArchivedChatsChange} />
@@ -174,7 +182,7 @@
 			/>
 			<button
 				class=" flex rounded-md py-2 px-3.5 w-full hover:bg-gray-200 dark:hover:bg-gray-800 transition"
-				on:click={() => {
+				onclick={() => {
 					chatImportInputElement.click();
 				}}
 			>
@@ -196,7 +204,7 @@
 			</button>
 			<button
 				class=" flex rounded-md py-2 px-3.5 w-full hover:bg-gray-200 dark:hover:bg-gray-800 transition"
-				on:click={() => {
+				onclick={() => {
 					exportChats();
 				}}
 			>
@@ -227,7 +235,7 @@
 		<div class="flex flex-col">
 			<button
 				class=" flex rounded-md py-2 px-3.5 w-full hover:bg-gray-200 dark:hover:bg-gray-800 transition"
-				on:click={() => {
+				onclick={() => {
 					showArchivedChatsModal = true;
 				}}
 			>
@@ -273,7 +281,7 @@
 					<div class="flex space-x-1.5 items-center">
 						<button
 							class="hover:text-white transition"
-							on:click={() => {
+							onclick={() => {
 								archiveAllChatsHandler();
 								showArchiveConfirm = false;
 							}}
@@ -293,7 +301,7 @@
 						</button>
 						<button
 							class="hover:text-white transition"
-							on:click={() => {
+							onclick={() => {
 								showArchiveConfirm = false;
 							}}
 						>
@@ -313,7 +321,7 @@
 			{:else}
 				<button
 					class=" flex rounded-md py-2 px-3.5 w-full hover:bg-gray-200 dark:hover:bg-gray-800 transition"
-					on:click={() => {
+					onclick={() => {
 						showArchiveConfirm = true;
 					}}
 				>
@@ -360,7 +368,7 @@
 					<div class="flex space-x-1.5 items-center">
 						<button
 							class="hover:text-white transition"
-							on:click={() => {
+							onclick={() => {
 								deleteAllChatsHandler();
 								showDeleteConfirm = false;
 							}}
@@ -380,7 +388,7 @@
 						</button>
 						<button
 							class="hover:text-white transition"
-							on:click={() => {
+							onclick={() => {
 								showDeleteConfirm = false;
 							}}
 						>
@@ -400,7 +408,7 @@
 			{:else}
 				<button
 					class=" flex rounded-md py-2 px-3.5 w-full hover:bg-gray-200 dark:hover:bg-gray-800 transition"
-					on:click={() => {
+					onclick={() => {
 						showDeleteConfirm = true;
 					}}
 				>
@@ -462,7 +470,7 @@
 						<div class="flex space-x-1.5 items-center">
 							<button
 								class="hover:text-white transition"
-								on:click={() => {
+								onclick={() => {
 									clearCacheHandler();
 								}}
 							>
@@ -481,7 +489,7 @@
 							</button>
 							<button
 								class="hover:text-white transition"
-								on:click={() => {
+								onclick={() => {
 									showClearCacheConfirm = false;
 								}}
 							>
@@ -501,7 +509,7 @@
 				{:else}
 					<button
 						class=" flex rounded-md py-2 px-3.5 w-full hover:bg-gray-200 dark:hover:bg-gray-800 transition"
-						on:click={() => {
+						onclick={() => {
 							showClearCacheConfirm = true;
 						}}
 					>

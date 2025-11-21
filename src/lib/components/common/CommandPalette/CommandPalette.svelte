@@ -1,6 +1,9 @@
 <script lang="ts">
+	import { createBubbler, stopPropagation } from 'svelte/legacy';
+
+	const bubble = createBubbler();
 	import type { ComponentType } from 'svelte';
-	import { SvelteComponent, onDestroy, onMount, tick } from 'svelte';
+	import { onDestroy, onMount, tick } from 'svelte';
 	import { get } from 'svelte/store';
 	import { goto } from '$app/navigation';
 	import CommandItem from './CommandItem.svelte';
@@ -60,17 +63,19 @@
 		| { kind: 'chat'; data: ChatSearchResultItem }
 		| { kind: 'action'; data: ChatSearchFallbackAction };
 
-	let show = false;
-	let query = '';
-	let results: CommandSearchResult[] = [];
-	let selectionIndex = 0;
-	let submenuStack: CommandPaletteSubmenuState[] = [];
-	let searchInput: HTMLInputElement;
-	let activeSubmenu: CommandPaletteSubmenuState | undefined;
-	let mounted = false;
-	let submenuItems: SubmenuItem[] = [];
-	let submenuItemsLoading = false;
-	let renameMode = false;
+	let show = $state(false);
+	let query = $state('');
+	let results: CommandSearchResult[] = $state([]);
+	let selectionIndex = $state(0);
+	let submenuStack: CommandPaletteSubmenuState[] = $state([]);
+	let searchInput: HTMLInputElement = $state();
+	let activeSubmenu: CommandPaletteSubmenuState | undefined = $derived(
+		submenuStack[submenuStack.length - 1]
+	);
+	let mounted = $state(false);
+	let submenuItems: SubmenuItem[] = $state([]);
+	let submenuItemsLoading = $state(false);
+	let renameMode = $state(false);
 	let renameChatId: string | null = null;
 	let renameCurrentTitle = '';
 	// Store the query text when opening knowledge base submenu
@@ -78,16 +83,16 @@
 
 	const MAX_RESULTS = 12;
 
-	let chatSearchMode = false;
-	let newChatMode = false; // $ prefix mode
-	let backgroundChatMode = false; // # prefix mode
-	let chatSearchQuery = '';
+	let chatSearchMode = $state(false);
+	let newChatMode = $state(false); // $ prefix mode
+	let backgroundChatMode = $state(false); // # prefix mode
+	let chatSearchQuery = $state('');
 	let newChatQuery = '';
 	let backgroundChatQuery = '';
 	let chatSearchResults: ChatSearchResultItem[] = [];
-	let chatSearchItems: ChatSearchListItem[] = [];
-	let chatSearchLoading = false;
-	let chatSearchError: string | null = null;
+	let chatSearchItems: ChatSearchListItem[] = $state([]);
+	let chatSearchLoading = $state(false);
+	let chatSearchError: string | null = $state(null);
 	let chatSearchAbort: AbortController | null = null;
 	let chatSearchDebounce: ReturnType<typeof setTimeout> | null = null;
 	let recentChatItems: RecentChat[] = [];
@@ -1016,14 +1021,14 @@
 	}) {
 		try {
 			// Get default model
-			const $settingsValue = get(settings);
-			const $modelsValue = get(modelsStore);
+			const settingsValue = get(settings);
+			const modelsValue = get(modelsStore);
 			let selectedModels: string[] = [];
 
-			if ($settingsValue?.models && $settingsValue.models.length > 0) {
-				selectedModels = $settingsValue.models;
-			} else if ($modelsValue && $modelsValue.length > 0) {
-				selectedModels = [$modelsValue[0].id];
+			if (settingsValue?.models && settingsValue.models.length > 0) {
+				selectedModels = settingsValue.models;
+			} else if (modelsValue && modelsValue.length > 0) {
+				selectedModels = [modelsValue[0].id];
 			} else {
 				toast.error('No models available');
 				return;
@@ -1031,7 +1036,7 @@
 
 			// Filter to only include models that exist
 			selectedModels = selectedModels.filter((modelId) =>
-				$modelsValue.map((m: any) => m.id).includes(modelId)
+				modelsValue.map((m: any) => m.id).includes(modelId)
 			);
 
 			if (selectedModels.length === 0) {
@@ -1049,7 +1054,7 @@
 			const chat = await createNewChat(localStorage.token, {
 				title: 'New Chat',
 				models: selectedModels,
-				system: $settingsValue?.system ?? undefined,
+				system: settingsValue?.system ?? undefined,
 				params: params,
 				tags: [],
 				timestamp: Math.floor(Date.now() / 1000)
@@ -1114,8 +1119,8 @@
 
 				// Trigger chat completion in the background
 				// Pass the assistant message ID so backend knows which message to update
-				const $settingsValue = get(settings);
-				const $socket = get(socket);
+				const settingsValueForTask = get(settings);
+				const socketValue = get(socket);
 				const completionPayload = {
 					model: selectedModels[0],
 					messages: [
@@ -1131,13 +1136,13 @@
 						include: true
 					},
 					id: assistantMessage?.id || responseMessageId, // Assistant message ID to update
-					session_id: $socket?.id || null, // Include session_id for task triggering
+					session_id: socketValue?.id || null, // Include session_id for task triggering
 					...(options.webSearch && { features: { web_search: true } }),
 					...(files.length > 0 && { files: files }),
 					// Include background tasks for title and tag generation
 					background_tasks: {
-						title_generation: ($settingsValue as any)?.title?.auto ?? true,
-						tags_generation: ($settingsValue as any)?.autoTags ?? true
+						title_generation: (settingsValueForTask as any)?.title?.auto ?? true,
+						tags_generation: (settingsValueForTask as any)?.autoTags ?? true
 					}
 				};
 
@@ -1343,38 +1348,38 @@
 		} as Command;
 	}
 
-	$: activeSubmenu = submenuStack[submenuStack.length - 1];
-
-	$: placeholderText = (() => {
-		if (renameMode) {
-			return 'Enter new chat title (Press Enter to save, Escape to cancel)';
-		}
-		if (activeSubmenu?.command) {
-			const commandId = activeSubmenu.command.id;
-			if (commandId === 'chat:move-to-folder') {
-				return 'Search folders...';
+	let placeholderText = $derived(
+		(() => {
+			if (renameMode) {
+				return 'Enter new chat title (Press Enter to save, Escape to cancel)';
 			}
-			if (commandId === 'chat:change-model') {
-				return 'Search models...';
+			if (activeSubmenu?.command) {
+				const commandId = activeSubmenu.command.id;
+				if (commandId === 'chat:move-to-folder') {
+					return 'Search folders...';
+				}
+				if (commandId === 'chat:change-model') {
+					return 'Search models...';
+				}
+				if (commandId === 'chat:export') {
+					return 'Search export types...';
+				}
+				if (commandId === 'chat-search:knowledge-base') {
+					return 'Search knowledge bases...';
+				}
 			}
-			if (commandId === 'chat:export') {
-				return 'Search export types...';
+			if (chatSearchMode) {
+				return 'Search chats...';
 			}
-			if (commandId === 'chat-search:knowledge-base') {
-				return 'Search knowledge bases...';
+			if (newChatMode) {
+				return 'Type your message...';
 			}
-		}
-		if (chatSearchMode) {
-			return 'Search chats...';
-		}
-		if (newChatMode) {
-			return 'Type your message...';
-		}
-		if (backgroundChatMode) {
-			return 'Type your message (background chat)...';
-		}
-		return 'Search commands...';
-	})();
+			if (backgroundChatMode) {
+				return 'Type your message (background chat)...';
+			}
+			return 'Search commands...';
+		})()
+	);
 </script>
 
 {#if show || mounted}
@@ -1382,13 +1387,13 @@
 		class={`fixed inset-0 z-[6000] flex items-start justify-center px-4 py-24 transition-opacity duration-75 ${show ? 'bg-black/50 backdrop-blur-sm opacity-100' : 'bg-transparent opacity-0 pointer-events-none'}`}
 		role="presentation"
 		aria-hidden={!show}
-		on:mousedown={show ? handleBackdropMouseDown : undefined}
+		onmousedown={show ? handleBackdropMouseDown : undefined}
 	>
 		<div
 			class={`w-full max-w-2xl bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 rounded-2xl shadow-3xl overflow-hidden transition-transform duration-75 ${show ? 'scale-100' : 'scale-95'}`}
 			role="presentation"
-			on:mousedown|stopPropagation
-			on:click={() => searchInput?.focus()}
+			onmousedown={stopPropagation(bubble('mousedown'))}
+			onclick={() => searchInput?.focus()}
 		>
 			<div class="border-b border-gray-200 dark:border-gray-800 px-4 py-3">
 				<input
@@ -1396,8 +1401,8 @@
 					class="w-full bg-transparent text-base focus:outline-hidden placeholder:text-gray-400 dark:text-white"
 					placeholder={placeholderText}
 					value={query}
-					on:input={handleInput}
-					on:keydown={handleKeyDown}
+					oninput={handleInput}
+					onkeydown={handleKeyDown}
 					autofocus
 					tabindex="0"
 				/>
@@ -1442,7 +1447,7 @@
 									<button
 										type="button"
 										class="text-left w-full"
-										on:click={() => {
+										onclick={() => {
 											const context = get(commandContextStore);
 											Promise.resolve(item.execute(context))
 												.then(() => {
@@ -1466,11 +1471,7 @@
 					</div>
 				{:else if activeSubmenu.component}
 					{#key activeSubmenu.id}
-						<svelte:component
-							this={activeSubmenu.component}
-							on:close={popSubmenu}
-							{...activeSubmenu.props ?? {}}
-						/>
+						<activeSubmenu.component on:close={popSubmenu} {...activeSubmenu.props ?? {}} />
 					{/key}
 				{/if}
 			{:else if chatSearchMode || newChatMode || backgroundChatMode}
@@ -1483,7 +1484,7 @@
 								<button
 									type="button"
 									class="text-left w-full"
-									on:click={() => handleChatSearchItemClick(item)}
+									onclick={() => handleChatSearchItemClick(item)}
 								>
 									<div
 										class={`px-3 py-2 rounded-lg transition-colors flex items-center gap-3 ${
@@ -1538,7 +1539,7 @@
 								<button
 									type="button"
 									class="text-left"
-									on:click={() => triggerCommand(result.command)}
+									onclick={() => triggerCommand(result.command)}
 								>
 									<CommandItem command={result.command} selected={index === selectionIndex} />
 								</button>

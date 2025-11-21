@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { run } from 'svelte/legacy';
+
 	import * as ort from 'onnxruntime-web';
 	import { env, AutoModel, AutoTokenizer } from '@huggingface/transformers';
 
@@ -18,14 +20,14 @@
 	let tokenizer = null;
 	let model = null;
 
-	export let feedbacks = [];
+	let { feedbacks = [] } = $props();
 
-	let rankedModels = [];
+	let rankedModels = $state([]);
 
-	let query = '';
+	let query = $state('');
 
 	let tagEmbeddings = new Map();
-	let loadingLeaderboard = true;
+	let loadingLeaderboard = $state(true);
 	let debounceTimer;
 
 	type Feedback = {
@@ -266,7 +268,9 @@
 		}, 1500); // Debounce for 1.5 seconds
 	};
 
-	$: query, debouncedQueryHandler();
+	run(() => {
+		query, debouncedQueryHandler();
+	});
 
 	onMount(async () => {
 		rankHandler();
@@ -279,7 +283,7 @@
 			{$i18n.t('Leaderboard')}
 		</div>
 
-		<div class="flex self-center w-[1px] h-6 mx-2.5 bg-gray-50 dark:bg-gray-850" />
+		<div class="flex self-center w-[1px] h-6 mx-2.5 bg-gray-50 dark:bg-gray-850"></div>
 
 		<span class="text-lg font-medium text-gray-500 dark:text-gray-300 mr-1.5"
 			>{rankedModels.length}</span
@@ -296,7 +300,7 @@
 					class=" w-full text-sm pr-4 py-1 rounded-r-xl outline-hidden bg-transparent"
 					bind:value={query}
 					placeholder={$i18n.t('Search')}
-					on:focus={() => {
+					onfocus={() => {
 						loadEmbeddingModel();
 					}}
 				/>

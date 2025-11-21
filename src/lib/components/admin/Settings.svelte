@@ -1,7 +1,7 @@
 <script>
 	import { getContext, tick, onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 
 	import { config } from '$lib/stores';
 	import { getBackendConfig } from '$lib/apis';
@@ -51,12 +51,12 @@
 		return 'general';
 	};
 
-	let selectedTab = getTabFromHash();
+	let selectedTab = $state(getTabFromHash());
 
 	// Update URL hash when tab changes
 	const updateHash = (tab, replace = false) => {
 		if (typeof window !== 'undefined') {
-			const newUrl = `${$page.url.pathname}#${tab}`;
+			const newUrl = `${page.url.pathname}#${tab}`;
 			if (replace) {
 				window.history.replaceState(null, '', newUrl);
 			} else {
@@ -112,7 +112,7 @@
 			'general'
 				? ''
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
-			on:click={() => {
+			onclick={() => {
 				selectedTab = 'general';
 				updateHash('general', false);
 			}}
@@ -139,7 +139,7 @@
 			'connections'
 				? ''
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
-			on:click={() => {
+			onclick={() => {
 				selectedTab = 'connections';
 				updateHash('connections', false);
 			}}
@@ -164,7 +164,7 @@
 			'models'
 				? ''
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
-			on:click={() => {
+			onclick={() => {
 				selectedTab = 'models';
 				updateHash('models', false);
 			}}
@@ -191,7 +191,7 @@
 			'evaluations'
 				? ''
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
-			on:click={() => {
+			onclick={() => {
 				selectedTab = 'evaluations';
 				updateHash('evaluations', false);
 			}}
@@ -207,7 +207,7 @@
 			'tools'
 				? ''
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
-			on:click={() => {
+			onclick={() => {
 				selectedTab = 'tools';
 				updateHash('tools', false);
 			}}
@@ -234,7 +234,7 @@
 			'documents'
 				? ''
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
-			on:click={() => {
+			onclick={() => {
 				selectedTab = 'documents';
 				updateHash('documents', false);
 			}}
@@ -265,7 +265,7 @@
 			'web'
 				? ''
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
-			on:click={() => {
+			onclick={() => {
 				selectedTab = 'web';
 				updateHash('web', false);
 			}}
@@ -290,7 +290,7 @@
 			'code-execution'
 				? ''
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
-			on:click={() => {
+			onclick={() => {
 				selectedTab = 'code-execution';
 				updateHash('code-execution', false);
 			}}
@@ -317,7 +317,7 @@
 			'interface'
 				? ''
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
-			on:click={() => {
+			onclick={() => {
 				selectedTab = 'interface';
 				updateHash('interface', false);
 			}}
@@ -344,7 +344,7 @@
 			'audio'
 				? ''
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
-			on:click={() => {
+			onclick={() => {
 				selectedTab = 'audio';
 				updateHash('audio', false);
 			}}
@@ -372,7 +372,7 @@
 			'images'
 				? ''
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
-			on:click={() => {
+			onclick={() => {
 				selectedTab = 'images';
 				updateHash('images', false);
 			}}
@@ -399,7 +399,7 @@
 			'pipelines'
 				? ''
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
-			on:click={() => {
+			onclick={() => {
 				selectedTab = 'pipelines';
 				updateHash('pipelines', false);
 			}}
@@ -430,7 +430,7 @@
 			'db'
 				? ''
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
-			on:click={() => {
+			onclick={() => {
 				selectedTab = 'db';
 				updateHash('db', false);
 			}}

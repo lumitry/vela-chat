@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { preventDefault } from 'svelte/legacy';
+
 	import { toast } from 'svelte-sonner';
 	import { createEventDispatcher, onMount, getContext } from 'svelte';
 
@@ -11,28 +13,32 @@
 
 	const i18n = getContext('i18n');
 
-	export let saveSettings: Function;
+	interface Props {
+		saveSettings: Function;
+	}
+
+	let { saveSettings }: Props = $props();
 
 	// Audio
 	let conversationMode = false;
-	let speechAutoSend = false;
-	let responseAutoPlayback = false;
-	let nonLocalVoices = false;
+	let speechAutoSend = $state(false);
+	let responseAutoPlayback = $state(false);
+	let nonLocalVoices = $state(false);
 
-	let STTEngine = '';
+	let STTEngine = $state('');
 
-	let TTSEngine = '';
-	let TTSEngineConfig = {};
+	let TTSEngine = $state('');
+	let TTSEngineConfig = $state({});
 
-	let TTSModel = null;
-	let TTSModelProgress = null;
+	let TTSModel = $state(null);
+	let TTSModelProgress = $state(null);
 	let TTSModelLoading = false;
 
-	let voices = [];
-	let voice = '';
+	let voices = $state([]);
+	let voice = $state('');
 
 	// Audio speed control
-	let playbackRate = 1;
+	let playbackRate = $state(1);
 	const speedOptions = [2, 1.75, 1.5, 1.25, 1, 0.75, 0.5];
 
 	// Lazy load KokoroTTS to avoid blocking page load
@@ -137,16 +143,6 @@
 		}
 	});
 
-	$: if (TTSEngine && TTSEngineConfig && TTSEngine === 'browser-kokoro') {
-		// Only trigger if page is already loaded
-		if (document.readyState === 'complete') {
-			if ('requestIdleCallback' in window) {
-				requestIdleCallback(() => onTTSEngineChange(), { timeout: 2000 });
-			} else {
-				setTimeout(() => onTTSEngineChange(), 100);
-			}
-		}
-	}
 
 	const onTTSEngineChange = async () => {
 		if (TTSEngine === 'browser-kokoro') {
@@ -191,11 +187,25 @@
 			}
 		}
 	};
+$effect(() => {
+	if (!TTSEngine || TTSEngine !== 'browser-kokoro' || !TTSEngineConfig) {
+		return;
+	}
+
+	// Only trigger if page is already loaded
+	if (document.readyState === 'complete') {
+		if ('requestIdleCallback' in window) {
+			requestIdleCallback(() => onTTSEngineChange(), { timeout: 2000 });
+		} else {
+			setTimeout(() => onTTSEngineChange(), 100);
+		}
+	}
+});
 </script>
 
 <form
 	class="flex flex-col h-full justify-between space-y-3 text-sm"
-	on:submit|preventDefault={async () => {
+	onsubmit={preventDefault(async () => {
 		saveSettings({
 			audio: {
 				stt: {
@@ -212,7 +222,7 @@
 			}
 		});
 		dispatch('save');
-	}}
+	})}
 >
 	<div class=" space-y-3 overflow-y-scroll max-h-[28rem] lg:max-h-full">
 		<div>
@@ -293,7 +303,7 @@
 						class="dark:bg-gray-900 w-fit pr-8 rounded-sm px-2 p-1 text-xs bg-transparent outline-hidden text-right"
 						bind:value={playbackRate}
 					>
-						{#each speedOptions as option}
+						{#each speedOptions as option (option)}
 							<option value={option} selected={playbackRate === option}>{option}x</option>
 						{/each}
 					</select>
@@ -317,7 +327,7 @@
 							/>
 
 							<datalist id="voice-list">
-								{#each voices as voice}
+							{#each voices as voice (voice.id)}
 									<option value={voice.id}>{voice.name}</option>
 								{/each}
 							</datalist>
@@ -352,7 +362,7 @@
 							bind:value={voice}
 						>
 							<option value="" selected={voice !== ''}>{$i18n.t('Default')}</option>
-							{#each voices.filter((v) => nonLocalVoices || v.localService === true) as _voice}
+							{#each voices.filter((v) => nonLocalVoices || v.localService === true) as _voice (_voice.id ?? _voice.name)}
 								<option
 									value={_voice.name}
 									class="bg-gray-100 dark:bg-gray-700"
@@ -385,7 +395,7 @@
 						/>
 
 						<datalist id="voice-list">
-							{#each voices as voice}
+							{#each voices as voice (voice.id)}
 								<option value={voice.id}>{voice.name}</option>
 							{/each}
 						</datalist>

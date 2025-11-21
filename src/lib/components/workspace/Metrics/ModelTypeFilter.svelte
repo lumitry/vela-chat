@@ -5,7 +5,11 @@
 	const i18n = getContext('i18n');
 	const dispatch = createEventDispatcher();
 
-	export let modelType: 'local' | 'external' | 'both' = 'both';
+	interface Props {
+		modelType?: 'local' | 'external' | 'both';
+	}
+
+	let { modelType = $bindable('both') }: Props = $props();
 
 	const setModelType = (type: 'local' | 'external' | 'both') => {
 		modelType = type;
@@ -20,7 +24,7 @@
 			class="px-3 py-1.5 rounded-xl text-sm font-medium transition {modelType === 'local'
 				? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white'
 				: 'bg-transparent hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400'}"
-			on:click={() => setModelType('local')}
+			onclick={() => setModelType('local')}
 		>
 			{$i18n.t('Local')}
 		</button>
@@ -28,7 +32,7 @@
 			class="px-3 py-1.5 rounded-xl text-sm font-medium transition {modelType === 'external'
 				? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white'
 				: 'bg-transparent hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400'}"
-			on:click={() => setModelType('external')}
+			onclick={() => setModelType('external')}
 		>
 			{$i18n.t('External')}
 		</button>
@@ -36,7 +40,7 @@
 			class="px-3 py-1.5 rounded-xl text-sm font-medium transition {modelType === 'both'
 				? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white'
 				: 'bg-transparent hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400'}"
-			on:click={() => setModelType('both')}
+			onclick={() => setModelType('both')}
 		>
 			{$i18n.t('Both')}
 		</button>

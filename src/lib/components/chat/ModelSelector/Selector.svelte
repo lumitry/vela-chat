@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { run } from 'svelte/legacy';
+
 	import { DropdownMenu } from 'bits-ui';
 	import { marked } from 'marked';
 	import Fuse from 'fuse.js';
@@ -33,56 +35,55 @@
 	const i18n = getContext('i18n');
 	const dispatch = createEventDispatcher();
 
-	export let id = '';
-	export let value = '';
-	export let placeholder = 'Select a model';
-	export let searchEnabled = true;
-	export let searchPlaceholder = $i18n.t('Search a model');
 
-	export let showTemporaryChatControl = false;
 
-	export let items: {
+
+	interface Props {
+		id?: string;
+		value?: string;
+		placeholder?: string;
+		searchEnabled?: boolean;
+		searchPlaceholder?: any;
+		showTemporaryChatControl?: boolean;
+		items?: {
 		label: string;
 		value: string;
 		model: Model;
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		[key: string]: any;
-	}[] = [];
-
-	export let className = 'w-[32rem]';
-	export let triggerClassName = 'text-lg';
-
-	let tagsContainerElement;
-
-	let show = false;
-	let tags = [];
-
-	let selectedModel: { label: string; value: string; model: Model } | '' = '';
-	// Make this reactive to both items and value so it updates when models load
-	// Force reactivity by explicitly reading items.length at the start
-	$: {
-		// Explicitly read items.length first to ensure Svelte tracks the array
-		const itemsLength = items?.length ?? 0;
-		if (itemsLength > 0 && value) {
-			const found = items.find((item) => item.value === value);
-			if (found) {
-				selectedModel = found;
-			} else {
-				selectedModel = '';
-			}
-		} else if (!value) {
-			selectedModel = '';
-		}
-		// If items is empty but value exists, keep current selectedModel (might be transitioning)
+	}[];
+		className?: string;
+		triggerClassName?: string;
+		children?: import('svelte').Snippet;
 	}
 
-	let searchValue = '';
+	let {
+		id = '',
+		value = $bindable(''),
+		placeholder = 'Select a model',
+		searchEnabled = true,
+		searchPlaceholder = $i18n.t('Search a model'),
+		showTemporaryChatControl = false,
+		items = [],
+		className = 'w-[32rem]',
+		triggerClassName = 'text-lg',
+		children
+	}: Props = $props();
 
-	let selectedTag = '';
-	let selectedConnectionType = '';
+	let tagsContainerElement = $state();
 
-	let ollamaVersion = null;
-	let selectedModelIdx = 0;
+	let show = $state(false);
+	let tags = $state([]);
+
+	let selectedModel: { label: string; value: string; model: Model } | '' = $state('');
+
+	let searchValue = $state('');
+
+	let selectedTag = $state('');
+	let selectedConnectionType = $state('');
+
+	let ollamaVersion = $state(null);
+	let selectedModelIdx = $state(0);
 
 	const fuse = new Fuse(
 		items.map((item) => {
@@ -100,55 +101,7 @@
 		}
 	);
 
-	$: filteredItems = (
-		searchValue
-			? fuse
-					.search(searchValue)
-					.map((e) => {
-						return e.item;
-					})
-					.filter((item) => {
-						if (selectedTag === '') {
-							return true;
-						}
-						return (item.model?.tags ?? []).map((tag) => tag.name).includes(selectedTag);
-					})
-					.filter((item) => {
-						if (selectedConnectionType === '') {
-							return true;
-						} else if (selectedConnectionType === 'ollama') {
-							return item.model?.owned_by === 'ollama';
-						} else if (selectedConnectionType === 'openai') {
-							return item.model?.owned_by === 'openai';
-						} else if (selectedConnectionType === 'direct') {
-							return item.model?.direct;
-						}
-					})
-			: items
-					.filter((item) => {
-						if (selectedTag === '') {
-							return true;
-						}
-						return (item.model?.tags ?? []).map((tag) => tag.name).includes(selectedTag);
-					})
-					.filter((item) => {
-						if (selectedConnectionType === '') {
-							return true;
-						} else if (selectedConnectionType === 'ollama') {
-							return item.model?.owned_by === 'ollama';
-						} else if (selectedConnectionType === 'openai') {
-							return item.model?.owned_by === 'openai';
-						} else if (selectedConnectionType === 'direct') {
-							return item.model?.direct;
-						}
-					})
-	).filter((item) => !(item.model?.info?.meta?.hidden ?? false));
 
-	$: if (selectedTag || selectedConnectionType) {
-		resetView();
-	} else {
-		resetView();
-	}
 
 	const resetView = async () => {
 		await tick();
@@ -325,6 +278,73 @@
 			toast.success(`${model} download has been canceled`);
 		}
 	};
+	// Make this reactive to both items and value so it updates when models load
+	// Force reactivity by explicitly reading items.length at the start
+	run(() => {
+		// Explicitly read items.length first to ensure Svelte tracks the array
+		const itemsLength = items?.length ?? 0;
+		if (itemsLength > 0 && value) {
+			const found = items.find((item) => item.value === value);
+			if (found) {
+				selectedModel = found;
+			} else {
+				selectedModel = '';
+			}
+		} else if (!value) {
+			selectedModel = '';
+		}
+		// If items is empty but value exists, keep current selectedModel (might be transitioning)
+	});
+	let filteredItems = $derived((
+		searchValue
+			? fuse
+					.search(searchValue)
+					.map((e) => {
+						return e.item;
+					})
+					.filter((item) => {
+						if (selectedTag === '') {
+							return true;
+						}
+						return (item.model?.tags ?? []).map((tag) => tag.name).includes(selectedTag);
+					})
+					.filter((item) => {
+						if (selectedConnectionType === '') {
+							return true;
+						} else if (selectedConnectionType === 'ollama') {
+							return item.model?.owned_by === 'ollama';
+						} else if (selectedConnectionType === 'openai') {
+							return item.model?.owned_by === 'openai';
+						} else if (selectedConnectionType === 'direct') {
+							return item.model?.direct;
+						}
+					})
+			: items
+					.filter((item) => {
+						if (selectedTag === '') {
+							return true;
+						}
+						return (item.model?.tags ?? []).map((tag) => tag.name).includes(selectedTag);
+					})
+					.filter((item) => {
+						if (selectedConnectionType === '') {
+							return true;
+						} else if (selectedConnectionType === 'ollama') {
+							return item.model?.owned_by === 'ollama';
+						} else if (selectedConnectionType === 'openai') {
+							return item.model?.owned_by === 'openai';
+						} else if (selectedConnectionType === 'direct') {
+							return item.model?.direct;
+						}
+					})
+	).filter((item) => !(item.model?.info?.meta?.hidden ?? false)));
+	run(() => {
+		if (selectedTag || selectedConnectionType) {
+			resetView();
+		} else {
+			resetView();
+		}
+	});
 </script>
 
 <DropdownMenu.Root
@@ -362,7 +382,7 @@
 		side={$mobile ? 'bottom' : 'bottom-start'}
 		sideOffset={3}
 	>
-		<slot>
+		{#if children}{@render children()}{:else}
 			{#if searchEnabled}
 				<div class="flex items-center gap-2.5 px-5 mt-3.5 mb-1.5">
 					<Search className="size-4" strokeWidth="2.5" />
@@ -373,7 +393,7 @@
 						class="w-full text-sm bg-transparent outline-hidden"
 						placeholder={searchPlaceholder}
 						autocomplete="off"
-						on:keydown={(e) => {
+						onkeydown={(e) => {
 							if (e.code === 'Enter' && filteredItems.length > 0) {
 								value = filteredItems[selectedModelIdx].value;
 								show = false;
@@ -398,7 +418,7 @@
 				{#if tags && items.filter((item) => !(item.model?.info?.meta?.hidden ?? false)).length > 0}
 					<div
 						class=" flex w-full sticky top-0 z-10 bg-white dark:bg-gray-850 overflow-x-auto scrollbar-none"
-						on:wheel={(e) => {
+						onwheel={(e) => {
 							if (e.deltaY !== 0) {
 								e.preventDefault();
 								e.currentTarget.scrollLeft += e.deltaY;
@@ -415,7 +435,7 @@
 									selectedConnectionType === ''
 										? ''
 										: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition capitalize"
-									on:click={() => {
+									onclick={() => {
 										selectedConnectionType = '';
 										selectedTag = '';
 									}}
@@ -429,7 +449,7 @@
 									class="min-w-fit outline-none p-1.5 {selectedConnectionType === 'ollama'
 										? ''
 										: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition capitalize"
-									on:click={() => {
+									onclick={() => {
 										selectedTag = '';
 										selectedConnectionType = 'ollama';
 									}}
@@ -440,7 +460,7 @@
 									class="min-w-fit outline-none p-1.5 {selectedConnectionType === 'openai'
 										? ''
 										: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition capitalize"
-									on:click={() => {
+									onclick={() => {
 										selectedTag = '';
 										selectedConnectionType = 'openai';
 									}}
@@ -454,7 +474,7 @@
 									class="min-w-fit outline-none p-1.5 {selectedConnectionType === 'direct'
 										? ''
 										: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition capitalize"
-									on:click={() => {
+									onclick={() => {
 										selectedTag = '';
 										selectedConnectionType = 'direct';
 									}}
@@ -468,7 +488,7 @@
 									class="min-w-fit outline-none p-1.5 {selectedTag === tag
 										? ''
 										: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition capitalize"
-									on:click={() => {
+									onclick={() => {
 										selectedConnectionType = '';
 										selectedTag = tag;
 									}}
@@ -489,7 +509,7 @@
 							: ''}"
 						data-arrow-selected={index === selectedModelIdx}
 						data-value={item.value}
-						on:click={() => {
+						onclick={() => {
 							value = item.value;
 							selectedModelIdx = index;
 
@@ -668,7 +688,7 @@
 					>
 						<button
 							class="flex w-full font-medium line-clamp-1 select-none items-center rounded-button py-2 pl-3 pr-1.5 text-sm text-gray-700 dark:text-gray-100 outline-hidden transition-all duration-75 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg cursor-pointer data-highlighted:bg-muted"
-							on:click={() => {
+							onclick={() => {
 								pullModelHandler();
 							}}
 						>
@@ -735,7 +755,7 @@
 							<Tooltip content={$i18n.t('Cancel')}>
 								<button
 									class="text-gray-800 dark:text-gray-100"
-									on:click={() => {
+									onclick={() => {
 										cancelModelPullHandler(model);
 									}}
 								>
@@ -767,7 +787,7 @@
 				<div class="flex items-center mx-2 mb-2">
 					<button
 						class="flex justify-between w-full font-medium line-clamp-1 select-none items-center rounded-button py-2 px-3 text-sm text-gray-700 dark:text-gray-100 outline-hidden transition-all duration-75 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg cursor-pointer data-highlighted:bg-muted"
-						on:click={async () => {
+						onclick={async () => {
 							temporaryChatEnabled.set(!$temporaryChatEnabled);
 							await goto('/');
 							const newChatButton = document.getElementById('new-chat-button');
@@ -800,8 +820,8 @@
 				<div class="mb-3"></div>
 			{/if}
 
-			<div class="hidden w-[42rem]" />
-			<div class="hidden w-[32rem]" />
-		</slot>
+			<div class="hidden w-[42rem]"></div>
+			<div class="hidden w-[32rem]"></div>
+		{/if}
 	</DropdownMenu.Content>
 </DropdownMenu.Root>

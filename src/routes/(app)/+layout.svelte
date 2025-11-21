@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { run } from 'svelte/legacy';
+
 	import { toast } from 'svelte-sonner';
 	import { onDestroy, onMount, tick, getContext } from 'svelte';
 	import fileSaver from 'file-saver';
@@ -53,15 +55,20 @@
 	import { registerCoreCommands } from '$lib/utils/commandPalette/commands';
 	import { addRecentChat } from '$lib/utils/commandPalette/recentChats';
 	import CommandPalette from '$lib/components/common/CommandPalette/CommandPalette.svelte';
+	interface Props {
+		children?: import('svelte').Snippet;
+	}
+
+	let { children }: Props = $props();
 
 	const i18n = getContext('i18n');
 
-	let loaded = false;
-	let showSidebar = false;
+	let loaded = $state(false);
+	let showSidebar = $state(false);
 	let DB = null;
-	let localDBChats = [];
+	let localDBChats = $state([]);
 
-	let version;
+	let version = $state();
 	let paletteShortcut = 'cmd+p';
 	let lastShiftPress = 0;
 	let paletteShortcutUnsubscribe: (() => void) | null = null;
@@ -411,14 +418,16 @@
 	};
 
 	// Reactive: Update changelog check when settings change (after they load from server)
-	$: if ($settings && $user?.role === 'admin') {
-		const dismissedVersion = localStorage.version;
-		if (dismissedVersion === $config.version) {
-			showChangelog.set(false);
-		} else {
-			showChangelog.set($settings?.version !== $config.version);
+	run(() => {
+		if ($settings && $user?.role === 'admin') {
+			const dismissedVersion = localStorage.version;
+			if (dismissedVersion === $config.version) {
+				showChangelog.set(false);
+			} else {
+				showChangelog.set($settings?.version !== $config.version);
+			}
 		}
-	}
+	});
 </script>
 
 <SettingsModal bind:show={$showSettings} />
@@ -468,7 +477,7 @@
 							<div class=" mt-6 mx-auto relative group w-fit">
 								<button
 									class="relative z-20 flex px-5 py-2 rounded-full bg-white border border-gray-100 dark:border-none hover:bg-gray-100 transition font-medium text-sm"
-									on:click={async () => {
+									onclick={async () => {
 										let blob = new Blob([JSON.stringify(localDBChats)], {
 											type: 'application/json'
 										});
@@ -486,7 +495,7 @@
 
 								<button
 									class="text-xs text-center w-full mt-2 text-gray-400 underline"
-									on:click={async () => {
+									onclick={async () => {
 										localDBChats = [];
 									}}>{$i18n.t('Close')}</button
 								>
@@ -502,7 +511,7 @@
 		{/if}
 
 		{#if loaded}
-			<slot />
+			{@render children?.()}
 		{:else}
 			<div class="w-full flex-1 h-full flex items-center justify-center">
 				<Spinner />

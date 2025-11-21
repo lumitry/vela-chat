@@ -1,4 +1,5 @@
 <script lang="ts">
+	import MarkdownTokens from './MarkdownTokens.svelte';
 	import DOMPurify from 'dompurify';
 	import { createEventDispatcher, onMount, getContext } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -26,16 +27,29 @@
 
 	const dispatch = createEventDispatcher();
 
-	export let id: string;
-	export let tokens: Token[];
-	export let top = true;
-	export let attributes = {};
 
-	export let save = false;
 
-	export let onTaskClick: Function = () => {};
-	export let onSourceClick: Function = () => {};
-	export let searchQuery: string = '';
+	interface Props {
+		id: string;
+		tokens: Token[];
+		top?: boolean;
+		attributes?: any;
+		save?: boolean;
+		onTaskClick?: Function;
+		onSourceClick?: Function;
+		searchQuery?: string;
+	}
+
+	let {
+		id,
+		tokens,
+		top = true,
+		attributes = {},
+		save = false,
+		onTaskClick = () => {},
+		onSourceClick = () => {},
+		searchQuery = ''
+	}: Props = $props();
 
 	const headerComponent = (depth: number) => {
 		return 'h' + depth;
@@ -114,7 +128,12 @@
 		<hr class=" border-gray-100 dark:border-gray-850" />
 	{:else if token.type === 'heading'}
 		<svelte:element this={headerComponent(token.depth)} dir="auto">
-			<MarkdownInlineTokens id={`${id}-${tokenIdx}-h`} tokens={token.tokens} {onSourceClick} {searchQuery} />
+			<MarkdownInlineTokens
+				id={`${id}-${tokenIdx}-h`}
+				tokens={token.tokens}
+				{onSourceClick}
+				{searchQuery}
+			/>
 		</svelte:element>
 	{:else if token.type === 'code'}
 		{#if token.raw.includes('```')}
@@ -199,7 +218,7 @@
 					<Tooltip content={$i18n.t('Copy table to clipboard')}>
 						<button
 							class="p-1 rounded-lg bg-transparent transition"
-							on:click={(e) => {
+							onclick={(e) => {
 								e.stopPropagation();
 								copyTableToClipboardHandler(token);
 							}}
@@ -210,7 +229,7 @@
 					<Tooltip content={$i18n.t('Export to CSV')}>
 						<button
 							class="p-1 rounded-lg bg-transparent transition"
-							on:click={(e) => {
+							onclick={(e) => {
 								e.stopPropagation();
 								exportTableToCSVHandler(token, tokenIdx);
 							}}
@@ -226,9 +245,15 @@
 		{#if alert}
 			<AlertRenderer {token} {alert} />
 		{:else}
-		<blockquote dir="auto">
-			<svelte:self id={`${id}-${tokenIdx}`} tokens={token.tokens} {onTaskClick} {onSourceClick} {searchQuery} />
-		</blockquote>
+			<blockquote dir="auto">
+				<MarkdownTokens
+					id={`${id}-${tokenIdx}`}
+					tokens={token.tokens}
+					{onTaskClick}
+					{onSourceClick}
+					{searchQuery}
+				/>
+			</blockquote>
 		{/if}
 	{:else if token.type === 'list'}
 		{#if token.ordered}
@@ -240,7 +265,7 @@
 								class=" translate-y-[1px] -translate-x-1"
 								type="checkbox"
 								checked={item.checked}
-								on:change={(e) => {
+								onchange={(e) => {
 									onTaskClick({
 										id: id,
 										token: token,
@@ -253,7 +278,7 @@
 							/>
 						{/if}
 
-						<svelte:self
+						<MarkdownTokens
 							id={`${id}-${tokenIdx}-${itemIdx}`}
 							tokens={item.tokens}
 							top={token.loose}
@@ -273,7 +298,7 @@
 								class=" translate-y-[1px] -translate-x-1"
 								type="checkbox"
 								checked={item.checked}
-								on:change={(e) => {
+								onchange={(e) => {
 									onTaskClick({
 										id: id,
 										token: token,
@@ -286,7 +311,7 @@
 							/>
 						{/if}
 
-						<svelte:self
+						<MarkdownTokens
 							id={`${id}-${tokenIdx}-${itemIdx}`}
 							tokens={item.tokens}
 							top={token.loose}
@@ -306,16 +331,18 @@
 			className="w-full space-y-1"
 			dir="auto"
 		>
-			<div class=" mb-1.5" slot="content">
-				<svelte:self
-					id={`${id}-${tokenIdx}-d`}
-					tokens={marked.lexer(token.text)}
-					attributes={token?.attributes}
-					{onTaskClick}
-					{onSourceClick}
-					{searchQuery}
-				/>
-			</div>
+			{#snippet content()}
+																		<div class=" mb-1.5" >
+					<MarkdownTokens
+						id={`${id}-${tokenIdx}-d`}
+						tokens={marked.lexer(token.text)}
+						attributes={token?.attributes}
+						{onTaskClick}
+						{onSourceClick}
+						{searchQuery}
+					/>
+				</div>
+																	{/snippet}
 		</Collapsible>
 	{:else if token.type === 'html'}
 		{@const html = DOMPurify.sanitize(token.text)}
@@ -334,7 +361,12 @@
 			title={token.fileId}
 			width="100%"
 			frameborder="0"
-			onload="this.style.height=(this.contentWindow.document.body.scrollHeight+20)+'px';"
+			onload={(e) => {
+				const iframe = e.target as HTMLIFrameElement;
+				if (iframe.contentWindow?.document?.body) {
+					iframe.style.height = iframe.contentWindow.document.body.scrollHeight + 20 + 'px';
+				}
+			}}
 		></iframe>
 	{:else if token.type === 'paragraph'}
 		<p dir="auto">
@@ -349,7 +381,12 @@
 		{#if top}
 			<p>
 				{#if token.tokens}
-					<MarkdownInlineTokens id={`${id}-${tokenIdx}-t`} tokens={token.tokens} {onSourceClick} {searchQuery} />
+					<MarkdownInlineTokens
+						id={`${id}-${tokenIdx}-t`}
+						tokens={token.tokens}
+						{onSourceClick}
+						{searchQuery}
+					/>
 				{:else}
 					{unescapeHtml(token.text)}
 				{/if}
@@ -373,7 +410,7 @@
 			<KatexRenderer content={token.text} displayMode={token?.displayMode ?? false} />
 		{/if}
 	{:else if token.type === 'space'}
-		<div class="my-2" />
+		<div class="my-2"></div>
 	{:else}
 		{console.log('Unknown token', token)}
 	{/if}

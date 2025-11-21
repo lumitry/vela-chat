@@ -1,9 +1,13 @@
 <script lang="ts">
-export let className = 'size-8';
-export let src = '/static/favicon.png';
+	interface Props {
+		className?: string;
+		src?: string;
+	}
 
-$: imageSrc =
-	typeof src === 'string' && src.trim() !== '' ? src : '/static/favicon.png';
+	let { className = 'size-8', src = '/static/favicon.png' }: Props = $props();
+
+let imageSrc =
+	$derived(typeof src === 'string' && src.trim() !== '' ? src : '/static/favicon.png');
 </script>
 
 <img

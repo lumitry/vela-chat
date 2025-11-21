@@ -1,13 +1,20 @@
-import type { ComponentType } from 'svelte';
+import type { Component, ComponentType } from 'svelte';
 import type { FuseResultMatch } from 'fuse.js';
 
 export type CommandType = 'action' | 'navigation' | 'setting' | 'submenu';
 
-export type CommandIconLoader = () => Promise<{ default: ComponentType }>;
-export type CommandComponentLoader = () => Promise<{ default: ComponentType }>;
+export type CommandIconLoader = () => Promise<{
+	default: ComponentType | Component<any, any, any>;
+}>;
+export type CommandComponentLoader = () => Promise<{
+	default: ComponentType | Component<any, any, any>;
+}>;
 
-export type CommandIconSource = ComponentType | CommandIconLoader;
-export type CommandComponentSource = ComponentType | CommandComponentLoader;
+export type CommandIconSource = CommandIconLoader | ComponentType | Component<any, any, any>;
+export type CommandComponentSource =
+	| CommandComponentLoader
+	| ComponentType
+	| Component<any, any, any>;
 
 export interface CommandContext {
 	currentChatId: string | null;
@@ -67,7 +74,10 @@ export interface SubmenuItem {
 export interface SubmenuCommand extends BaseCommand {
 	type: 'submenu';
 	// New: get items to render as a list
-	getSubmenuItems?: (query: string, context?: CommandContext) => Promise<SubmenuItem[]> | SubmenuItem[];
+	getSubmenuItems?: (
+		query: string,
+		context?: CommandContext
+	) => Promise<SubmenuItem[]> | SubmenuItem[];
 	// Legacy: get component (for complex submenus like rename)
 	getSubmenuComponent?: () => CommandComponentSource | Promise<unknown>;
 	getSubmenuProps?: (context?: CommandContext) => Record<string, unknown>;
@@ -102,4 +112,3 @@ export interface CommandExecutionResult {
 export function isIconLoader(icon?: CommandIconSource): icon is CommandIconLoader {
 	return typeof icon === 'function' && !(icon as unknown as { prototype?: unknown })?.prototype;
 }
-

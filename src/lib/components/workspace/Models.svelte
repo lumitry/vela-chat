@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { run } from 'svelte/legacy';
+
 	import { marked } from 'marked';
 
 	import { toast } from 'svelte-sonner';
@@ -19,7 +21,7 @@
 		toggleModelById,
 		updateModelById
 	} from '$lib/apis/models';
-import { WEBUI_BASE_URL } from '$lib/constants';
+	import { WEBUI_BASE_URL } from '$lib/constants';
 
 	import { getGroups } from '$lib/apis/groups';
 
@@ -35,31 +37,31 @@ import { WEBUI_BASE_URL } from '$lib/constants';
 	import Spinner from '../common/Spinner.svelte';
 	import { capitalizeFirstLetter } from '$lib/utils';
 
-	let shiftKey = false;
+	let shiftKey = $state(false);
 
-	let importFiles;
-	let modelsImportInputElement: HTMLInputElement;
-	let loaded = false;
+	let importFiles = $state();
+	let modelsImportInputElement: HTMLInputElement = $state();
+	let loaded = $state(false);
 
-	let models = [];
+	let models = $state([]);
 
-	let filteredModels = [];
-	let selectedModel = null;
+	let filteredModels = $derived(
+		models.filter(
+			(m) => searchValue === '' || m.name.toLowerCase().includes(searchValue.toLowerCase())
+		)
+	);
+	let selectedModel = $state(null);
 
-	let showModelDeleteConfirm = false;
+	let showModelDeleteConfirm = $state(false);
 
-	let group_ids = [];
+	let group_ids = $state([]);
 
 	// Track which models are currently being toggled to prevent race conditions
 	let togglingModels = new Set();
+	// Track local switch states to prevent reactive updates from triggering network requests
+	let switchStates = new Map();
 
-	$: if (models) {
-		filteredModels = models.filter(
-			(m) => searchValue === '' || m.name.toLowerCase().includes(searchValue.toLowerCase())
-		);
-	}
-
-	let searchValue = '';
+	let searchValue = $state('');
 
 	const deleteModelHandler = async (model) => {
 		const res = await deleteModelById(localStorage.token, model.id).catch((e) => {
@@ -185,6 +187,20 @@ import { WEBUI_BASE_URL } from '$lib/constants';
 			window.removeEventListener('blur-sm', onBlur);
 		};
 	});
+
+	// Sync switch states with model states when models update (but not during toggles)
+	run(() => {
+		for (const model of models) {
+			if (!togglingModels.has(model.id) && switchStates.has(model.id)) {
+				const currentSwitchState = switchStates.get(model.id);
+				if (currentSwitchState !== model.is_active) {
+					switchStates.set(model.id, model.is_active);
+				}
+			} else if (!switchStates.has(model.id)) {
+				switchStates.set(model.id, model.is_active);
+			}
+		}
+	});
 </script>
 
 <svelte:head>
@@ -205,7 +221,7 @@ import { WEBUI_BASE_URL } from '$lib/constants';
 		<div class="flex justify-between items-center">
 			<div class="flex items-center md:self-center text-xl font-medium px-0.5">
 				{$i18n.t('Models')}
-				<div class="flex self-center w-[1px] h-6 mx-2.5 bg-gray-50 dark:bg-gray-850" />
+				<div class="flex self-center w-[1px] h-6 mx-2.5 bg-gray-50 dark:bg-gray-850"></div>
 				<span class="text-lg font-medium text-gray-500 dark:text-gray-300"
 					>{filteredModels.length}</span
 				>
@@ -236,8 +252,10 @@ import { WEBUI_BASE_URL } from '$lib/constants';
 	</div>
 
 	<div class=" my-2 mb-5 gap-2 grid lg:grid-cols-2 xl:grid-cols-3" id="model-list">
-		{#each filteredModels as model}
+		{#each filteredModels as model, idx}
 			{@const imageSrc = model?.meta?.profile_image_url ?? '/static/favicon.png'}
+			{@const modelIndex = models.findIndex((m) => m.id === model.id)}
+			{@const modelInArray = modelIndex !== -1 ? models[modelIndex] : null}
 			<div
 				class=" flex flex-col cursor-pointer w-full px-3 py-2 dark:hover:bg-white/5 hover:bg-black/5 rounded-xl transition"
 				id="model-item-{model.id}"
@@ -306,7 +324,7 @@ import { WEBUI_BASE_URL } from '$lib/constants';
 								<button
 									class="self-center w-fit text-sm px-2 py-2 dark:text-gray-300 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-xl"
 									type="button"
-									on:click={() => {
+									onclick={() => {
 										deleteModelHandler(model);
 									}}
 								>
@@ -368,40 +386,63 @@ import { WEBUI_BASE_URL } from '$lib/constants';
 
 							<div class="ml-1">
 								<Tooltip content={model.is_active ? $i18n.t('Enabled') : $i18n.t('Disabled')}>
-									<Switch
-										bind:state={model.is_active}
-										on:change={async (e) => {
-											// Prevent multiple simultaneous toggles of the same model
-											if (togglingModels.has(model.id)) {
-												return;
-											}
+									{#if modelInArray}
+										{@const switchState = switchStates.get(model.id) ?? modelInArray.is_active}
+										<Switch
+											state={switchState}
+											on:change={async (e) => {
+												const newState = e.detail;
+												const currentState = switchStates.get(model.id) ?? modelInArray.is_active;
 
-											togglingModels.add(model.id);
+												// Ignore if state hasn't actually changed (reactive update)
+												if (newState === currentState) {
+													return;
+												}
 
-											try {
-												await toggleModelById(localStorage.token, model.id);
-												// Update only the specific model in the array instead of replacing everything
-												const updatedModels = await getWorkspaceModels(localStorage.token);
-												if (updatedModels) {
-													const modelIndex = models.findIndex((m) => m.id === model.id);
-													if (modelIndex !== -1) {
+												// Prevent multiple simultaneous toggles of the same model
+												if (togglingModels.has(model.id)) {
+													return;
+												}
+
+												togglingModels.add(model.id);
+
+												// Update local switch state immediately
+												switchStates.set(model.id, newState);
+
+												// Optimistically update the model
+												if (modelIndex !== -1) {
+													models[modelIndex].is_active = newState;
+													models = models; // Trigger reactivity
+												}
+
+												try {
+													await toggleModelById(localStorage.token, model.id);
+													// Fetch updated model to ensure sync
+													const updatedModels = await getWorkspaceModels(localStorage.token);
+													if (updatedModels && modelIndex !== -1) {
 														const updatedModel = updatedModels.find((m) => m.id === model.id);
 														if (updatedModel) {
 															// Update only this specific model to avoid triggering updates for others
 															models[modelIndex] = { ...updatedModel };
 															models = models; // Trigger reactivity
+															// Sync switch state with server state
+															switchStates.set(model.id, updatedModel.is_active);
 														}
 													}
+												} catch (error) {
+													// Revert on error
+													if (modelIndex !== -1) {
+														models[modelIndex].is_active = !newState;
+														models = models; // Trigger reactivity
+														switchStates.set(model.id, !newState);
+													}
+													toast.error($i18n.t('Failed to toggle model'));
+												} finally {
+													togglingModels.delete(model.id);
 												}
-											} catch (error) {
-												// Revert on error
-												model.is_active = !model.is_active;
-												toast.error($i18n.t('Failed to toggle model'));
-											} finally {
-												togglingModels.delete(model.id);
-											}
-										}}
-									/>
+											}}
+										/>
+									{/if}
 								</Tooltip>
 							</div>
 						{/if}
@@ -421,7 +462,7 @@ import { WEBUI_BASE_URL } from '$lib/constants';
 					type="file"
 					accept=".json"
 					hidden
-					on:change={() => {
+					onchange={() => {
 						console.log(importFiles);
 
 						let reader = new FileReader();
@@ -461,7 +502,7 @@ import { WEBUI_BASE_URL } from '$lib/constants';
 
 				<button
 					class="flex text-xs items-center space-x-1 px-3 py-1.5 rounded-xl bg-gray-50 hover:bg-gray-100 dark:bg-gray-800 dark:hover:bg-gray-700 dark:text-gray-200 transition"
-					on:click={() => {
+					onclick={() => {
 						modelsImportInputElement.click();
 					}}
 				>
@@ -486,7 +527,7 @@ import { WEBUI_BASE_URL } from '$lib/constants';
 				{#if models.length}
 					<button
 						class="flex text-xs items-center space-x-1 px-3 py-1.5 rounded-xl bg-gray-50 hover:bg-gray-100 dark:bg-gray-800 dark:hover:bg-gray-700 dark:text-gray-200 transition"
-						on:click={async () => {
+						onclick={async () => {
 							downloadModels(models);
 						}}
 					>

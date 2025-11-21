@@ -1,4 +1,4 @@
-<script>
+<script lang="ts">
 	import { createEventDispatcher, getContext } from 'svelte';
 	const i18n = getContext('i18n');
 	const dispatch = createEventDispatcher();
@@ -6,16 +6,29 @@
 	import Markdown from './Markdown.svelte';
 	import { chatId, mobile, settings, showArtifacts, showControls } from '$lib/stores';
 
-	export let id;
-	export let content;
-	export let model = null;
-	export let sources = null;
 
-	export let save = false;
 
-	export let onSourceClick = () => {};
-	export let onTaskClick = () => {};
-	export let searchQuery = '';
+	interface Props {
+		id: any;
+		content: any;
+		model?: any;
+		sources?: any;
+		save?: boolean;
+		onSourceClick?: any;
+		onTaskClick?: any;
+		searchQuery?: string;
+	}
+
+	let {
+		id,
+		content,
+		model = null,
+		sources = null,
+		save = false,
+		onSourceClick = () => {},
+		onTaskClick = () => {},
+		searchQuery = ''
+	}: Props = $props();
 </script>
 
 <div>
