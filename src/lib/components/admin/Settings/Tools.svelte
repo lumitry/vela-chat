@@ -2,15 +2,12 @@
 	import { preventDefault } from 'svelte/legacy';
 
 	import { toast } from 'svelte-sonner';
-	import { createEventDispatcher, onMount, getContext, tick } from 'svelte';
-	import { getModels as _getModels } from '$lib/apis';
+	import { getContext, onMount } from 'svelte';
+	import type { Writable } from 'svelte/store';
+	import type { i18n as i18nType } from 'i18next';
 
-	const dispatch = createEventDispatcher();
-	const i18n = getContext('i18n');
+	const i18n: Writable<i18nType> = getContext('i18n');
 
-	import { models, settings, user } from '$lib/stores';
-
-	import Switch from '$lib/components/common/Switch.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import Plus from '$lib/components/icons/Plus.svelte';
@@ -25,10 +22,22 @@
 
 	let { saveSettings }: Props = $props();
 
-	let servers = $state(null);
+	type ToolServerConnection = {
+		url: string;
+		path?: string;
+		auth_type?: 'bearer' | 'session';
+		key?: string;
+		config?: {
+			enable?: boolean;
+			access_control?: Record<string, unknown> | null;
+		};
+	};
+
+	let servers = $state<ToolServerConnection[]>([]);
+	let isLoading = $state(true);
 	let showConnectionModal = $state(false);
 
-	const addConnectionHandler = async (server) => {
+	const addConnectionHandler = async (server: ToolServerConnection) => {
 		servers = [...servers, server];
 		await updateHandler();
 	};
@@ -48,8 +57,19 @@
 	};
 
 	onMount(async () => {
-		const res = await getToolServerConnections(localStorage.token);
-		servers = res.TOOL_SERVER_CONNECTIONS;
+		try {
+			const res = await getToolServerConnections(localStorage.token);
+			if (res?.TOOL_SERVER_CONNECTIONS) {
+				servers = res.TOOL_SERVER_CONNECTIONS;
+			} else {
+				servers = [];
+			}
+		} catch (err) {
+			toast.error($i18n.t('Failed to load connections'));
+			servers = [];
+		} finally {
+			isLoading = false;
+		}
 	});
 </script>
 
@@ -62,7 +82,13 @@
 	})}
 >
 	<div class=" overflow-y-scroll scrollbar-hidden h-full">
-		{#if servers !== null}
+		{#if isLoading}
+			<div class="flex h-full justify-center">
+				<div class="my-auto">
+					<Spinner className="size-6" />
+				</div>
+			</div>
+		{:else}
 			<div class="">
 				<div class="mb-3">
 					<div class=" mb-2.5 text-base font-medium">{$i18n.t('General')}</div>
@@ -90,9 +116,9 @@
 						</div>
 
 						<div class="flex flex-col gap-1.5">
-							{#each servers as server, idx}
+							{#each servers as _, idx}
 								<Connection
-									bind:connection={server}
+									bind:connection={servers[idx]}
 									onSubmit={() => {
 										updateHandler();
 									}}
@@ -118,12 +144,6 @@
 							<Switch bind:state={evaluationConfig.ENABLE_EVALUATION_ARENA_MODELS} />
 						</Tooltip>
 					</div> -->
-				</div>
-			</div>
-		{:else}
-			<div class="flex h-full justify-center">
-				<div class="my-auto">
-					<Spinner className="size-6" />
 				</div>
 			</div>
 		{/if}

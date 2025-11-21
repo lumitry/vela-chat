@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { run, preventDefault } from 'svelte/legacy';
+	import { preventDefault } from 'svelte/legacy';
 
 	import { toast } from 'svelte-sonner';
 	import { createEventDispatcher, onMount, getContext } from 'svelte';
@@ -187,18 +187,20 @@
 			}
 		}
 	};
-	run(() => {
-		if (TTSEngine && TTSEngineConfig && TTSEngine === 'browser-kokoro') {
-			// Only trigger if page is already loaded
-			if (document.readyState === 'complete') {
-				if ('requestIdleCallback' in window) {
-					requestIdleCallback(() => onTTSEngineChange(), { timeout: 2000 });
-				} else {
-					setTimeout(() => onTTSEngineChange(), 100);
-				}
-			}
+$effect(() => {
+	if (!TTSEngine || TTSEngine !== 'browser-kokoro' || !TTSEngineConfig) {
+		return;
+	}
+
+	// Only trigger if page is already loaded
+	if (document.readyState === 'complete') {
+		if ('requestIdleCallback' in window) {
+			requestIdleCallback(() => onTTSEngineChange(), { timeout: 2000 });
+		} else {
+			setTimeout(() => onTTSEngineChange(), 100);
 		}
-	});
+	}
+});
 </script>
 
 <form
@@ -301,7 +303,7 @@
 						class="dark:bg-gray-900 w-fit pr-8 rounded-sm px-2 p-1 text-xs bg-transparent outline-hidden text-right"
 						bind:value={playbackRate}
 					>
-						{#each speedOptions as option}
+						{#each speedOptions as option (option)}
 							<option value={option} selected={playbackRate === option}>{option}x</option>
 						{/each}
 					</select>
@@ -325,7 +327,7 @@
 							/>
 
 							<datalist id="voice-list">
-								{#each voices as voice}
+							{#each voices as voice (voice.id)}
 									<option value={voice.id}>{voice.name}</option>
 								{/each}
 							</datalist>
@@ -360,7 +362,7 @@
 							bind:value={voice}
 						>
 							<option value="" selected={voice !== ''}>{$i18n.t('Default')}</option>
-							{#each voices.filter((v) => nonLocalVoices || v.localService === true) as _voice}
+							{#each voices.filter((v) => nonLocalVoices || v.localService === true) as _voice (_voice.id ?? _voice.name)}
 								<option
 									value={_voice.name}
 									class="bg-gray-100 dark:bg-gray-700"
@@ -393,7 +395,7 @@
 						/>
 
 						<datalist id="voice-list">
-							{#each voices as voice}
+							{#each voices as voice (voice.id)}
 								<option value={voice.id}>{voice.name}</option>
 							{/each}
 						</datalist>

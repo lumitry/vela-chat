@@ -1,13 +1,11 @@
 <script lang="ts">
-	import { run } from 'svelte/legacy';
-
 	import DOMPurify from 'dompurify';
 
 	import { onDestroy } from 'svelte';
 	import { marked } from 'marked';
 
 	import tippy from 'tippy.js';
-	import { roundArrow } from 'tippy.js';
+	import type { Instance } from 'tippy.js';
 
 	interface Props {
 		placement?: string;
@@ -33,35 +31,50 @@
 		children
 	}: Props = $props();
 
-	let tooltipElement = $state();
-	let tooltipInstance = $state();
+	let tooltipElement = $state<HTMLElement | null>(null);
+	let tooltipInstance: Instance | null = null;
 
-	run(() => {
-		if (tooltipElement && content) {
-			if (tooltipInstance) {
-				tooltipInstance.setContent(DOMPurify.sanitize(content));
-			} else {
-				tooltipInstance = tippy(tooltipElement, {
-					content: DOMPurify.sanitize(content),
-					placement: placement,
-					allowHTML: allowHTML,
-					touch: touch,
-					...(theme !== '' ? { theme } : { theme: 'dark' }),
-					arrow: false,
-					offset: offset,
-					...tippyOptions
-				});
-			}
-		} else if (tooltipInstance && content === '') {
+	$effect(() => {
+		const element = tooltipElement;
+		const sanitizedContent = DOMPurify.sanitize(content ?? '');
+
+		if (!element || !sanitizedContent) {
 			if (tooltipInstance) {
 				tooltipInstance.destroy();
+				tooltipInstance = null;
 			}
+			return;
+		}
+
+		if (tooltipInstance) {
+			tooltipInstance.setContent(sanitizedContent);
+			tooltipInstance.setProps({
+				placement,
+				allowHTML,
+				touch,
+				arrow: false,
+				...(theme !== '' ? { theme } : { theme: 'dark' }),
+				offset,
+				...tippyOptions
+			});
+		} else {
+			tooltipInstance = tippy(element, {
+				content: sanitizedContent,
+				placement,
+				allowHTML,
+				touch,
+				...(theme !== '' ? { theme } : { theme: 'dark' }),
+				arrow: false,
+				offset,
+				...tippyOptions
+			}) as Instance;
 		}
 	});
 
 	onDestroy(() => {
 		if (tooltipInstance) {
 			tooltipInstance.destroy();
+			tooltipInstance = null;
 		}
 	});
 </script>
