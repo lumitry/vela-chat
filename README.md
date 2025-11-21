@@ -28,6 +28,7 @@ Note: **Do not** use this fork with an Sqlite database! It will probably break t
 Dev environment:
 
 - VSCode remote ssh to my server (which means I can experience actual latency/perf issues firsthand, albeit still on a local network) (I use the `VITE_ALLOWED_HOSTS` environment variable to get this to work btw)
+- `bun i` to install packages, but `npm run dev` and `npm run build` for everything else (for the sake of compatibility).
 - The database is a Postgres-migrated version of my actual production database (the 2GB Sqlite database I mention in several places) with 15k messages. In other words, it is a real-world scenario with a lot of actual data and edge cases.
 - I bounce back and forth between firefox and chrome. Both have devtools with varying degrees of oddity. Chrome doesn't tell you the HTTP method in the overview by default and doesn't let you search response/request JSON for single requests. Firefox has a worse waterfall that's never the right size. No need to pick your poison - ¿por que no los dos?
 - I mostly use external models for testing, lately Gemini 2.5 Flash Lite Preview because when I'm testing, I don't want to break flow waiting for a 10 tps free model or an Ollama cold start. 300+ TPS for cheap prices is pretty nice.

@@ -24,14 +24,21 @@ ARG GID=0
 FROM --platform=$BUILDPLATFORM node:22-alpine3.20 AS build
 ARG BUILD_HASH
 
+# Install curl and bash for Bun installation, then install Bun (adds ~15MB but significantly faster installs)
+RUN apk add --no-cache curl bash unzip && \
+    curl -fsSL https://bun.sh/install | bash && \
+    cp /root/.bun/bin/bun /usr/local/bin/bun
+
 WORKDIR /app
 
 COPY package.json package-lock.json ./
 ENV NODE_OPTIONS=--max-old-space-size=8192
-RUN npm ci
+# We only use Bun for installing, not for building
+RUN bun install
 
 COPY . .
 ENV APP_BUILD_HASH=${BUILD_HASH}
+# Use npm for building (Bun is incompatible with this app)
 RUN npm run build
 
 ######## WebUI backend ########
