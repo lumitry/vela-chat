@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { run } from 'svelte/legacy';
+
 	import { v4 as uuidv4 } from 'uuid';
 	import { toast } from 'svelte-sonner';
 	import mermaid from 'mermaid';
@@ -116,7 +118,11 @@
 	import XMark from '$lib/components/icons/XMark.svelte';
 	import Switch from '$lib/components/common/Switch.svelte';
 
-	export let chatIdProp = '';
+	interface Props {
+		chatIdProp?: string;
+	}
+
+	let { chatIdProp = '' }: Props = $props();
 
 	// Helper function to strip files array and data.file_ids from collection objects
 	const stripCollectionFiles = (file) => {
@@ -135,7 +141,7 @@
 		return file;
 	};
 
-	let loading = false;
+	let loading = $state(false);
 
 	const eventTarget = new EventTarget();
 
@@ -198,51 +204,50 @@
 			// Don't throw - caching failure shouldn't break the app
 		}
 	};
-	let controlPane;
-	let controlPaneComponent;
+	let controlPane = $state();
+	let controlPaneComponent = $state();
 
-	let autoScroll = true;
+	let autoScroll = $state(true);
 	let processing = '';
-	let messagesContainerElement: HTMLDivElement;
+	let messagesContainerElement: HTMLDivElement = $state();
 
-	let navbarElement;
+	let navbarElement = $state();
 
-	let showEventConfirmation = false;
-	let eventConfirmationTitle = '';
-	let eventConfirmationMessage = '';
-	let eventConfirmationInput = false;
-	let eventConfirmationInputPlaceholder = '';
-	let eventConfirmationInputValue = '';
-	let eventCallback = null;
+	let showEventConfirmation = $state(false);
+	let eventConfirmationTitle = $state('');
+	let eventConfirmationMessage = $state('');
+	let eventConfirmationInput = $state(false);
+	let eventConfirmationInputPlaceholder = $state('');
+	let eventConfirmationInputValue = $state('');
+	let eventCallback = $state(null);
 
 	let chatIdUnsubscriber: Unsubscriber | undefined;
 
-	let selectedModels = [''];
-	let atSelectedModel: Model | undefined;
-	let selectedModelIds = [];
-	$: selectedModelIds = atSelectedModel !== undefined ? [atSelectedModel.id] : selectedModels;
+	let selectedModels = $state(['']);
+	let atSelectedModel: Model | undefined = $state();
+	let selectedModelIds = $state([]);
 
-	let selectedToolIds = [];
-	let imageGenerationEnabled = false;
-	let webSearchEnabled = false;
-	let codeInterpreterEnabled = false;
+	let selectedToolIds = $state([]);
+	let imageGenerationEnabled = $state(false);
+	let webSearchEnabled = $state(false);
+	let codeInterpreterEnabled = $state(false);
 
 	let chat = null;
 	let tags = [];
 
-	let history = {
+	let history = $state({
 		messages: {},
 		currentId: null
-	};
+	});
 
-	let taskIds = null;
+	let taskIds = $state(null);
 
 	// Chat Input
-	let prompt = '';
-	let chatFiles = [];
-	let files = [];
-	let params = {};
-	let lastChatId = '';
+	let prompt = $state('');
+	let chatFiles = $state([]);
+	let files = $state([]);
+	let params = $state({});
+	let lastChatId = $state('');
 
 	// Module-level timer for token speed calculation
 	let tokenTimerStart = 0;
@@ -289,34 +294,10 @@
 		}
 	}
 
-	// Reactive watcher: when chatIdProp changes, reload
-	$: if (chatIdProp && chatIdProp !== lastChatId) {
-		lastChatId = chatIdProp;
-		loadAndLink();
-	}
 
 	// Watch for URL changes when on home page (no chatId) to trigger initNewChat
-	let lastUrlQuery = '';
-	$: if (!chatIdProp && $page.url.pathname === '/') {
-		const currentQuery = $page.url.searchParams.get('q') ?? '';
-		// Only call initNewChat if query changed and we're on home page
-		if (currentQuery !== lastUrlQuery) {
-			lastUrlQuery = currentQuery;
-			// Only call if there's a query or other params that need initNewChat
-			if (
-				currentQuery ||
-				$page.url.searchParams.has('web-search') ||
-				$page.url.searchParams.has('image-generation') ||
-				$page.url.searchParams.has('knowledge-base')
-			) {
-				initNewChat();
-			}
-		}
-	}
+	let lastUrlQuery = $state('');
 
-	$: if (selectedModels && chatIdProp !== '') {
-		saveSessionSelectedModels();
-	}
 
 	const saveSessionSelectedModels = () => {
 		if (selectedModels.length === 0 || (selectedModels.length === 1 && selectedModels[0] === '')) {
@@ -328,63 +309,8 @@
 
 	// When models load and we're on a new chat page, set the selected model
 	// Guard against race conditions with initNewChat
-	let modelSelectionInProgress = false;
-	$: if (
-		$models.length > 0 &&
-		!chatIdProp &&
-		!modelSelectionInProgress &&
-		(selectedModels.length === 0 || (selectedModels.length === 1 && selectedModels[0] === ''))
-	) {
-		// Models just loaded and we don't have a selected model yet
-		// Re-run the model selection logic from initNewChat
-		modelSelectionInProgress = true;
-		let newSelectedModels: string[] = [];
+	let modelSelectionInProgress = $state(false);
 
-		if ($page.url.searchParams.get('models')) {
-			newSelectedModels = $page.url.searchParams.get('models')?.split(',') || [];
-		} else if ($page.url.searchParams.get('model')) {
-			const urlModels = $page.url.searchParams.get('model')?.split(',') || [];
-			newSelectedModels = urlModels;
-		} else {
-			if (sessionStorage.selectedModels) {
-				try {
-					newSelectedModels = JSON.parse(sessionStorage.selectedModels);
-				} catch (e) {
-					newSelectedModels = [];
-				}
-			} else {
-				if ($settings?.models) {
-					newSelectedModels = $settings.models;
-				} else if ($config?.default_models) {
-					newSelectedModels = $config.default_models.split(',');
-				}
-			}
-		}
-
-		// Filter to only include models that exist
-		newSelectedModels = newSelectedModels.filter((modelId) =>
-			$models.map((m) => m.id).includes(modelId)
-		);
-
-		// If no valid models selected, use the first available model
-		if (
-			newSelectedModels.length === 0 ||
-			(newSelectedModels.length === 1 && newSelectedModels[0] === '')
-		) {
-			if ($models.length > 0) {
-				newSelectedModels = [$models[0].id];
-			}
-		}
-
-		if (newSelectedModels.length > 0 && newSelectedModels[0] !== '') {
-			selectedModels = newSelectedModels;
-		}
-		modelSelectionInProgress = false;
-	}
-
-	$: if (atSelectedModel || selectedModels) {
-		setToolIds();
-	}
 
 	const setToolIds = async () => {
 		if (!$tools) {
@@ -3032,12 +2958,12 @@
 		}
 	};
 
-	let searchActive = false;
-	let searchQuery = '';
-	let includeHidden = false;
+	let searchActive = $state(false);
+	let searchQuery = $state('');
+	let includeHidden = $state(false);
 	// Each match is { messageId: string, occurrenceIndex: number }
-	let matches: Array<{ messageId: string; occurrenceIndex: number }> = [];
-	let currentMatchIndex = -1;
+	let matches: Array<{ messageId: string; occurrenceIndex: number }> = $state([]);
+	let currentMatchIndex = $state(-1);
 
 	function openSearch() {
 		searchActive = true;
@@ -3144,6 +3070,98 @@
 			}
 		});
 	});
+	run(() => {
+		if (
+			$models.length > 0 &&
+			!chatIdProp &&
+			!modelSelectionInProgress &&
+			(selectedModels.length === 0 || (selectedModels.length === 1 && selectedModels[0] === ''))
+		) {
+			// Models just loaded and we don't have a selected model yet
+			// Re-run the model selection logic from initNewChat
+			modelSelectionInProgress = true;
+			let newSelectedModels: string[] = [];
+
+			if ($page.url.searchParams.get('models')) {
+				newSelectedModels = $page.url.searchParams.get('models')?.split(',') || [];
+			} else if ($page.url.searchParams.get('model')) {
+				const urlModels = $page.url.searchParams.get('model')?.split(',') || [];
+				newSelectedModels = urlModels;
+			} else {
+				if (sessionStorage.selectedModels) {
+					try {
+						newSelectedModels = JSON.parse(sessionStorage.selectedModels);
+					} catch (e) {
+						newSelectedModels = [];
+					}
+				} else {
+					if ($settings?.models) {
+						newSelectedModels = $settings.models;
+					} else if ($config?.default_models) {
+						newSelectedModels = $config.default_models.split(',');
+					}
+				}
+			}
+
+			// Filter to only include models that exist
+			newSelectedModels = newSelectedModels.filter((modelId) =>
+				$models.map((m) => m.id).includes(modelId)
+			);
+
+			// If no valid models selected, use the first available model
+			if (
+				newSelectedModels.length === 0 ||
+				(newSelectedModels.length === 1 && newSelectedModels[0] === '')
+			) {
+				if ($models.length > 0) {
+					newSelectedModels = [$models[0].id];
+				}
+			}
+
+			if (newSelectedModels.length > 0 && newSelectedModels[0] !== '') {
+				selectedModels = newSelectedModels;
+			}
+			modelSelectionInProgress = false;
+		}
+	});
+	run(() => {
+		selectedModelIds = atSelectedModel !== undefined ? [atSelectedModel.id] : selectedModels;
+	});
+	// Reactive watcher: when chatIdProp changes, reload
+	run(() => {
+		if (chatIdProp && chatIdProp !== lastChatId) {
+			lastChatId = chatIdProp;
+			loadAndLink();
+		}
+	});
+	run(() => {
+		if (!chatIdProp && $page.url.pathname === '/') {
+			const currentQuery = $page.url.searchParams.get('q') ?? '';
+			// Only call initNewChat if query changed and we're on home page
+			if (currentQuery !== lastUrlQuery) {
+				lastUrlQuery = currentQuery;
+				// Only call if there's a query or other params that need initNewChat
+				if (
+					currentQuery ||
+					$page.url.searchParams.has('web-search') ||
+					$page.url.searchParams.has('image-generation') ||
+					$page.url.searchParams.has('knowledge-base')
+				) {
+					initNewChat();
+				}
+			}
+		}
+	});
+	run(() => {
+		if (selectedModels && chatIdProp !== '') {
+			saveSessionSelectedModels();
+		}
+	});
+	run(() => {
+		if (atSelectedModel || selectedModels) {
+			setToolIds();
+		}
+	});
 </script>
 
 <svelte:head>
@@ -3154,7 +3172,7 @@
 	</title>
 </svelte:head>
 
-<audio id="audioElement" src="" style="display: none;" />
+<audio id="audioElement" src="" style="display: none;"></audio>
 
 <EventConfirmDialog
 	bind:show={showEventConfirmation}
@@ -3188,11 +3206,11 @@
 					? 'md:max-w-[calc(100%-260px)] md:translate-x-[260px]'
 					: ''} top-0 left-0 w-full h-full bg-cover bg-center bg-no-repeat"
 				style="background-image: url({$settings.backgroundImageUrl})  "
-			/>
+			></div>
 
 			<div
 				class="absolute top-0 left-0 w-full h-full bg-linear-to-t from-white to-white/85 dark:from-gray-900 dark:to-gray-900/90 z-0"
-			/>
+			></div>
 		{/if}
 
 		<PaneGroup direction="horizontal" class="w-full h-full">
@@ -3229,8 +3247,8 @@
 								type="text"
 								bind:value={searchQuery}
 								placeholder="Search chat"
-								on:input={updateSearch}
-								on:keydown={(e) => {
+								oninput={updateSearch}
+								onkeydown={(e) => {
 									if (e.key === 'Enter') {
 										e.preventDefault();
 										if (e.shiftKey) {
@@ -3248,7 +3266,7 @@
 							/>
 							<div class="flex items-center gap-1">
 								<button
-									on:click={prevMatch}
+									onclick={prevMatch}
 									disabled={matches.length === 0}
 									class="p-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700
 									disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent
@@ -3264,7 +3282,7 @@
 									{matches.length ? currentMatchIndex + 1 : 0}/{matches.length}
 								</span>
 								<button
-									on:click={nextMatch}
+									onclick={nextMatch}
 									disabled={matches.length === 0}
 									class="p-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700
 									disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent
@@ -3275,7 +3293,7 @@
 								</button>
 							</div>
 							<button
-								on:click={closeSearch}
+								onclick={closeSearch}
 								class="p-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700
 								transition-colors text-gray-600 dark:text-gray-400"
 								title="Close search"
@@ -3304,7 +3322,7 @@
 							id="messages-container"
 							style={`--chat-font-scale: ${$settings?.chatFontScale ?? 1};`}
 							bind:this={messagesContainerElement}
-							on:scroll={(e) => {
+							onscroll={(e) => {
 								autoScroll =
 									messagesContainerElement.scrollHeight - messagesContainerElement.scrollTop <=
 									messagesContainerElement.clientHeight + 5;

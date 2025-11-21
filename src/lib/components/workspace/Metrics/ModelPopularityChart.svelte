@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { run } from 'svelte/legacy';
+
 	import { onMount, onDestroy } from 'svelte';
 	import {
 		Chart as ChartJS,
@@ -16,21 +18,25 @@
 
 	ChartJS.register(Title, Tooltip, Legend, BarElement, BarController, CategoryScale, LinearScale);
 
-	let canvasElement: HTMLCanvasElement;
-	let chartInstance: ChartJS<'bar'> | null = null;
+	let canvasElement: HTMLCanvasElement = $state();
+	let chartInstance: ChartJS<'bar'> | null = $state(null);
 
-	export let data: Array<{
+	interface Props {
+		data?: Array<{
 		model_id: string;
 		model_name: string;
 		chat_count: number;
 		message_count: number;
-	}> = [];
-	export let loading: boolean = false;
+	}>;
+		loading?: boolean;
+	}
 
-	$: colors = getChartColors();
-	$: defaults = getChartDefaults();
+	let { data = [], loading = false }: Props = $props();
 
-	$: chartData = {
+	let colors = $derived(getChartColors());
+	let defaults = $derived(getChartDefaults());
+
+	let chartData = $derived({
 		labels: data && Array.isArray(data) ? data.map((d) => d.model_name || d.model_id) : [],
 		datasets: [
 			{
@@ -39,9 +45,9 @@
 				backgroundColor: colors.singleSeries.primary
 			}
 		]
-	};
+	});
 
-	$: chartOptions = {
+	let chartOptions = $derived({
 		indexAxis: 'y' as const,
 		responsive: true,
 		maintainAspectRatio: false,
@@ -68,25 +74,27 @@
 				...defaults.scales.y
 			}
 		}
-	};
+	});
 
-	$: if (canvasElement && data && data.length > 0) {
-		if (chartInstance) {
-			chartInstance.data = chartData;
-			chartInstance.options = chartOptions;
-			chartInstance.update();
-		} else {
-			const config: ChartConfiguration<'bar'> = {
-				type: 'bar',
-				data: chartData,
-				options: chartOptions
-			};
-			chartInstance = new ChartJS(canvasElement, config);
+	run(() => {
+		if (canvasElement && data && data.length > 0) {
+			if (chartInstance) {
+				chartInstance.data = chartData;
+				chartInstance.options = chartOptions;
+				chartInstance.update();
+			} else {
+				const config: ChartConfiguration<'bar'> = {
+					type: 'bar',
+					data: chartData,
+					options: chartOptions
+				};
+				chartInstance = new ChartJS(canvasElement, config);
+			}
+		} else if (chartInstance) {
+			chartInstance.destroy();
+			chartInstance = null;
 		}
-	} else if (chartInstance) {
-		chartInstance.destroy();
-		chartInstance = null;
-	}
+	});
 
 	onDestroy(() => {
 		if (chartInstance) {

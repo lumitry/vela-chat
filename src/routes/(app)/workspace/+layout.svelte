@@ -11,36 +11,41 @@
 		knowledge,
 		tools
 	} from '$lib/stores';
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { prefetchMetrics } from '$lib/utils/metricsPrefetch';
 
 	import MenuLines from '$lib/components/icons/MenuLines.svelte';
+	interface Props {
+		children?: import('svelte').Snippet;
+	}
+
+	let { children }: Props = $props();
 
 	const i18n = getContext('i18n');
 	
-	let metricsPrefetchTimeout: ReturnType<typeof setTimeout> | null = null;
+	let metricsPrefetchTimeout: ReturnType<typeof setTimeout> | null = $state(null);
 
-	let loaded = false;
+	let loaded = $state(false);
 
 	onMount(async () => {
 		if ($user?.role !== 'admin') {
-			if ($page.url.pathname.includes('/models') && !$user?.permissions?.workspace?.models) {
+			if (page.url.pathname.includes('/models') && !$user?.permissions?.workspace?.models) {
 				goto('/');
 			} else if (
-				$page.url.pathname.includes('/knowledge') &&
+				page.url.pathname.includes('/knowledge') &&
 				!$user?.permissions?.workspace?.knowledge
 			) {
 				goto('/');
 			} else if (
-				$page.url.pathname.includes('/prompts') &&
+				page.url.pathname.includes('/prompts') &&
 				!$user?.permissions?.workspace?.prompts
 			) {
 				goto('/');
-			} else if ($page.url.pathname.includes('/tools') && !$user?.permissions?.workspace?.tools) {
+			} else if (page.url.pathname.includes('/tools') && !$user?.permissions?.workspace?.tools) {
 				goto('/');
 			} else if (
-				$page.url.pathname.includes('/metrics') &&
+				page.url.pathname.includes('/metrics') &&
 				!$user?.permissions?.workspace?.metrics
 			) {
 				goto('/');
@@ -69,7 +74,7 @@
 					<button
 						id="sidebar-toggle-button"
 						class="cursor-pointer p-1.5 flex rounded-xl hover:bg-gray-100 dark:hover:bg-gray-850 transition"
-						on:click={() => {
+						onclick={() => {
 							showSidebar.set(!$showSidebar);
 						}}
 						aria-label="Toggle Sidebar"
@@ -86,7 +91,7 @@
 					>
 						{#if $user?.role === 'admin' || $user?.permissions?.workspace?.models}
 							<a
-								class="min-w-fit rounded-full p-1.5 {$page.url.pathname.includes(
+								class="min-w-fit rounded-full p-1.5 {page.url.pathname.includes(
 									'/workspace/models'
 								)
 									? ''
@@ -97,7 +102,7 @@
 
 						{#if $user?.role === 'admin' || $user?.permissions?.workspace?.knowledge}
 							<a
-								class="min-w-fit rounded-full p-1.5 {$page.url.pathname.includes(
+								class="min-w-fit rounded-full p-1.5 {page.url.pathname.includes(
 									'/workspace/knowledge'
 								)
 									? ''
@@ -110,7 +115,7 @@
 
 						{#if $user?.role === 'admin' || $user?.permissions?.workspace?.prompts}
 							<a
-								class="min-w-fit rounded-full p-1.5 {$page.url.pathname.includes(
+								class="min-w-fit rounded-full p-1.5 {page.url.pathname.includes(
 									'/workspace/prompts'
 								)
 									? ''
@@ -121,7 +126,7 @@
 
 					{#if $user?.role === 'admin' || $user?.permissions?.workspace?.tools}
 						<a
-							class="min-w-fit rounded-full p-1.5 {$page.url.pathname.includes('/workspace/tools')
+							class="min-w-fit rounded-full p-1.5 {page.url.pathname.includes('/workspace/tools')
 								? ''
 								: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition"
 							href="/workspace/tools"
@@ -132,17 +137,17 @@
 
 					{#if $user?.role === 'admin' || $user?.permissions?.workspace?.metrics}
 						<a
-							class="min-w-fit rounded-full p-1.5 {$page.url.pathname.includes('/workspace/metrics')
+							class="min-w-fit rounded-full p-1.5 {page.url.pathname.includes('/workspace/metrics')
 								? ''
 								: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition"
 							href="/workspace/metrics"
-							on:mouseenter={() => {
+							onmouseenter={() => {
 								// Small delay to avoid prefetching on accidental hovers
 								metricsPrefetchTimeout = setTimeout(() => {
 									prefetchMetrics();
 								}, 200);
 							}}
-							on:mouseleave={() => {
+							onmouseleave={() => {
 								if (metricsPrefetchTimeout) {
 									clearTimeout(metricsPrefetchTimeout);
 									metricsPrefetchTimeout = null;
@@ -160,7 +165,7 @@
 		</nav>
 
 		<div class="  pb-1 px-[18px] flex-1 max-h-full overflow-y-auto" id="workspace-container">
-			<slot />
+			{@render children?.()}
 		</div>
 	</div>
 {/if}

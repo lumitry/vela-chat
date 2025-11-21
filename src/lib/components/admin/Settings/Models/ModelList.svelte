@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { run } from 'svelte/legacy';
+
 	import Sortable from 'sortablejs';
 
 	import { createEventDispatcher, getContext, onMount } from 'svelte';
@@ -10,10 +12,14 @@
 	import ChevronUp from '$lib/components/icons/ChevronUp.svelte';
 	import ChevronDown from '$lib/components/icons/ChevronDown.svelte';
 
-	export let modelIds: string[] = [];
+	interface Props {
+		modelIds?: string[];
+	}
+
+	let { modelIds = $bindable([]) }: Props = $props();
 
 	let sortable: any = null;
-	let modelListElement: HTMLElement | null = null;
+	let modelListElement: HTMLElement | null = $state(null);
 
 	const positionChangeHandler = () => {
 		if (!modelListElement) return;
@@ -43,9 +49,6 @@
 		return model?.meta?.hidden === true || model?.info?.meta?.hidden === true;
 	};
 
-	$: if (modelIds) {
-		init();
-	}
 
 	const init = () => {
 		if (sortable) {
@@ -62,6 +65,11 @@
 			});
 		}
 	};
+	run(() => {
+		if (modelIds) {
+			init();
+		}
+	});
 </script>
 
 {#if modelIds.length > 0}
@@ -95,7 +103,7 @@
 						<button
 							type="button"
 							class="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-							on:click={() => moveToTop(modelId)}
+							onclick={() => moveToTop(modelId)}
 							disabled={modelIdx === 0}
 							class:opacity-50={modelIdx === 0}
 							class:cursor-not-allowed={modelIdx === 0}
@@ -108,7 +116,7 @@
 						<button
 							type="button"
 							class="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-							on:click={() => moveToBottom(modelId)}
+							onclick={() => moveToBottom(modelId)}
 							disabled={modelIdx === modelIds.length - 1}
 							class:opacity-50={modelIdx === modelIds.length - 1}
 							class:cursor-not-allowed={modelIdx === modelIds.length - 1}

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { run } from 'svelte/legacy';
+
 	import { onMount, onDestroy } from 'svelte';
 	import {
 		Chart as ChartJS,
@@ -23,21 +25,25 @@
 
 	ChartJS.register(Title, Tooltip, Legend, BarElement, BarController, CategoryScale, LinearScale, TimeScale);
 
-	let canvasElement: HTMLCanvasElement;
-	let chartInstance: ChartJS<'bar'> | null = null;
+	let canvasElement: HTMLCanvasElement = $state();
+	let chartInstance: ChartJS<'bar'> | null = $state(null);
 
-	export let data: Array<{
+	interface Props {
+		data?: Array<{
 		date: string;
 		task_type: string;
 		task_count: number;
-	}> = [];
-	export let loading: boolean = false;
+	}>;
+		loading?: boolean;
+	}
 
-	$: colors = getChartColors();
-	$: defaults = getChartDefaults();
+	let { data = [], loading = false }: Props = $props();
+
+	let colors = $derived(getChartColors());
+	let defaults = $derived(getChartDefaults());
 
 	// Group data by task type and create datasets
-	$: taskTypeMap = (() => {
+	let taskTypeMap = $derived((() => {
 		const map = new Map<string, typeof data>();
 		if (data && Array.isArray(data)) {
 			data.forEach((d) => {
@@ -50,10 +56,10 @@
 			});
 		}
 		return map;
-	})();
+	})());
 
-	$: allDates =
-		data && Array.isArray(data) ? [...new Set(data.map((d) => d.date).filter(Boolean))].sort() : [];
+	let allDates =
+		$derived(data && Array.isArray(data) ? [...new Set(data.map((d) => d.date).filter(Boolean))].sort() : []);
 
 	// Format task type names for display
 	const formatTaskType = (taskType: string): string => {
@@ -68,7 +74,7 @@
 			.join(' ');
 	};
 
-	$: datasets = (() => {
+	let datasets = $derived((() => {
 		if (!allDates.length || !taskTypeMap.size) {
 			return [];
 		}
@@ -88,13 +94,13 @@
 				stack: 'tasks'
 			};
 		});
-	})();
+	})());
 
-	$: chartData = {
+	let chartData = $derived({
 		datasets
-	} as any;
+	} as any);
 
-	$: chartOptions = {
+	let chartOptions = $derived({
 		responsive: true,
 		maintainAspectRatio: false,
 		plugins: {
@@ -128,25 +134,27 @@
 				beginAtZero: true
 			}
 		}
-	};
+	});
 
-	$: if (canvasElement && datasets.length > 0) {
-		if (chartInstance) {
-			chartInstance.data = chartData;
-			chartInstance.options = chartOptions;
-			chartInstance.update();
-		} else {
-			const config: ChartConfiguration<'bar'> = {
-				type: 'bar',
-				data: chartData,
-				options: chartOptions
-			};
-			chartInstance = new ChartJS(canvasElement, config);
+	run(() => {
+		if (canvasElement && datasets.length > 0) {
+			if (chartInstance) {
+				chartInstance.data = chartData;
+				chartInstance.options = chartOptions;
+				chartInstance.update();
+			} else {
+				const config: ChartConfiguration<'bar'> = {
+					type: 'bar',
+					data: chartData,
+					options: chartOptions
+				};
+				chartInstance = new ChartJS(canvasElement, config);
+			}
+		} else if (chartInstance) {
+			chartInstance.destroy();
+			chartInstance = null;
 		}
-	} else if (chartInstance) {
-		chartInstance.destroy();
-		chartInstance = null;
-	}
+	});
 
 	onDestroy(() => {
 		if (chartInstance) {

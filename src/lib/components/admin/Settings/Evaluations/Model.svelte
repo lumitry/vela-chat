@@ -5,11 +5,11 @@
 
 	import Cog6 from '$lib/components/icons/Cog6.svelte';
 	import ArenaModelModal from './ArenaModelModal.svelte';
-	export let model;
+	let { model } = $props();
 
-	let showModel = false;
+	let showModel = $state(false);
 
-$: imageSrc = model.meta.profile_image_url ?? '/static/favicon.png';
+let imageSrc = $derived(model.meta.profile_image_url ?? '/static/favicon.png');
 </script>
 
 <ArenaModelModal
@@ -50,7 +50,7 @@ $: imageSrc = model.meta.profile_image_url ?? '/static/favicon.png';
 			<button
 				class="self-center w-fit text-sm p-1.5 dark:text-gray-300 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-xl"
 				type="button"
-				on:click={() => {
+				onclick={() => {
 					showModel = true;
 				}}
 			>

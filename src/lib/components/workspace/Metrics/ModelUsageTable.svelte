@@ -6,7 +6,8 @@
 
 	const i18n = getContext('i18n');
 
-	export let models: Array<{
+	interface Props {
+		models?: Array<{
 		model_id: string;
 		model_name: string;
 		spend: number;
@@ -14,8 +15,11 @@
 		output_tokens: number;
 		total_tokens: number;
 		message_count: number;
-	}> = [];
-	export let loading: boolean = false;
+	}>;
+		loading?: boolean;
+	}
+
+	let { models = [], loading = false }: Props = $props();
 
 	type SortColumn =
 		| 'model_name'
@@ -26,10 +30,10 @@
 		| 'message_count';
 	type SortDirection = 'asc' | 'desc';
 
-	let sortColumn: SortColumn = 'total_tokens';
-	let sortDirection: SortDirection = 'desc';
+	let sortColumn: SortColumn = $state('total_tokens');
+	let sortDirection: SortDirection = $state('desc');
 
-	$: sortedModels = [...models].sort((a, b) => {
+	let sortedModels = $derived([...models].sort((a, b) => {
 		let aVal: number | string;
 		let bVal: number | string;
 
@@ -67,7 +71,7 @@
 				? (aVal as number) - (bVal as number)
 				: (bVal as number) - (aVal as number);
 		}
-	});
+	}));
 
 	const handleSort = (column: SortColumn) => {
 		if (sortColumn === column) {
@@ -104,7 +108,7 @@
 				<tr class="border-b border-gray-200 dark:border-gray-700">
 					<th
 						class="text-left py-3 px-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition text-sm font-semibold"
-						on:click={() => handleSort('model_name')}
+						onclick={() => handleSort('model_name')}
 					>
 						<div class="flex items-center gap-1.5">
 							<span>{$i18n.t('Model')}</span>
@@ -115,7 +119,7 @@
 					</th>
 					<th
 						class="text-right py-3 px-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition text-sm font-semibold"
-						on:click={() => handleSort('spend')}
+						onclick={() => handleSort('spend')}
 					>
 						<div class="flex items-center justify-end gap-1.5">
 							<span>{$i18n.t('Spend')}</span>
@@ -126,7 +130,7 @@
 					</th>
 					<th
 						class="text-right py-3 px-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition text-sm font-semibold"
-						on:click={() => handleSort('input_tokens')}
+						onclick={() => handleSort('input_tokens')}
 					>
 						<div class="flex items-center justify-end gap-1.5">
 							<span>{$i18n.t('Input Tokens')}</span>
@@ -137,7 +141,7 @@
 					</th>
 					<th
 						class="text-right py-3 px-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition text-sm font-semibold"
-						on:click={() => handleSort('output_tokens')}
+						onclick={() => handleSort('output_tokens')}
 					>
 						<div class="flex items-center justify-end gap-1.5">
 							<span>{$i18n.t('Output Tokens')}</span>
@@ -148,7 +152,7 @@
 					</th>
 					<th
 						class="text-right py-3 px-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition text-sm font-semibold"
-						on:click={() => handleSort('total_tokens')}
+						onclick={() => handleSort('total_tokens')}
 					>
 						<div class="flex items-center justify-end gap-1.5">
 							<span>{$i18n.t('Total Tokens')}</span>
@@ -159,7 +163,7 @@
 					</th>
 					<th
 						class="text-right py-3 px-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition text-sm font-semibold"
-						on:click={() => handleSort('message_count')}
+						onclick={() => handleSort('message_count')}
 					>
 						<div class="flex items-center justify-end gap-1.5">
 							<span>{$i18n.t('Messages')}</span>

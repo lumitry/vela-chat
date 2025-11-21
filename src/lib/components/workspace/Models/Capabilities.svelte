@@ -15,12 +15,16 @@
 		verbosity: $i18n.t('Controls the verbosity of the response. Currently only available on GPT-5.')
 	};
 
-	export let capabilities: {
+	interface Props {
+		capabilities?: {
 		vision?: boolean;
 		usage?: boolean;
 		citations?: boolean;
 		verbosity?: boolean;
-	} = {};
+	};
+	}
+
+	let { capabilities = $bindable({}) }: Props = $props();
 </script>
 
 <div>

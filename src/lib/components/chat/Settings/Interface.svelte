@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { run, preventDefault } from 'svelte/legacy';
+
 	import { getBackendConfig } from '$lib/apis';
 	import { setDefaultPromptSuggestions } from '$lib/apis/configs';
 	import { config, models, settings, user } from '$lib/stores';
@@ -33,10 +35,14 @@
 		return storeValue?.t ? storeValue.t(key) : key;
 	};
 
-	export let saveSettings: Function;
-	export let searchQuery: string = '';
+	interface Props {
+		saveSettings: Function;
+		searchQuery?: string;
+	}
 
-	let backgroundImageUrl: string | null = null;
+	let { saveSettings, searchQuery = '' }: Props = $props();
+
+	let backgroundImageUrl: string | null = $state(null);
 
 	// Check if a setting matches the search query
 	function settingMatchesSearch(setting: SettingConfig, query: string): boolean {
@@ -83,37 +89,9 @@
 		};
 	}
 
-	// Scroll to first match when search changes
-	$: if (searchQuery && searchQuery.trim() !== '') {
-		// Find first matching setting
-		const context = buildContext();
-		let found = false;
-		for (const sectionGroup of allSettings) {
-			if (found) break;
-			for (const setting of sectionGroup.settings) {
-				if (
-					(!setting.requiresAdmin || $user?.role === 'admin') &&
-					(!setting.dependsOn || setting.dependsOn(context)) &&
-					settingMatchesSearch(setting, searchQuery)
-				) {
-					// Scroll to this setting after a brief delay to allow rendering
-					setTimeout(() => {
-						const element = document.querySelector(`[data-setting-id="${setting.id}"]`);
-						if (element) {
-							element.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-						}
-					}, 100);
-					found = true;
-					break;
-				}
-			}
-		}
-	}
-	let inputFiles: FileList | null = null;
-	let filesInputElement: HTMLInputElement;
+	let inputFiles: FileList | null = $state(null);
+	let filesInputElement: HTMLInputElement = $state();
 
-	// Reactively update backgroundImageUrl when settings store changes
-	$: backgroundImageUrl = (($settings as Record<string, any>) ?? {}).backgroundImageUrl ?? null;
 
 	// Addons
 	let titleAutoGenerate = true;
@@ -146,7 +124,7 @@
 	let copyFormatted = false;
 	let commandPaletteShortcut = 'cmd+p';
 
-	let chatFontScale = 1;
+	let chatFontScale = $state(1);
 
 	// Find the matching option value string for the current chatFontScale
 	function getChatFontScaleString(scale: number): string {
@@ -156,8 +134,7 @@
 		return option ? option.value : '1';
 	}
 
-	let chatFontScaleString = getChatFontScaleString(chatFontScale);
-	$: chatFontScaleString = getChatFontScaleString(chatFontScale);
+	let chatFontScaleString = $state(getChatFontScaleString(chatFontScale));
 
 	let collapseCodeBlocks = false;
 	let expandDetails = false;
@@ -622,19 +599,56 @@
 		initializeFromSettings();
 	});
 
+	// Scroll to first match when search changes
+	run(() => {
+		if (searchQuery && searchQuery.trim() !== '') {
+			// Find first matching setting
+			const context = buildContext();
+			let found = false;
+			for (const sectionGroup of allSettings) {
+				if (found) break;
+				for (const setting of sectionGroup.settings) {
+					if (
+						(!setting.requiresAdmin || $user?.role === 'admin') &&
+						(!setting.dependsOn || setting.dependsOn(context)) &&
+						settingMatchesSearch(setting, searchQuery)
+					) {
+						// Scroll to this setting after a brief delay to allow rendering
+						setTimeout(() => {
+							const element = document.querySelector(`[data-setting-id="${setting.id}"]`);
+							if (element) {
+								element.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+							}
+						}, 100);
+						found = true;
+						break;
+					}
+				}
+			}
+		}
+	});
+	// Reactively update backgroundImageUrl when settings store changes
+	run(() => {
+		backgroundImageUrl = (($settings as Record<string, any>) ?? {}).backgroundImageUrl ?? null;
+	});
+	run(() => {
+		chatFontScaleString = getChatFontScaleString(chatFontScale);
+	});
 	// Reactively update local variables when settings store changes
 	// This ensures the component stays in sync when settings are reloaded from the server
-	$: if ($settings) {
-		initializeFromSettings();
-	}
+	run(() => {
+		if ($settings) {
+			initializeFromSettings();
+		}
+	});
 </script>
 
 <form
 	class="flex flex-col h-full justify-between space-y-3 text-sm"
-	on:submit|preventDefault={() => {
+	onsubmit={preventDefault(() => {
 		updateInterfaceHandler();
 		dispatch('save');
-	}}
+	})}
 >
 	<input
 		bind:this={filesInputElement}
@@ -642,7 +656,7 @@
 		type="file"
 		hidden
 		accept="image/*"
-		on:change={handleBackgroundImageChange}
+		onchange={handleBackgroundImageChange}
 	/>
 
 	<div class=" space-y-1 overflow-y-scroll max-h-[28rem] lg:max-h-full">

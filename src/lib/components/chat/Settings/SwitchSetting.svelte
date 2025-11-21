@@ -2,10 +2,14 @@
 	import Switch from '$lib/components/common/Switch.svelte';
 	import { onMount } from 'svelte';
 
-	export let get: () => boolean;
-	export let set: (value: boolean) => boolean | Promise<boolean>;
+	interface Props {
+		get: () => boolean;
+		set: (value: boolean) => boolean | Promise<boolean>;
+	}
 
-	let value = false;
+	let { get, set }: Props = $props();
+
+	let value = $state(false);
 
 	onMount(() => {
 		value = get();

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { run } from 'svelte/legacy';
+
 	import { onMount, onDestroy } from 'svelte';
 	import {
 		Chart as ChartJS,
@@ -37,32 +39,41 @@
 		TimeScale
 	);
 
-	let canvasElement: HTMLCanvasElement;
-	let chartInstance: ChartJS<'line'> | null = null;
+	let canvasElement: HTMLCanvasElement = $state();
+	let chartInstance: ChartJS<'line'> | null = $state(null);
 
-	export let tokensData: Array<{
+	interface Props {
+		tokensData?: Array<{
 		date: string;
 		model_id: string;
 		model_name: string;
 		input_tokens: number;
 		output_tokens: number;
 		total_tokens: number;
-	}> = [];
-	export let costData: Array<{
+	}>;
+		costData?: Array<{
 		date: string;
 		model_id: string;
 		model_name: string;
 		cost: number;
-	}> = [];
-	export let loading: boolean = false;
-	export let showCost: boolean = false;
+	}>;
+		loading?: boolean;
+		showCost?: boolean;
+	}
 
-	$: chartColors = getChartColors();
-	$: defaults = getChartDefaults();
-	$: currentData = showCost ? costData : tokensData;
+	let {
+		tokensData = [],
+		costData = [],
+		loading = false,
+		showCost = false
+	}: Props = $props();
+
+	let chartColors = $derived(getChartColors());
+	let defaults = $derived(getChartDefaults());
+	let currentData = $derived(showCost ? costData : tokensData);
 
 	// Group data by model and create datasets
-	$: modelMap = (() => {
+	let modelMap = $derived((() => {
 		const map = new Map<string, typeof currentData>();
 		if (currentData && Array.isArray(currentData)) {
 			currentData.forEach((d) => {
@@ -75,14 +86,14 @@
 			});
 		}
 		return map;
-	})();
+	})());
 
-	$: allDates =
-		currentData && Array.isArray(currentData)
+	let allDates =
+		$derived(currentData && Array.isArray(currentData)
 			? [...new Set(currentData.map((d) => d.date).filter(Boolean))].sort()
-			: [];
+			: []);
 
-	$: datasets = (() => {
+	let datasets = $derived((() => {
 		if (!allDates.length || !modelMap.size) {
 			return [];
 		}
@@ -123,13 +134,13 @@
 				borderWidth: 2
 			};
 		});
-	})();
+	})());
 
-	$: chartData = {
+	let chartData = $derived({
 		datasets
-	};
+	});
 
-	$: chartOptions = {
+	let chartOptions = $derived({
 		responsive: true,
 		maintainAspectRatio: false,
 		interaction: {
@@ -176,25 +187,27 @@
 				...(showCost ? { ticks: getCurrencyYTicks() } : {})
 			}
 		}
-	};
+	});
 
-	$: if (canvasElement && datasets.length > 0) {
-		if (chartInstance) {
-			chartInstance.data = chartData;
-			chartInstance.options = chartOptions;
-			chartInstance.update();
-		} else {
-			const config: ChartConfiguration<'line'> = {
-				type: 'line',
-				data: chartData,
-				options: chartOptions
-			};
-			chartInstance = new ChartJS(canvasElement, config);
+	run(() => {
+		if (canvasElement && datasets.length > 0) {
+			if (chartInstance) {
+				chartInstance.data = chartData;
+				chartInstance.options = chartOptions;
+				chartInstance.update();
+			} else {
+				const config: ChartConfiguration<'line'> = {
+					type: 'line',
+					data: chartData,
+					options: chartOptions
+				};
+				chartInstance = new ChartJS(canvasElement, config);
+			}
+		} else if (chartInstance) {
+			chartInstance.destroy();
+			chartInstance = null;
 		}
-	} else if (chartInstance) {
-		chartInstance.destroy();
-		chartInstance = null;
-	}
+	});
 
 	onDestroy(() => {
 		if (chartInstance) {

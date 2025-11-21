@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { run } from 'svelte/legacy';
+
 	import { getContext } from 'svelte';
 	import { get, type Writable } from 'svelte/store';
 	import type { i18n as i18nType } from 'i18next';
@@ -26,9 +28,13 @@
 		updatedAt: number | null;
 	};
 
-	export let show = false;
-	export let stats: ChatInfoSnapshot | null = null;
-	export let chatTitle = '';
+	interface Props {
+		show?: boolean;
+		stats?: ChatInfoSnapshot | null;
+		chatTitle?: string;
+	}
+
+	let { show = $bindable(false), stats = null, chatTitle = '' }: Props = $props();
 
 	const i18n: Writable<i18nType> = getContext('i18n');
 
@@ -46,10 +52,10 @@
 		return formatDate(value);
 	};
 
-	$: branchCoverage =
-		stats && stats.totalMessages > 0
+	let branchCoverage =
+		$derived(stats && stats.totalMessages > 0
 			? Math.round((stats.currentBranchMessages / stats.totalMessages) * 100)
-			: 0;
+			: 0);
 
 	const formatCurrency = (value?: number | null) => {
 		if (!value || Number.isNaN(value)) {
@@ -58,14 +64,16 @@
 		return `$${value.toFixed(value >= 1 ? 4 : 6)}`;
 	};
 
-	let showAllModels = false;
+	let showAllModels = $state(false);
 
-	$: modelsCollapsible = (stats?.uniqueModels?.length ?? 0) > 3;
-	$: visibleModels = stats?.uniqueModels ?? [];
+	let modelsCollapsible = $derived((stats?.uniqueModels?.length ?? 0) > 3);
+	let visibleModels = $derived(stats?.uniqueModels ?? []);
 
-	$: if (!modelsCollapsible) {
-		showAllModels = false;
-	}
+	run(() => {
+		if (!modelsCollapsible) {
+			showAllModels = false;
+		}
+	});
 </script>
 
 <Modal bind:show size="sm" className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl">
@@ -85,7 +93,7 @@
 				</div>
 				<button
 					class="p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 transition"
-					on:click={() => {
+					onclick={() => {
 						show = false;
 					}}
 					aria-label={$i18n.t('Close')}
@@ -213,7 +221,7 @@
 						{#if modelsCollapsible}
 							<button
 								class="text-xs font-semibold text-gray-700 dark:text-gray-200 hover:text-gray-900 dark:hover:text-white transition"
-								on:click={() => {
+								onclick={() => {
 									showAllModels = !showAllModels;
 								}}
 							>

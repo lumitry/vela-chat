@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { run } from 'svelte/legacy';
+
 	import { getContext, onMount, tick } from 'svelte';
 	import { get, type Writable } from 'svelte/store';
 	import { toast } from 'svelte-sonner';
@@ -42,25 +44,36 @@
 
 	const i18n: Writable<i18nType> = getContext('i18n');
 
-	export let initNewChat: Function;
-	export let title: string = $WEBUI_NAME;
-	export let shareEnabled: boolean = false;
 
-	export let chat;
-	export let history;
-	export let selectedModels;
-	export let showModelSelector = true;
+	interface Props {
+		initNewChat: Function;
+		title?: string;
+		shareEnabled?: boolean;
+		chat: any;
+		history: any;
+		selectedModels: any;
+		showModelSelector?: boolean;
+	}
 
-	let showShareChatModal = false;
-	let showDownloadChatModal = false;
-	let showChatInfoModal = false;
+	let {
+		initNewChat,
+		title = $WEBUI_NAME,
+		shareEnabled = false,
+		chat,
+		history,
+		selectedModels = $bindable(),
+		showModelSelector = true
+	}: Props = $props();
 
-	$: userImageSrc = $user?.profile_image_url ?? '';
+	let showShareChatModal = $state(false);
+	let showDownloadChatModal = $state(false);
+	let showChatInfoModal = $state(false);
+
 
 	// State for current chat info
-	let currentChatDetails = null;
-	let currentFolderName = null;
-	let folders = {};
+	let currentChatDetails = $state(null);
+	let currentFolderName = $state(null);
+	let folders = $state({});
 
 	type ChatInfoSnapshot = {
 		totalMessages: number;
@@ -81,11 +94,11 @@
 		updatedAt: number | null;
 	};
 
-	let chatInfoSnapshot: ChatInfoSnapshot | null = null;
+	let chatInfoSnapshot: ChatInfoSnapshot | null = $state(null);
 
 	// Lightweight collision detection
-	let chatTitleButton = null;
-	let modelSelectorElement = null;
+	let chatTitleButton = $state(null);
+	let modelSelectorElement = $state(null);
 
 	const adjustTitlePosition = () => {
 		// Early returns for efficiency
@@ -163,30 +176,9 @@
 		};
 	});
 
-	// Reactive statement to load current chat details when chatId changes
-	$: if ($chatId && localStorage.token) {
-		loadCurrentChatDetails();
-	}
 
-	// Reactive statement to update folder name when folders or chat details change
-	$: if (currentChatDetails?.folder_id && folders[currentChatDetails.folder_id]) {
-		currentFolderName = folders[currentChatDetails.folder_id].name;
-	} else {
-		currentFolderName = null;
-	}
 
-	// Reactive statement to refresh chat details when chats list changes (indicating title or folder changes)
-	$: if ($chats && $chatId && currentChatDetails) {
-		refreshChatDetails();
-	}
 
-	// Only trigger position adjustment when elements are first available or when content that affects layout changes
-	$: if (chatTitleButton && modelSelectorElement && currentChatDetails) {
-		// Use tick to ensure DOM is updated, then position
-		tick().then(() => {
-			requestAnimationFrame(adjustTitlePosition);
-		});
-	}
 
 	const refreshChatDetails = async () => {
 		// Re-fetch the chat details to get updated title and folder_id
@@ -437,6 +429,36 @@
 		chatInfoSnapshot = buildChatInfoSnapshot();
 		showChatInfoModal = true;
 	};
+	let userImageSrc = $derived($user?.profile_image_url ?? '');
+	// Reactive statement to load current chat details when chatId changes
+	run(() => {
+		if ($chatId && localStorage.token) {
+			loadCurrentChatDetails();
+		}
+	});
+	// Reactive statement to update folder name when folders or chat details change
+	run(() => {
+		if (currentChatDetails?.folder_id && folders[currentChatDetails.folder_id]) {
+			currentFolderName = folders[currentChatDetails.folder_id].name;
+		} else {
+			currentFolderName = null;
+		}
+	});
+	// Reactive statement to refresh chat details when chats list changes (indicating title or folder changes)
+	run(() => {
+		if ($chats && $chatId && currentChatDetails) {
+			refreshChatDetails();
+		}
+	});
+	// Only trigger position adjustment when elements are first available or when content that affects layout changes
+	run(() => {
+		if (chatTitleButton && modelSelectorElement && currentChatDetails) {
+			// Use tick to ensure DOM is updated, then position
+			tick().then(() => {
+				requestAnimationFrame(adjustTitlePosition);
+			});
+		}
+	});
 </script>
 
 <ShareChatModal bind:show={showShareChatModal} chatId={$chatId} />
@@ -462,7 +484,7 @@
 					<button
 						id="sidebar-toggle-button"
 						class="cursor-pointer px-2 py-2 flex rounded-xl hover:bg-gray-50 dark:hover:bg-gray-850 transition"
-						on:click={() => {
+						onclick={() => {
 							showSidebar.set(!$showSidebar);
 						}}
 						aria-label="Toggle Sidebar"
@@ -490,7 +512,7 @@
 								<button
 									bind:this={chatTitleButton}
 									class="hidden md:flex flex-col items-center justify-center text-center px-2 pointer-events-auto cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-850 rounded-lg transition-colors absolute"
-									on:click={handleChatTitleClick}
+									onclick={handleChatTitleClick}
 									aria-label="Navigate to chat location in sidebar"
 								>
 									{#if currentFolderName}
@@ -552,7 +574,7 @@
 						<Tooltip content={$i18n.t('Chat Info')}>
 							<button
 								class="flex cursor-pointer px-2 py-2 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-850 transition"
-								on:click={openChatInfo}
+								onclick={openChatInfo}
 								aria-label="Chat Info"
 							>
 								<div class=" m-auto self-center">
@@ -565,7 +587,7 @@
 					<Tooltip content={$i18n.t('Controls')}>
 						<button
 							class=" flex cursor-pointer px-2 py-2 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-850 transition"
-							on:click={async () => {
+							onclick={async () => {
 								await showControls.set(!$showControls);
 							}}
 							aria-label="Controls"
@@ -582,7 +604,7 @@
 							class=" flex {$showSidebar
 								? 'md:hidden'
 								: ''} cursor-pointer px-2 py-2 rounded-xl text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-850 transition"
-							on:click={() => {
+							onclick={() => {
 								initNewChat();
 							}}
 							aria-label="New Chat"

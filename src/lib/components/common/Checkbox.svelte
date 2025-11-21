@@ -2,13 +2,14 @@
 	import { createEventDispatcher } from 'svelte';
 	const dispatch = createEventDispatcher();
 
-	export let state = 'unchecked';
+	export let state: 'checked' | 'unchecked' = 'unchecked';
 	export let indeterminate = false;
 	export let disabled = false;
 
-	let _state = 'unchecked';
+	let internalState: 'checked' | 'unchecked' = state;
 
-	$: _state = state;
+	// Sync internal state with prop when prop changes
+	$: internalState = state;
 </script>
 
 <button
@@ -21,24 +22,24 @@
 	on:click={() => {
 		if (disabled) return;
 
-		if (_state === 'unchecked') {
-			_state = 'checked';
-			dispatch('change', _state);
-		} else if (_state === 'checked') {
-			_state = 'unchecked';
+		if (internalState === 'unchecked') {
+			internalState = 'checked';
+			dispatch('change', internalState);
+		} else if (internalState === 'checked') {
+			internalState = 'unchecked';
 			if (!indeterminate) {
-				dispatch('change', _state);
+				dispatch('change', internalState);
 			}
 		} else if (indeterminate) {
-			_state = 'checked';
-			dispatch('change', _state);
+			internalState = 'checked';
+			dispatch('change', internalState);
 		}
 	}}
 	type="button"
 	{disabled}
 >
 	<div class="top-0 left-0 absolute w-full flex justify-center">
-		{#if _state === 'checked'}
+		{#if internalState === 'checked'}
 			<svg
 				class="w-3.5 h-3.5"
 				aria-hidden="true"

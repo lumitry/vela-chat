@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { run } from 'svelte/legacy';
+
 	import { onMount, onDestroy } from 'svelte';
 	import {
 		Chart as ChartJS,
@@ -18,16 +20,20 @@
 
 	ChartJS.register(Title, Tooltip, Legend, BarElement, BarController, CategoryScale, LinearScale, TimeScale);
 
-	let canvasElement: HTMLCanvasElement;
-	let chartInstance: ChartJS<'bar'> | null = null;
+	let canvasElement: HTMLCanvasElement = $state();
+	let chartInstance: ChartJS<'bar'> | null = $state(null);
 
-	export let data: Array<{ date: string; count: number }> = [];
-	export let loading: boolean = false;
+	interface Props {
+		data?: Array<{ date: string; count: number }>;
+		loading?: boolean;
+	}
 
-	$: colors = getChartColors();
-	$: defaults = getChartDefaults();
+	let { data = [], loading = false }: Props = $props();
 
-	$: chartData = {
+	let colors = $derived(getChartColors());
+	let defaults = $derived(getChartDefaults());
+
+	let chartData = $derived({
 		datasets: [
 			{
 				label: 'Message Count',
@@ -35,9 +41,9 @@
 				backgroundColor: colors.singleSeries.primary
 			}
 		]
-	};
+	});
 
-	$: chartOptions = {
+	let chartOptions = $derived({
 		responsive: true,
 		maintainAspectRatio: false,
 		plugins: {
@@ -53,25 +59,27 @@
 				beginAtZero: true
 			}
 		}
-	};
+	});
 
-	$: if (canvasElement && data && data.length > 0) {
-		if (chartInstance) {
-			chartInstance.data = chartData;
-			chartInstance.options = chartOptions;
-			chartInstance.update();
-		} else {
-			const config: ChartConfiguration<'bar'> = {
-				type: 'bar',
-				data: chartData,
-				options: chartOptions
-			};
-			chartInstance = new ChartJS(canvasElement, config);
+	run(() => {
+		if (canvasElement && data && data.length > 0) {
+			if (chartInstance) {
+				chartInstance.data = chartData;
+				chartInstance.options = chartOptions;
+				chartInstance.update();
+			} else {
+				const config: ChartConfiguration<'bar'> = {
+					type: 'bar',
+					data: chartData,
+					options: chartOptions
+				};
+				chartInstance = new ChartJS(canvasElement, config);
+			}
+		} else if (chartInstance) {
+			chartInstance.destroy();
+			chartInstance = null;
 		}
-	} else if (chartInstance) {
-		chartInstance.destroy();
-		chartInstance = null;
-	}
+	});
 
 	onDestroy(() => {
 		if (chartInstance) {

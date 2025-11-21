@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { run } from 'svelte/legacy';
+
 	import SettingRow from './SettingRow.svelte';
 	import SwitchSetting from './SwitchSetting.svelte';
 	import SelectSetting from './SelectSetting.svelte';
@@ -49,31 +51,37 @@
 				dependsOn?: (context: any) => boolean;
 		  };
 
-	export let setting: SettingConfig;
-	export let i18n: any;
-	export let context: any;
+	interface Props {
+		setting: SettingConfig;
+		i18n: any;
+		context: any;
+	}
+
+	let { setting, i18n, context }: Props = $props();
 
 	// For chatBackgroundImage, track the value reactively from context to force re-render
-	let bgImageKey = setting.id;
-	let customProps: Record<string, any> = {};
+	let bgImageKey = $state(setting.id);
+	let customProps: Record<string, any> = $state({});
 
 	// Explicitly depend on context.backgroundImageUrl for chatBackgroundImage to ensure reactivity
-	$: contextBackgroundImageUrl = context?.backgroundImageUrl;
+	let contextBackgroundImageUrl = $derived(context?.backgroundImageUrl);
 
-	$: if (setting.type === 'custom' && setting.id === 'chatBackgroundImage') {
-		// Use contextBackgroundImageUrl to make it reactive - this ensures the block re-runs when it changes
-		bgImageKey = contextBackgroundImageUrl ? 'has-image' : 'no-image';
-		// Update props reactively - the reactive block will re-run when contextBackgroundImageUrl changes
-		if (setting.getProps) {
-			customProps = setting.getProps();
+	run(() => {
+		if (setting.type === 'custom' && setting.id === 'chatBackgroundImage') {
+			// Use contextBackgroundImageUrl to make it reactive - this ensures the block re-runs when it changes
+			bgImageKey = contextBackgroundImageUrl ? 'has-image' : 'no-image';
+			// Update props reactively - the reactive block will re-run when contextBackgroundImageUrl changes
+			if (setting.getProps) {
+				customProps = setting.getProps();
+			}
+		} else {
+			bgImageKey = setting.id;
+			// Update props reactively for other custom components
+			if (setting.type === 'custom' && setting.getProps) {
+				customProps = setting.getProps();
+			}
 		}
-	} else {
-		bgImageKey = setting.id;
-		// Update props reactively for other custom components
-		if (setting.type === 'custom' && setting.getProps) {
-			customProps = setting.getProps();
-		}
-	}
+	});
 </script>
 
 {#if setting.type === 'switch'}
@@ -102,8 +110,8 @@
 	</SettingRow>
 {:else if setting.type === 'custom'}
 	{#if setting.getProps}
-		<svelte:component this={setting.component} key={bgImageKey} {...customProps} />
+		<setting.component key={bgImageKey} {...customProps} />
 	{:else}
-		<svelte:component this={setting.component} />
+		<setting.component />
 	{/if}
 {/if}

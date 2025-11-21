@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { run, preventDefault } from 'svelte/legacy';
+
 	import { toast } from 'svelte-sonner';
 	import { v4 as uuidv4 } from 'uuid';
 	import { createPicker, getAuthToken } from '$lib/utils/google-drive-picker';
@@ -74,186 +76,45 @@
 	const i18n = getContext('i18n');
 
 	// Configure TurndownService for HTML to Markdown conversion
-	const turndownService = new TurndownService({
+	const turndownService = $state(new TurndownService({
 		codeBlockStyle: 'fenced',
 		headingStyle: 'atx'
-	});
+	}));
 	turndownService.escape = (string) => string;
 
-	export let transparentBackground = false;
 
-	export let onChange: Function = () => {};
-	export let createMessagePair: Function;
-	export let stopResponse: Function;
 
-	export let autoScroll = false;
 
-	export let atSelectedModel: Model | undefined = undefined;
-	export let selectedModels: string[];
 
-	let selectedModelIds = [];
-	$: selectedModelIds = atSelectedModel !== undefined ? [atSelectedModel.id] : selectedModels;
+	let selectedModelIds = $state([]);
 
-	export let history;
-	export let taskIds = null;
-	export let chatId: string | undefined = undefined;
 
-	export let prompt = '';
-	export let files = [];
 
-	export let toolServers = [];
 
-	export let selectedToolIds = [];
 
-	export let imageGenerationEnabled = false;
-	export let webSearchEnabled = false;
-	export let codeInterpreterEnabled = false;
 
 	// Reasoning mode state
-	let reasoningState: ReasoningState | null = null;
+	let reasoningState: ReasoningState | null = $state(null);
 	let currentReasoningModel: Model | undefined = undefined;
 
-	$: onChange({
-		prompt,
-		files,
-		selectedToolIds,
-		imageGenerationEnabled,
-		webSearchEnabled,
-		verbosity: history?.verbosity
-	});
 
-	// Load reasoning state when history changes
-	$: if (history) {
-		reasoningState = loadReasoningState(history);
-	}
 
-	// Handle model changes while in thinking mode
-	$: if (currentModel && reasoningState?.isThinkingMode) {
-		// If user switched to a different model while in thinking mode, update reasoning state accordingly
-		if (
-			currentModel.id !== reasoningState.reasoningModel &&
-			currentModel.id !== reasoningState.baseModel
-		) {
-			// User switched to a completely different model, reset reasoning state
-			reasoningState = null;
-			persistReasoningState(history, null);
-			// Also clear any effort selection when switching models
-			if (history) {
-				delete history.reasoningEffort;
-			}
-		}
-	}
 
 	// Clear reasoning state when switching between different reasoning behavior types
 	// We need to track the previous model to detect actual model switches
-	let previousModelId: string | undefined = undefined;
-	$: if (currentModel) {
-		const currentModelId = currentModel.id;
+	let previousModelId: string | undefined = $state(undefined);
 
-		// Only process if we have both a previous model and current model, and they're different
-		if (previousModelId && previousModelId !== currentModelId && reasoningState) {
-			const previousModel = $models.find((m) => m.id === previousModelId);
 
-			if (previousModel) {
-				const previousModelDetails = (previousModel?.info?.meta as any)?.model_details;
-				const currentModelDetails = (currentModel?.info?.meta as any)?.model_details;
 
-				// If we're switching from set_effort to non-set_effort or vice versa, clear the state
-				const prevWasSetEffort = previousModelDetails?.reasoning_behavior === 'set_effort';
-				const currentIsSetEffort = currentModelDetails?.reasoning_behavior === 'set_effort';
 
-				if (prevWasSetEffort !== currentIsSetEffort) {
-					reasoningState = null;
-					persistReasoningState(history, null);
-					if (history) {
-						delete history.reasoningEffort;
-					}
-				}
-			}
-		}
 
-		// Set default effort when switching models (only if model actually changed)
-		if (history && previousModelId !== currentModelId) {
-			const modelParams = currentModel?.info?.params as any;
-			const defaultEffort = modelParams?.reasoning?.effort;
-			if (defaultEffort && history.reasoningEffort === undefined) {
-				history.reasoningEffort = defaultEffort;
-			}
-		}
-
-		// Update the tracking variable for next time
-		previousModelId = currentModelId;
-	}
-
-	// Get the current selected model
-	$: currentModel =
-		atSelectedModel ||
-		(selectedModels?.[0] ? $models.find((m) => m.id === selectedModels[0]) : undefined);
-
-	// Determine if thinking button should be illuminated
-	$: isThinkingIlluminated = currentModel
-		? shouldIlluminateThinking(
-				currentModel,
-				$models,
-				reasoningState || undefined,
-				history?.reasoningEffort
-			)
-		: false;
-
-	// Determine if thinking button should be clickable
-	$: isThinkingEnabled =
-		(currentModel ? isThinkingClickable(currentModel, $models) : false) ||
-		(reasoningState?.isThinkingMode ?? false);
-
-	// Determine if thinking button should be visible
-	$: shouldShowThinkingButton =
-		(currentModel ? isReasoningCapable(currentModel, $models) : false) ||
-		(reasoningState?.isThinkingMode ?? false) ||
-		(currentModel?.info?.meta as any)?.model_details?.response_structure ===
-			'Native Chain-of-Thought Reasoning' ||
-		(currentModel?.info?.meta as any)?.model_details?.response_structure === 'Hybrid CoT Reasoning';
-
-	// Debug reactive variables
-	$: {
-		// console.log('Reactive update:', {
-		// 	currentModel: currentModel?.id,
-		// 	isThinkingIlluminated,
-		// 	isThinkingEnabled,
-		// 	shouldShowThinkingButton,
-		// 	reasoningState: reasoningState?.isThinkingMode ? 'thinking' : 'normal',
-		// 	atSelectedModel: atSelectedModel?.id,
-		// 	selectedModels: selectedModels?.[0]
-		// });
-	}
 
 	// Helpers to detect behavior
 	const currentModelDetails = () => (currentModel?.info?.meta as any)?.model_details;
-	$: isSetEffortBehavior = currentModel
-		? currentModelDetails()?.reasoning_behavior === 'set_effort'
-		: false;
 
-	// Get current effort display text
-	$: currentEffortDisplay = ((currentModel) => {
-		// including currentModel so that this updates on model change
-		const effort = history?.reasoningEffort;
-		if (!effort) return 'Default';
-		return effort.charAt(0).toUpperCase() + effort.slice(1);
-	})(currentModel); // Toggle reasoning mode or open effort menu
 
-	// Verbosity functionality
-	$: supportsVerbosity = currentModel?.info?.meta?.capabilities?.verbosity === true;
 
-	// Initialize verbosity to medium if not set
-	$: if (supportsVerbosity && history && !history.verbosity) {
-		history.verbosity = 'medium';
-	}
 
-	// Get current verbosity display text
-	$: currentVerbosityDisplay = ((currentModel) => {
-		// including currentModel so that this updates on model change
-		const verbosity = history?.verbosity ?? 'medium';
-		return verbosity.charAt(0).toUpperCase() + verbosity.slice(1);
-	})(currentModel);
 
 	// Apply selected verbosity choice
 	const applyVerbosityChoice = (verbosity: 'low' | 'medium' | 'high') => {
@@ -356,29 +217,66 @@
 		}
 	};
 
-	let showTools = false;
+	let showTools = $state(false);
 
-	let loaded = false;
-	let recording = false;
+	let loaded = $state(false);
+	let recording = $state(false);
 
-	let isComposing = false;
+	let isComposing = $state(false);
 
 	let chatInputContainerElement;
-	let chatInputElement;
+	let chatInputElement = $state();
 
-	let filesInputElement;
-	let commandsElement;
+	let filesInputElement = $state();
+	let commandsElement = $state();
 
-	let inputFiles;
-	let dragged = false;
+	let inputFiles = $state();
+	let dragged = $state(false);
 
 	let user = null;
-	export let placeholder = '';
+	interface Props {
+		transparentBackground?: boolean;
+		onChange?: Function;
+		createMessagePair: Function;
+		stopResponse: Function;
+		autoScroll?: boolean;
+		atSelectedModel?: Model | undefined;
+		selectedModels: string[];
+		history: any;
+		taskIds?: any;
+		chatId?: string | undefined;
+		prompt?: string;
+		files?: any;
+		toolServers?: any;
+		selectedToolIds?: any;
+		imageGenerationEnabled?: boolean;
+		webSearchEnabled?: boolean;
+		codeInterpreterEnabled?: boolean;
+		placeholder?: string;
+	}
 
-	let visionCapableModels = [];
-	$: visionCapableModels = [...(atSelectedModel ? [atSelectedModel] : selectedModels)].filter(
-		(model) => $models.find((m) => m.id === model)?.info?.meta?.capabilities?.vision ?? true
-	);
+	let {
+		transparentBackground = false,
+		onChange = () => {},
+		createMessagePair,
+		stopResponse,
+		autoScroll = $bindable(false),
+		atSelectedModel = $bindable(undefined),
+		selectedModels = $bindable(),
+		history = $bindable(),
+		taskIds = null,
+		chatId = undefined,
+		prompt = $bindable(''),
+		files = $bindable([]),
+		toolServers = [],
+		selectedToolIds = $bindable([]),
+		imageGenerationEnabled = $bindable(false),
+		webSearchEnabled = $bindable(false),
+		codeInterpreterEnabled = $bindable(false),
+		placeholder = ''
+	}: Props = $props();
+
+	let visionCapableModels = $state([]);
 
 	const scrollToBottom = () => {
 		const element = document.getElementById('messages-container');
@@ -649,6 +547,147 @@
 			dropzoneElement?.removeEventListener('dragleave', onDragLeave);
 		}
 	});
+	run(() => {
+		selectedModelIds = atSelectedModel !== undefined ? [atSelectedModel.id] : selectedModels;
+	});
+	run(() => {
+		onChange({
+			prompt,
+			files,
+			selectedToolIds,
+			imageGenerationEnabled,
+			webSearchEnabled,
+			verbosity: history?.verbosity
+		});
+	});
+	// Load reasoning state when history changes
+	run(() => {
+		if (history) {
+			reasoningState = loadReasoningState(history);
+		}
+	});
+	// Get the current selected model
+	let currentModel =
+		$derived(atSelectedModel ||
+		(selectedModels?.[0] ? $models.find((m) => m.id === selectedModels[0]) : undefined));
+	// Handle model changes while in thinking mode
+	run(() => {
+		if (currentModel && reasoningState?.isThinkingMode) {
+			// If user switched to a different model while in thinking mode, update reasoning state accordingly
+			if (
+				currentModel.id !== reasoningState.reasoningModel &&
+				currentModel.id !== reasoningState.baseModel
+			) {
+				// User switched to a completely different model, reset reasoning state
+				reasoningState = null;
+				persistReasoningState(history, null);
+				// Also clear any effort selection when switching models
+				if (history) {
+					delete history.reasoningEffort;
+				}
+			}
+		}
+	});
+	run(() => {
+		if (currentModel) {
+			const currentModelId = currentModel.id;
+
+			// Only process if we have both a previous model and current model, and they're different
+			if (previousModelId && previousModelId !== currentModelId && reasoningState) {
+				const previousModel = $models.find((m) => m.id === previousModelId);
+
+				if (previousModel) {
+					const previousModelDetails = (previousModel?.info?.meta as any)?.model_details;
+					const currentModelDetails = (currentModel?.info?.meta as any)?.model_details;
+
+					// If we're switching from set_effort to non-set_effort or vice versa, clear the state
+					const prevWasSetEffort = previousModelDetails?.reasoning_behavior === 'set_effort';
+					const currentIsSetEffort = currentModelDetails?.reasoning_behavior === 'set_effort';
+
+					if (prevWasSetEffort !== currentIsSetEffort) {
+						reasoningState = null;
+						persistReasoningState(history, null);
+						if (history) {
+							delete history.reasoningEffort;
+						}
+					}
+				}
+			}
+
+			// Set default effort when switching models (only if model actually changed)
+			if (history && previousModelId !== currentModelId) {
+				const modelParams = currentModel?.info?.params as any;
+				const defaultEffort = modelParams?.reasoning?.effort;
+				if (defaultEffort && history.reasoningEffort === undefined) {
+					history.reasoningEffort = defaultEffort;
+				}
+			}
+
+			// Update the tracking variable for next time
+			previousModelId = currentModelId;
+		}
+	});
+	// Determine if thinking button should be illuminated
+	let isThinkingIlluminated = $derived(currentModel
+		? shouldIlluminateThinking(
+				currentModel,
+				$models,
+				reasoningState || undefined,
+				history?.reasoningEffort
+			)
+		: false);
+	// Determine if thinking button should be clickable
+	let isThinkingEnabled =
+		$derived((currentModel ? isThinkingClickable(currentModel, $models) : false) ||
+		(reasoningState?.isThinkingMode ?? false));
+	// Determine if thinking button should be visible
+	let shouldShowThinkingButton =
+		$derived((currentModel ? isReasoningCapable(currentModel, $models) : false) ||
+		(reasoningState?.isThinkingMode ?? false) ||
+		(currentModel?.info?.meta as any)?.model_details?.response_structure ===
+			'Native Chain-of-Thought Reasoning' ||
+		(currentModel?.info?.meta as any)?.model_details?.response_structure === 'Hybrid CoT Reasoning');
+	// Debug reactive variables
+	run(() => {
+		// console.log('Reactive update:', {
+		// 	currentModel: currentModel?.id,
+		// 	isThinkingIlluminated,
+		// 	isThinkingEnabled,
+		// 	shouldShowThinkingButton,
+		// 	reasoningState: reasoningState?.isThinkingMode ? 'thinking' : 'normal',
+		// 	atSelectedModel: atSelectedModel?.id,
+		// 	selectedModels: selectedModels?.[0]
+		// });
+	});
+	let isSetEffortBehavior = $derived(currentModel
+		? currentModelDetails()?.reasoning_behavior === 'set_effort'
+		: false);
+	// Get current effort display text
+	let currentEffortDisplay = $derived(((currentModel) => {
+		// including currentModel so that this updates on model change
+		const effort = history?.reasoningEffort;
+		if (!effort) return 'Default';
+		return effort.charAt(0).toUpperCase() + effort.slice(1);
+	})(currentModel)); // Toggle reasoning mode or open effort menu
+	// Verbosity functionality
+	let supportsVerbosity = $derived(currentModel?.info?.meta?.capabilities?.verbosity === true);
+	// Initialize verbosity to medium if not set
+	run(() => {
+		if (supportsVerbosity && history && !history.verbosity) {
+			history.verbosity = 'medium';
+		}
+	});
+	// Get current verbosity display text
+	let currentVerbosityDisplay = $derived(((currentModel) => {
+		// including currentModel so that this updates on model change
+		const verbosity = history?.verbosity ?? 'medium';
+		return verbosity.charAt(0).toUpperCase() + verbosity.slice(1);
+	})(currentModel));
+	run(() => {
+		visionCapableModels = [...(atSelectedModel ? [atSelectedModel] : selectedModels)].filter(
+			(model) => $models.find((m) => m.id === model)?.info?.meta?.capabilities?.vision ?? true
+		);
+	});
 </script>
 
 <FilesOverlay show={dragged} />
@@ -670,7 +709,7 @@
 						>
 							<button
 								class=" bg-white border border-gray-100 dark:border-none dark:bg-white/20 p-1.5 rounded-full pointer-events-auto"
-								on:click={() => {
+								onclick={() => {
 									autoScroll = true;
 									scrollToBottom();
 								}}
@@ -716,7 +755,7 @@
 									<div>
 										<button
 											class="flex items-center dark:text-gray-500"
-											on:click={() => {
+											onclick={() => {
 												atSelectedModel = undefined;
 											}}
 										>
@@ -763,7 +802,7 @@
 						type="file"
 						hidden
 						multiple
-						on:change={async () => {
+						onchange={async () => {
 							if (inputFiles && inputFiles.length > 0) {
 								const _inputFiles = Array.from(inputFiles);
 								inputFilesHandler(_inputFiles);
@@ -801,10 +840,10 @@
 					{:else}
 						<form
 							class="w-full flex gap-1.5"
-							on:submit|preventDefault={() => {
+							onsubmit={preventDefault(() => {
 								// check if selectedModels support image input
 								dispatch('submit', prompt);
-							}}
+							})}
 						>
 							<div
 								class="flex-1 flex flex-col relative w-full shadow-lg rounded-3xl border border-gray-50 dark:border-gray-850 hover:border-gray-100 focus-within:border-gray-100 hover:dark:border-gray-800 focus-within:dark:border-gray-800 transition px-1 bg-white/90 dark:bg-gray-400/5 dark:text-gray-100"
@@ -851,7 +890,7 @@
 														<button
 															class=" bg-white text-black border border-white rounded-full group-hover:visible invisible transition"
 															type="button"
-															on:click={() => {
+															onclick={() => {
 																files.splice(fileIdx, 1);
 																files = files;
 															}}
@@ -1141,9 +1180,9 @@
 											class="scrollbar-hidden bg-transparent dark:text-gray-100 outline-hidden w-full pt-3 px-1 resize-none"
 											placeholder={placeholder ? placeholder : $i18n.t('Send a Message')}
 											bind:value={prompt}
-											on:compositionstart={() => (isComposing = true)}
-											on:compositionend={() => (isComposing = false)}
-											on:keydown={async (e) => {
+											oncompositionstart={() => (isComposing = true)}
+											oncompositionend={() => (isComposing = false)}
+											onkeydown={async (e) => {
 												const isCtrlPressed = e.ctrlKey || e.metaKey; // metaKey is for Cmd key on Mac
 
 												// Handle Ctrl+B, Ctrl+I, Ctrl+E for formatting
@@ -1355,15 +1394,15 @@
 												}
 											}}
 											rows="1"
-											on:input={async (e) => {
+											oninput={async (e) => {
 												e.target.style.height = '';
 												e.target.style.height = Math.min(e.target.scrollHeight, 320) + 'px';
 											}}
-											on:focus={async (e) => {
+											onfocus={async (e) => {
 												e.target.style.height = '';
 												e.target.style.height = Math.min(e.target.scrollHeight, 320) + 'px';
 											}}
-											on:paste={async (e) => {
+											onpaste={async (e) => {
 												const clipboardData = e.clipboardData || window.clipboardData;
 
 												if (clipboardData && clipboardData.items) {
@@ -1497,7 +1536,7 @@
 													}
 												}
 											}}
-										/>
+										></textarea>
 									{/if}
 								</div>
 
@@ -1581,7 +1620,7 @@
 														class="translate-y-[0.5px] flex gap-1 items-center text-gray-600 dark:text-gray-300 hover:text-gray-700 dark:hover:text-gray-200 rounded-lg p-1 self-center transition"
 														aria-label="Available Tools"
 														type="button"
-														on:click={() => {
+														onclick={() => {
 															showTools = !showTools;
 														}}
 													>
@@ -1598,7 +1637,7 @@
 												{#if $config?.features?.enable_web_search && ($_user.role === 'admin' || $_user?.permissions?.features?.web_search)}
 													<Tooltip content={$i18n.t('Search the internet')} placement="top">
 														<button
-															on:click|preventDefault={() => (webSearchEnabled = !webSearchEnabled)}
+															onclick={preventDefault(() => (webSearchEnabled = !webSearchEnabled))}
 															type="button"
 															class="px-1.5 @xl:px-2.5 py-1.5 flex gap-1.5 items-center text-sm rounded-full font-medium transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden border {webSearchEnabled ||
 															($settings?.webSearch ?? false) === 'always'
@@ -1617,8 +1656,8 @@
 												{#if $config?.features?.enable_image_generation && ($_user.role === 'admin' || $_user?.permissions?.features?.image_generation)}
 													<Tooltip content={$i18n.t('Generate an image')} placement="top">
 														<button
-															on:click|preventDefault={() =>
-																(imageGenerationEnabled = !imageGenerationEnabled)}
+															onclick={preventDefault(() =>
+																(imageGenerationEnabled = !imageGenerationEnabled))}
 															type="button"
 															class="px-1.5 @xl:px-2.5 py-1.5 flex gap-1.5 items-center text-sm rounded-full font-medium transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden border {imageGenerationEnabled
 																? 'bg-gray-50 dark:bg-gray-400/10 border-gray-100 dark:border-gray-700 text-gray-600 dark:text-gray-400'
@@ -1636,8 +1675,8 @@
 												{#if $config?.features?.enable_code_interpreter && ($_user.role === 'admin' || $_user?.permissions?.features?.code_interpreter)}
 													<Tooltip content={$i18n.t('Execute code for analysis')} placement="top">
 														<button
-															on:click|preventDefault={() =>
-																(codeInterpreterEnabled = !codeInterpreterEnabled)}
+															onclick={preventDefault(() =>
+																(codeInterpreterEnabled = !codeInterpreterEnabled))}
 															type="button"
 															class="px-1.5 @xl:px-2.5 py-1.5 flex gap-1.5 items-center text-sm rounded-full font-medium transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden border {codeInterpreterEnabled
 																? 'bg-gray-50 dark:bg-gray-400/10 border-gray-100  dark:border-gray-700 text-gray-600 dark:text-gray-400  '
@@ -1815,7 +1854,7 @@
 														<!-- Regular toggle behavior -->
 														<Tooltip content={$i18n.t('Toggle reasoning mode')} placement="top">
 															<button
-																on:click|preventDefault={toggleReasoningMode}
+																onclick={preventDefault(toggleReasoningMode)}
 																type="button"
 																disabled={!isThinkingEnabled}
 																class="px-1.5 @xl:px-2.5 py-1.5 flex gap-1.5 items-center text-sm rounded-full font-medium transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden border {isThinkingIlluminated
@@ -1951,7 +1990,7 @@
 													id="voice-input-button"
 													class=" text-gray-600 dark:text-gray-300 hover:text-gray-700 dark:hover:text-gray-200 transition rounded-full p-1.5 mr-0.5 self-center"
 													type="button"
-													on:click={async () => {
+													onclick={async () => {
 														try {
 															let stream = await navigator.mediaDevices
 																.getUserMedia({ audio: true })
@@ -1999,7 +2038,7 @@
 												<Tooltip content={$i18n.t('Stop')}>
 													<button
 														class="bg-white hover:bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-800 transition rounded-full p-1.5"
-														on:click={() => {
+														onclick={() => {
 															stopResponse();
 														}}
 													>
@@ -2024,7 +2063,7 @@
 													<button
 														class=" bg-black text-white hover:bg-gray-900 dark:bg-white dark:text-black dark:hover:bg-gray-100 transition rounded-full p-1.5 self-center"
 														type="button"
-														on:click={async () => {
+														onclick={async () => {
 															if (selectedModels.length > 1) {
 																toast.error($i18n.t('Select only one model to call'));
 

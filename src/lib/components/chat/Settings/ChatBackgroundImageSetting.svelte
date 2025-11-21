@@ -2,9 +2,13 @@
 	import { getContext } from 'svelte';
 	const i18n = getContext('i18n');
 
-	export let backgroundImageUrl: any = null;
-	export let filesInputElement: any = null;
-	export let saveSettings: Function;
+	interface Props {
+		backgroundImageUrl?: any;
+		filesInputElement?: any;
+		saveSettings: Function;
+	}
+
+	let { backgroundImageUrl = null, filesInputElement = null, saveSettings }: Props = $props();
 </script>
 
 <div class="mb-3">
@@ -12,7 +16,7 @@
 		<div class="self-center text-xs">{$i18n.t('Chat Background Image')}</div>
 		<button
 			class="p-1 px-3 text-xs flex rounded-sm transition"
-			on:click={async () => {
+			onclick={async () => {
 				if (backgroundImageUrl !== null && backgroundImageUrl !== undefined) {
 					await saveSettings({ backgroundImageUrl: null });
 				} else if (filesInputElement) {
