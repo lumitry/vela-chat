@@ -23,6 +23,7 @@ Note: **Do not** use this fork with an Sqlite database! It will probably break t
 - `tailscale cert` to get a certificate -> reverse proxy -> SSL -> HTTPS -> HTTP/2 -> faster loading times! Also access to more browser APIs like clipboard, notifications, etc.
 - There are also many other ways to get HTTPS, but Tailscale has lots of other advantages so I really like it.
 - I use LiteLLM to proxy external models with a custom patch to pass through cost usage info, but this is mostly unnecessary now that we've got metrics supported natively in VelaChat. I only keep it around because it's nice to have a log of requests and responses to debug issues.
+- Tika for document extraction (though I don't use it much) hosted in same Docker Compose file as VelaChat.
 
 Dev environment:
 
