@@ -937,15 +937,28 @@ async def inspect_websocket(request: Request, call_next):
             )
     return await call_next(request)
 
-origins = os.getenv("CORS_ALLOW_ORIGIN", "").split(",")
+# Use CORS_ALLOW_ORIGIN from config (which defaults to ["*"] if not set)
+# CORS_ALLOW_ORIGIN is already a list from config.py
+# Filter out empty strings that might come from env var parsing
+origins = [origin for origin in CORS_ALLOW_ORIGIN if origin]
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# When allow_credentials=True, you cannot use ["*"] - must specify explicit origins
+if not origins or (len(origins) == 1 and origins[0] == "*"):
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 
 app.mount("/ws", socket_app)
