@@ -29,6 +29,7 @@ from open_webui.models.knowledge import Knowledges
 
 from open_webui.routers.knowledge import get_knowledge, get_knowledge_list
 from open_webui.routers.retrieval import ProcessFileForm, process_file
+from open_webui.retrieval.vector.connector import VECTOR_DB_CLIENT
 from open_webui.routers.audio import transcribe
 from open_webui.storage.provider import Storage
 from open_webui.utils.auth import get_admin_user, get_verified_user
@@ -554,7 +555,20 @@ async def delete_file_by_id(id: str, user=Depends(get_verified_user)):
         or user.role == "admin"
         or has_access_to_file(id, "write", user)
     ):
-        # We should add Chroma cleanup here
+        # Clean up vectors from vector database
+        try:
+            # Remove from file's own collection
+            file_collection = f"file-{id}"
+            if VECTOR_DB_CLIENT.has_collection(collection_name=file_collection):
+                VECTOR_DB_CLIENT.delete_collection(collection_name=file_collection)
+            
+            # Remove from any knowledge base collections
+            # Note: We can't easily find all collections containing this file,
+            # so we rely on the knowledge base removal logic to handle that.
+            # This cleanup handles the standalone file collection.
+        except Exception as e:
+            log.debug(f"Error cleaning up vectors (may not exist): {e}")
+            pass
 
         result = Files.delete_file_by_id(id)
         if result:

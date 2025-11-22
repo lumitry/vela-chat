@@ -17,14 +17,14 @@ log.setLevel(SRC_LOG_LEVELS["RAG"])
 
 class QdrantClient:
     def __init__(self):
-        self.collection_prefix = "open-webui"
+        if not QDRANT_URI:
+            raise ValueError(
+                "QDRANT_URI environment variable is required when using Qdrant as vector database"
+            )
+        self.collection_prefix = "velachat"
         self.QDRANT_URI = QDRANT_URI
         self.QDRANT_API_KEY = QDRANT_API_KEY
-        self.client = (
-            Qclient(url=self.QDRANT_URI, api_key=self.QDRANT_API_KEY)
-            if self.QDRANT_URI
-            else None
-        )
+        self.client = Qclient(url=self.QDRANT_URI, api_key=self.QDRANT_API_KEY)
 
     def _result_to_get_result(self, points) -> GetResult:
         ids = []
@@ -85,7 +85,9 @@ class QdrantClient:
     def search(
         self, collection_name: str, vectors: list[list[float | int]], limit: int
     ) -> Optional[SearchResult]:
-        # Search for the nearest neighbor items based on the vectors and return 'limit' number of results.
+        '''
+        Search for the nearest neighbor items based on the vectors and return 'limit' number of results.
+        '''
         if limit is None:
             limit = NO_LIMIT  # otherwise qdrant would set limit to 10!
 
@@ -104,7 +106,9 @@ class QdrantClient:
         )
 
     def query(self, collection_name: str, filter: dict, limit: Optional[int] = None):
-        # Construct the filter string for querying
+        '''
+        Construct the filter string for querying
+        '''
         if not self.has_collection(collection_name):
             return None
         try:
@@ -130,7 +134,9 @@ class QdrantClient:
             return None
 
     def get(self, collection_name: str) -> Optional[GetResult]:
-        # Get all the items in the collection.
+        '''
+        Get all the items in the collection.
+        '''
         points = self.client.query_points(
             collection_name=f"{self.collection_prefix}_{collection_name}",
             limit=NO_LIMIT,  # otherwise qdrant would set limit to 10!
@@ -138,13 +144,17 @@ class QdrantClient:
         return self._result_to_get_result(points.points)
 
     def insert(self, collection_name: str, items: list[VectorItem]):
-        # Insert the items into the collection, if the collection does not exist, it will be created.
+        '''
+        Insert the items into the collection, if the collection does not exist, it will be created.
+        '''
         self._create_collection_if_not_exists(collection_name, len(items[0]["vector"]))
         points = self._create_points(items)
         self.client.upload_points(f"{self.collection_prefix}_{collection_name}", points)
 
     def upsert(self, collection_name: str, items: list[VectorItem]):
-        # Update the items in the collection, if the items are not present, insert them. If the collection does not exist, it will be created.
+        '''
+        Update the items in the collection, if the items are not present, insert them. If the collection does not exist, it will be created.
+        '''
         self._create_collection_if_not_exists(collection_name, len(items[0]["vector"]))
         points = self._create_points(items)
         return self.client.upsert(f"{self.collection_prefix}_{collection_name}", points)
@@ -155,35 +165,51 @@ class QdrantClient:
         ids: Optional[list[str]] = None,
         filter: Optional[dict] = None,
     ):
-        # Delete the items from the collection based on the ids.
-        field_conditions = []
+        '''
+        Delete the items from the collection based on the ids.
+        '''
+        collection_name_with_prefix = f"{self.collection_prefix}_{collection_name}"
+        
+        if not self.has_collection(collection_name):
+            log.debug(
+                f"Attempted to delete from non-existent collection {collection_name}. Ignoring."
+            )
+            return None
 
-        if ids:
-            for id_value in ids:
-                field_conditions.append(
-                    models.FieldCondition(
-                        key="metadata.id",
-                        match=models.MatchValue(value=id_value),
+        try:
+            if ids:
+                # Delete by point IDs directly (point IDs are stored as the point's id, not in metadata)
+                # Qdrant accepts point IDs as strings, integers, or UUIDs
+                return self.client.delete(
+                    collection_name=collection_name_with_prefix,
+                    points_selector=models.PointIdsList(
+                        points=ids  # type: ignore
                     ),
-                ),
-        elif filter:
-            for key, value in filter.items():
-                field_conditions.append(
-                    models.FieldCondition(
-                        key=f"metadata.{key}",
-                        match=models.MatchValue(value=value),
+                )
+            elif filter:
+                # Delete by metadata filter
+                field_conditions = []
+                for key, value in filter.items():
+                    field_conditions.append(
+                        models.FieldCondition(
+                            key=f"metadata.{key}",
+                            match=models.MatchValue(value=value),
+                        ),
+                    )
+                return self.client.delete(
+                    collection_name=collection_name_with_prefix,
+                    points_selector=models.FilterSelector(
+                        filter=models.Filter(must=field_conditions)
                     ),
-                ),
-
-        return self.client.delete(
-            collection_name=f"{self.collection_prefix}_{collection_name}",
-            points_selector=models.FilterSelector(
-                filter=models.Filter(must=field_conditions)
-            ),
-        )
+                )
+        except Exception as e:
+            log.exception(f"Error deleting from collection '{collection_name}': {e}")
+            return None
 
     def reset(self):
-        # Resets the database. This will delete all collections and item entries.
+        '''
+        Resets the database. This will delete all collections and item entries.
+        '''
         collection_names = self.client.get_collections().collections
         for collection_name in collection_names:
             if collection_name.name.startswith(self.collection_prefix):
