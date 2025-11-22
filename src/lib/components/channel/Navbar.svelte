@@ -11,13 +11,16 @@
 	import UserMenu from '$lib/components/layout/Sidebar/UserMenu.svelte';
 	import MenuLines from '../icons/MenuLines.svelte';
 	import PencilSquare from '../icons/PencilSquare.svelte';
+	import { testId } from '$lib/utils/testId';
 
 	const i18n = getContext('i18n');
 
 	export let channel;
 
-	$: userImageSrc = $user?.profile_image_url 
-		? ($user.profile_image_url.startsWith('/') ? `${WEBUI_BASE_URL}${$user.profile_image_url}` : $user.profile_image_url)
+	$: userImageSrc = $user?.profile_image_url
+		? $user.profile_image_url.startsWith('/')
+			? `${WEBUI_BASE_URL}${$user.profile_image_url}`
+			: $user.profile_image_url
 		: '';
 </script>
 
@@ -73,6 +76,7 @@
 						<button
 							class="select-none flex rounded-xl p-1.5 w-full hover:bg-gray-50 dark:hover:bg-gray-850 transition"
 							aria-label="User Menu"
+							data-testid={testId('Navbar', 'UserMenu', 'Button')}
 						>
 							<div class=" self-center">
 								<img

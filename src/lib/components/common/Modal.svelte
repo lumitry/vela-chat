@@ -3,11 +3,13 @@
 	import { fade } from 'svelte/transition';
 
 	import { flyAndScale } from '$lib/utils/transitions';
+	import { testId } from '$lib/utils/testId';
 
 	export let show = true;
 	export let size = 'md';
 	export let containerClassName = 'p-3';
 	export let className = 'bg-white dark:bg-gray-900 rounded-2xl';
+	export let modalTestId = testId('Common', 'Modal');
 
 	let modalElement = null;
 	let mounted = false;
@@ -67,6 +69,7 @@
 	<div
 		bind:this={modalElement}
 		class="modal fixed top-0 right-0 left-0 bottom-0 bg-black/60 w-full h-screen max-h-[100dvh] {containerClassName} flex justify-center z-9999 overflow-y-auto overscroll-contain"
+		data-testid={modalTestId}
 		in:fade={{ duration: 10 }}
 		on:mousedown={() => {
 			show = false;
@@ -76,6 +79,7 @@
 			class="m-auto max-w-full {sizeToWidth(size)} {size !== 'full'
 				? 'mx-2'
 				: ''} shadow-3xl min-h-fit scrollbar-hidden {className}"
+			data-testid={testId(modalTestId, 'Content')}
 			in:flyAndScale
 			on:mousedown={(e) => {
 				e.stopPropagation();

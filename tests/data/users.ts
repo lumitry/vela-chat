@@ -1,0 +1,94 @@
+/**
+ * Type for a test user
+ */
+export type TestUser = {
+	name: string;
+	email: string;
+	password: string;
+	role: 'admin' | 'user' | 'pending';
+};
+
+/**
+ * Shared test users - credentials for users that should be pre-created
+ * in the test environment (either via CSV import or API).
+ */
+export const SHARED_USERS: Record<string, TestUser> = {
+	preExistingAdmin: {
+		name: 'Test Admin',
+		email: 'dev@example.com',
+		password: 'dev',
+		role: 'admin'
+	},
+	admin1: {
+		name: 'Admin1 User',
+		email: 'admin1@test.example.com',
+		password: 'admin123',
+		role: 'admin'
+	},
+	admin2: {
+		name: 'Admin2 User',
+		email: 'admin2@test.example.com',
+		password: 'admin123',
+		role: 'admin'
+	},
+	admin3: {
+		name: 'Admin3 User',
+		email: 'admin3@test.example.com',
+		password: 'admin123',
+		role: 'admin'
+	},
+	admin4: {
+		name: 'Admin4 User',
+		email: 'admin4@test.example.com',
+		password: 'admin123',
+		role: 'admin'
+	},
+	admin5: {
+		name: 'Admin5 User',
+		email: 'admin5@test.example.com',
+		password: 'admin123',
+		role: 'admin'
+	},
+	regular1: {
+		name: 'Regular1 User',
+		email: 'user1@test.example.com',
+		password: 'user123',
+		role: 'user'
+	},
+	regular2: {
+		name: 'Regular2 User',
+		email: 'user2@test.example.com',
+		password: 'user123',
+		role: 'user'
+	},
+	regular3: {
+		name: 'Regular3 User',
+		email: 'user3@test.example.com',
+		password: 'user123',
+		role: 'user'
+	},
+	regular4: {
+		name: 'Regular4 User',
+		email: 'user4@test.example.com',
+		password: 'user123',
+		role: 'user'
+	},
+	regular5: {
+		name: 'Regular5 User',
+		email: 'user5@test.example.com',
+		password: 'user123',
+		role: 'user'
+	}
+} as const;
+
+/**
+ * Generate CSV content from SHARED_USERS.
+ * Format: Name,Email,Password,Role
+ */
+export function generateUsersCSV(): string {
+	const header = 'Name,Email,Password,Role\n';
+	const rows = Object.values(SHARED_USERS)
+		.map((user) => `${user.name},${user.email},${user.password},${user.role}`)
+		.join('\n');
+	return header + rows;
+}

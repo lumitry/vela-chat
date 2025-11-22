@@ -39,6 +39,7 @@
 	import { getFolders } from '$lib/apis/folders';
 	import { navigateToChat, navigateToFolder } from '$lib/stores/sidebar';
 	import { createMessagesList } from '$lib/utils';
+	import { testId } from '$lib/utils/testId';
 
 	const i18n: Writable<i18nType> = getContext('i18n');
 
@@ -606,6 +607,7 @@
 							<button
 								class="select-none flex rounded-xl p-1.5 w-full hover:bg-gray-50 dark:hover:bg-gray-850 transition"
 								aria-label="User Menu"
+								data-testid={testId('Navbar', 'UserMenu', 'Button')}
 							>
 								<div class=" self-center">
 									<img
