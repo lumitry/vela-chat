@@ -48,6 +48,7 @@ We use Playwright for our E2E tests. The tests themselves are in the `tests/e2e`
 - Redis (and multi-node / cluster / whatever else the base project has along those lines)
 - Storage (S3, Azure Blob Storage, etc.)
 - Changing UVICORN_WORKERS
+- The channels feature
 
 ## Tests To Write
 
@@ -233,3 +234,106 @@ We use Playwright for our E2E tests. The tests themselves are in the `tests/e2e`
   - [ ] This one sounds very difficult to automate lol. and there are known bugs with this feature anyway, esp. for split view chats.
 - [ ] Chat Message Links Test - copying a message link (then navigating away) then navigating to that link should take you to the correct message
   - [ ] Edge cases: shared chat, archived chat, deleted chat, split view chat
+- [ ] IndexedDB-Cached Messages Testing
+  - [ ] Test that cached messages are loaded correctly and that the chat info is correct
+  - [ ] Verify that correctly-cached messages are not fetched from the backend
+  - [ ] Verify that browsers without IndexedDB support work correctly (i.e. no caching, but can still create a chat, modify it, navigate between chats, refresh the page, etc.)
+    - [ ] web search, file attachments, MOA merges, assistant-generated images, user-attached images
+  - [ ] Test the clear cache feature in user settings > chats
+- [ ] Registration Test
+  - [ ] Register new user when signups are enabled
+  - [ ] Register first user (should become admin)
+  - [ ] Registration fails when signups are disabled
+  - [ ] Registration fails with invalid email format
+  - [ ] Registration fails with duplicate email
+  - [ ] Registration fails with password too long (>72 bytes)
+  - [ ] Verify default role assignment (pending vs user vs admin)
+- [ ] Groups Test
+  - [ ] Create a new group
+  - [ ] Edit a group (name, description, permissions, users)
+  - [ ] Delete a group
+  - [ ] Add users to group
+  - [ ] Remove users from group
+  - [ ] Test group permissions (workspace, sharing, chat, features)
+  - [ ] Verify group-based access control
+- [ ] Folders Test (comprehensive)
+  - [ ] Create a folder
+  - [ ] Edit folder name
+  - [ ] Delete a folder (all chats in the folder should be deleted)
+  - [ ] Create nested folders (parent/child relationships)
+  - [ ] Expand/collapse folders
+  - [ ] Move folder to different parent
+  - [ ] Verify folder persistence (expand/collapse state persist after page refresh)
+  - [ ] Verify chats appear in correct folders
+  - [ ] Drag and drop chats into folders
+  - [ ] Remove chat from folder
+- [ ] Pinned Chats Test
+  - [ ] Pin a chat
+  - [ ] Unpin a chat
+  - [ ] Verify pinned chats appear in pinned section
+  - [ ] Verify pinned chats persist across sessions
+  - [ ] Drag and drop chat to pin it
+  - [ ] Verify pinned chats are sorted correctly
+- [ ] Temporary Chats Test
+  - [ ] Create a temporary chat
+  - [ ] Verify temporary chat doesn't persist after navigation
+  - [ ] Verify temporary chat toggle works
+  - [ ] Verify temporary chat enforced mode?
+  - [ ] Test temporary chat via command palette
+- [ ] Playground Test
+  - [ ] Access playground (admin only)
+  - [ ] Test chat completion mode
+  - [ ] Test text completion mode (notes)
+  - [ ] Verify playground cancel functionality
+  - [ ] Test playground with different models
+- [ ] Chat Sorting Test
+  - [ ] Sort by created date
+  - [ ] Sort by title
+  - [ ] Sort by updated date
+  - [ ] Verify sort persists across sessions (unless local storage is cleared)
+  - [ ] Verify sort works within folders
+- [ ] Theme Test
+  - [ ] Light/dark/browser theme should work
+  - [ ] Changing via command palette should work
+  - [ ] Custom theme should work
+  - [ ] Stored in local storage I think? So make sure it gets cleared when local storage is cleared.
+- [ ] Chat List Pagination/Scrolling Test
+  - [ ] Test infinite scroll/pagination
+  - [ ] Verify chat list loads correctly with many chats
+- [ ] Shared Chat Viewing Test
+  - [ ] View a shared chat (read-only mode)
+  - [ ] Verify shared chat URL works
+  - [ ] Verify shared chat doesn't allow editing
+  - [ ] Verify shared chat shows correct content
+  - [ ] Test navigating to shared chat via direct URL
+  - [ ] Test navigating to shared chat with message id query param in URL
+- [ ] User Roles and Permissions Test
+  - [ ] Test admin role permissions
+  - [ ] Test user role permissions
+  - [ ] Test pending role restrictions
+  - [ ] Verify role-based UI visibility
+  - [ ] Test default permissions for new users
+- [ ] Default Permissions Test
+  - [ ] Set default permissions for new users
+  - [ ] Verify default permissions are applied to new users
+  - [ ] Test workspace default permissions
+  - [ ] Test sharing default permissions
+  - [ ] Test chat default permissions
+  - [ ] Test features default permissions
+- [ ] Feature Toggles Test
+  - [ ] Enable/disable Community Sharing
+  - [ ] Enable/disable Message Rating
+  - [ ] Enable/disable Channels
+  - [ ] Enable/disable User Webhooks
+  - [ ] Verify feature toggles affect UI visibility
+  - [ ] Verify feature toggles affect functionality
+- [ ] Sidebar Functionality Test
+  - [ ] Toggle sidebar visibility
+  - [ ] Verify sidebar state persists
+  - [ ] Test sidebar navigation
+  - [ ] Test sidebar on mobile vs desktop (does playwright support this?)
+- [ ] User Management Test (Admin)
+  - [ ] Edit user details (name, email, role) (role is done by clicking the role pill in the user list, not in the edit user modal)
+  - [ ] Change user password
+  - [ ] Delete user
+  - [ ] View user chats
