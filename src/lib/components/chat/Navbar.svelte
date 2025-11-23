@@ -326,39 +326,6 @@
 			return null;
 		};
 
-		const addModelCandidate = (candidate: any) => {
-			if (candidate === undefined || candidate === null) return;
-			if (typeof candidate === 'string' || typeof candidate === 'number') {
-				registerModel(String(candidate));
-				return;
-			}
-			if (Array.isArray(candidate)) {
-				candidate.forEach((entry) => addModelCandidate(entry));
-				return;
-			}
-			if (typeof candidate === 'object') {
-				if (
-					'id' in candidate ||
-					'name' in candidate ||
-					'label' in candidate ||
-					'model' in candidate
-				) {
-					const candidateId = (candidate.id ??
-						candidate.model ??
-						candidate.name ??
-						candidate.label) as string | undefined;
-					const candidateLabel = (candidate.name ?? candidate.label ?? candidateId) as
-						| string
-						| undefined;
-					registerModel(candidateId ?? candidateLabel, candidateLabel);
-					return;
-				}
-				for (const value of Object.values(candidate)) {
-					addModelCandidate(value);
-				}
-			}
-		};
-
 		const extractUsageNumber = (value: unknown): number => {
 			if (typeof value === 'number' && Number.isFinite(value)) {
 				return value;
@@ -369,25 +336,26 @@
 		for (const message of messageList) {
 			if (!message) continue;
 
-			incrementModelUsage(
-				message.selected_model_id ??
-					message.model_id ??
-					message.model ??
-					message.modelName ??
-					(Array.isArray(message.models) ? message.models[0] : undefined) ??
-					message?.meta?.model ??
-					message?.meta?.model_id ??
-					(Array.isArray(message?.meta?.models) ? message.meta.models[0] : undefined)
-			) ?? incrementModelUsage('unknown-model', $i18n.t('Unknown Model'));
+			// Skip user messages - they don't have models
+			if (message.role === 'user') {
+				// Still count attachments and branches for user messages
+				if (Array.isArray(message.files)) {
+					snapshot.attachmentCount += message.files.length;
+				}
+				const children = Array.isArray(message.childrenIds)
+					? message.childrenIds.filter((childId) => childId && messagesMap[childId])
+					: [];
+				if (children.length === 0) {
+					snapshot.branchCount += 1;
+				}
+				continue;
+			}
 
-			addModelCandidate(message.model);
-			addModelCandidate(message.model_id);
-			addModelCandidate(message.modelName);
-			addModelCandidate(message.selected_model_id);
-			addModelCandidate(message?.meta?.model);
-			addModelCandidate(message?.meta?.model_id);
-			addModelCandidate(message?.models);
-			addModelCandidate(message?.meta?.models);
+			// Check model field (history uses 'model', cached data may use 'model_id')
+			const modelId =
+				message.model ?? message.model_id ?? message.selectedModelId ?? message.selected_model_id;
+			incrementModelUsage(modelId) ??
+				incrementModelUsage('unknown-model', $i18n.t('Unknown Model'));
 
 			if (Array.isArray(message.files)) {
 				snapshot.attachmentCount += message.files.length;
