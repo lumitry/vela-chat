@@ -18,7 +18,7 @@ export abstract class AdminSettingsPage extends AdminPage {
 	 * @returns the tab button for the given tab name
 	 */
 	private getTabButton(tab: string) {
-		return this.page.getByTestId(testId('AdminSettings', 'Settings', 'TabButton', tab));
+		return this.page.getByTestId(testId('AdminSettings', 'TabButton', tab));
 	}
 
 	// TODO make the actual pageobjects for these tabs...
@@ -52,7 +52,7 @@ export abstract class AdminSettingsPage extends AdminPage {
 	/**
 	 * The save button at the bottom of the pages.
 	 */
-	private saveButton = this.page.getByTestId(testId('AdminSettings', 'General', 'SaveButton'));
+	private saveButton = this.page.getByTestId(testId('AdminSettings', 'Settings', 'SaveButton'));
 
 	async clickGeneralTabButton(): Promise<void> {
 		await this.generalTabButton.click();

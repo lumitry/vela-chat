@@ -45,17 +45,28 @@ export default defineConfig({
 	/* Configure projects for major browsers */
 	projects: [
 		{
+			name: 'setup',
+			testMatch: /.*\.setup\.ts/
+			// This project runs before all others
+		},
+		{
 			name: 'chromium',
+			testMatch: /.*\.spec\.ts/,
+			dependencies: ['setup'], // Run setup project first
 			use: { ...devices['Desktop Chrome'] }
 		},
 
 		{
 			name: 'firefox',
+			testMatch: /.*\.spec\.ts/,
+			dependencies: ['setup'],
 			use: { ...devices['Desktop Firefox'] }
 		},
 
 		{
 			name: 'webkit',
+			testMatch: /.*\.spec\.ts/,
+			dependencies: ['setup'],
 			use: { ...devices['Desktop Safari'] }
 		}
 

@@ -2,10 +2,10 @@
 	import { getContext, onMount } from 'svelte';
 	const i18n = getContext('i18n');
 
-
 	import Marquee from './common/Marquee.svelte';
 	import SlideShow from './common/SlideShow.svelte';
 	import ArrowRightCircle from './icons/ArrowRightCircle.svelte';
+	import { testId } from '$lib/utils/testId';
 
 	export let show = true;
 	export let getStartedHandler = () => {};
@@ -42,12 +42,7 @@
 		<div class="fixed m-10 z-50">
 			<div class="flex space-x-2">
 				<div class=" self-center">
-					<img
-						id="logo"
-						src="/static/favicon.png"
-						class=" w-6 rounded-full"
-						alt="logo"
-					/>
+					<img id="logo" src="/static/favicon.png" class=" w-6 rounded-full" alt="logo" />
 				</div>
 			</div>
 		</div>
@@ -89,6 +84,7 @@
 							on:click={() => {
 								getStartedHandler();
 							}}
+							data-testid={testId('Onboarding', 'GetStartedButton')}
 						>
 							<ArrowRightCircle className="size-6" />
 						</button>

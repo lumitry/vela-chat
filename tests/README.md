@@ -20,22 +20,42 @@ npx playwright test
 
 We use Playwright for our E2E tests. The tests themselves are in the `tests/e2e` directory, and the page objects are in the `tests/pages` directory. Page objects are used to represent the various pages and components in the application, and are used to interact with the application. (We use the page object model pattern for this.)
 
+## Setup and Configuration
+
+See [SETUP_GUIDE.md](./SETUP_GUIDE.md) for comprehensive information on:
+
+- Database initialization strategies
+- Playwright setup patterns (globalSetup, fixtures, projects)
+- CI/CD configuration
+- Developer reproducibility
+
+**Quick Start:**
+
+```bash
+# Setup test environment (database + initial data)
+./scripts/setup-test-env.sh
+
+# Run tests
+npx playwright test
+
+# Run tests in UI mode (recommended for development)
+npx playwright test --ui
+```
+
 ## TODOs
 
-- [ ] STYLE GUIDE FOR TESTS/PAGE OBJECTS!
-  - page object names must end in `Page` or `Tab`, e.g. `AdminUsersPage`, `AdminSettingsGeneralTab`.
-  - component objects must end in their component type, e.g. since `AddUserModal` is a modal, it should end in `Modal`.
-  - page object methods should be named after the verb/action they perform, e.g. `clickAddUserButton`, `clickSaveButton`, etc.
-  - page object methods should be async and return void.
-  - location of fields should be above the constructor (i don't follow this one yet i don't think, so i should also fix that!)
-- [ ] DIRECTORY STRUCTURE EXPLANATION
-- [ ] TEST/CLASS NAMING CONVENTIONS
+- [x] STYLE GUIDE FOR TESTS/PAGE OBJECTS!
+- [x] DIRECTORY STRUCTURE EXPLANATION
+- [x] TEST/CLASS NAMING CONVENTIONS
 - [ ] actually write a bunch of tests!
 - [ ] add to mini-mediator (streaming support, etc.) (could also mock the API in Playwright maybe, but I'd prefer to use real backend API connections!)
-- [ ] Write a script to automate the initial database setup (create pre-existing user `dev@example.com`, add model connections, etc.)
+- [x] Write a script to automate the initial database setup (create pre-existing user `dev@example.com`, add model connections, etc.)
+  - See SETUP_GUIDE.md for implementation strategies
 - [ ] Figure out how the tests will run on other people's machines (e.g. CI/CD, etc.)
-- [ ] how will the user pool work?
-- [ ] how will the precedence of test cases work? i.e. how will we specify the order they run in, if necessary?
+- [x] how will the precedence of test cases work? i.e. how will we specify the order they run in, if necessary?
+  - There is no such thing as test precedence in Playwright! It is an anti-pattern by design, apparently.
+  - Use `beforeEach` for per-test setup
+  - Use Playwright projects with dependencies if you need UI-based setup to run before other tests
 
 ## Things That Will Not Be Tested
 
@@ -311,6 +331,9 @@ We use Playwright for our E2E tests. The tests themselves are in the `tests/e2e`
 - [ ] Chat Overview Test
 - [ ] Chat Artifacts Test
 - [ ] Chat Valves Test (Functions and Tools)
+- [ ] ENABLE_REALTIME_CHAT_SAVE Test
+  - [ ] Not sure how to do this. Refresh the page mid-stream? Or query db directly, somehow?
+  - [ ] A mediator that sends a few SSE chunks, then sleeps for ten seconds, then sends the rest of its chunks. Use the sleep time to do some sort of check.
 
 ### 🟢 LOW PRIORITY (Beta/Experimental, Rarely Used, Unimportant, or Very Difficult to Implement)
 

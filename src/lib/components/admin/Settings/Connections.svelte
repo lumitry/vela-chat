@@ -19,6 +19,7 @@
 	import OpenAIConnection from './Connections/OpenAIConnection.svelte';
 	import AddConnectionModal from '$lib/components/AddConnectionModal.svelte';
 	import OllamaConnection from './Connections/OllamaConnection.svelte';
+	import { testId } from '$lib/utils/testId';
 
 	const i18n = getContext('i18n');
 
@@ -228,6 +229,7 @@
 									on:change={async () => {
 										updateOpenAIHandler();
 									}}
+									testId={testId('AdminSettings', 'Connections', 'EnableOpenAISwitch')}
 								/>
 							</div>
 						</div>
@@ -247,6 +249,11 @@
 											showAddOpenAIConnectionModal = true;
 										}}
 										type="button"
+										data-testid={testId(
+											'AdminSettings',
+											'Connections',
+											'AddOpenAIConnectionButton'
+										)}
 									>
 										<Plus />
 									</button>
@@ -276,6 +283,7 @@
 											OPENAI_API_CONFIGS = newConfig;
 											updateOpenAIHandler();
 										}}
+										testId={testId('AdminSettings', 'Connections', 'OpenAIConnection')}
 									/>
 								{/each}
 							</div>
@@ -296,6 +304,7 @@
 							on:change={async () => {
 								updateOllamaHandler();
 							}}
+							testId={testId('AdminSettings', 'Connections', 'EnableOllamaSwitch')}
 						/>
 					</div>
 				</div>
@@ -314,6 +323,7 @@
 										showAddOllamaConnectionModal = true;
 									}}
 									type="button"
+									data-testid={testId('AdminSettings', 'Connections', 'AddOllamaConnectionButton')}
 								>
 									<Plus />
 								</button>
@@ -339,6 +349,7 @@
 											});
 											OLLAMA_API_CONFIGS = newConfig;
 										}}
+										testId={testId('AdminSettings', 'Connections', 'OllamaConnection')}
 									/>
 								{/each}
 							</div>
@@ -371,6 +382,7 @@
 								on:change={async () => {
 									updateDirectConnectionsHandler();
 								}}
+								testId={testId('AdminSettings', 'Connections', 'EnableDirectConnectionsSwitch')}
 							/>
 						</div>
 					</div>
@@ -397,6 +409,7 @@
 		<button
 			class="px-3.5 py-1.5 text-sm font-medium bg-black hover:bg-gray-900 text-white dark:bg-white dark:text-black dark:hover:bg-gray-100 transition rounded-full"
 			type="submit"
+			data-testid={testId('AdminSettings', 'Settings', 'SaveButton')}
 		>
 			{$i18n.t('Save')}
 		</button>

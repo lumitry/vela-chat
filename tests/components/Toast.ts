@@ -8,11 +8,13 @@ export class Toast {
 
 	/**
 	 * Get the text of the toast.
+	 * Note: Gets the text of the first toast of the given type.
+	 *
 	 * @param type - The type of toast to get the text of.
 	 * @returns The text of the toast.
 	 */
 	async getToastText(type: 'error' | 'success' | 'info' | 'warning'): Promise<string> {
-		const toast = this.toastContainer.locator(`li[data-type="${type}"]`);
+		const toast = this.toastContainer.locator(`li[data-type="${type}"]`).first();
 		return (await toast.textContent()) ?? '';
 	}
 
@@ -21,7 +23,7 @@ export class Toast {
 	 * @param type - The type of toast to assert is visible.
 	 */
 	async assertToastIsVisible(type: 'error' | 'success' | 'info' | 'warning'): Promise<void> {
-		const toast = this.toastContainer.locator(`li[data-type="${type}"]`);
+		const toast = this.toastContainer.locator(`li[data-type="${type}"]`).first();
 		await expect(toast).toBeVisible();
 	}
 
@@ -44,5 +46,14 @@ export class Toast {
 		text: string
 	): Promise<void> {
 		expect(this.getToastText(type)).toBe(text);
+	}
+
+	/**
+	 * Wait for all toasts of the given type to disappear.
+	 * @param type - The type of toast to wait for the disappearance of.
+	 */
+	async waitForToastToDisappear(type: 'error' | 'success' | 'info' | 'warning'): Promise<void> {
+		const toasts = this.toastContainer.locator(`li[data-type="${type}"]`);
+		await expect(toasts).toHaveCount(0, { timeout: 1000 });
 	}
 }

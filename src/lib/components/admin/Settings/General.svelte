@@ -18,6 +18,7 @@
 	import { compareVersion } from '$lib/utils';
 	import { onMount, getContext } from 'svelte';
 	import { toast } from 'svelte-sonner';
+	import { testId } from '$lib/utils/testId';
 
 	const i18n = getContext('i18n');
 
@@ -229,6 +230,7 @@
 								class="dark:bg-gray-900 w-fit pr-8 rounded-sm px-2 text-xs bg-transparent outline-hidden text-right"
 								bind:value={adminConfig.DEFAULT_USER_ROLE}
 								placeholder="Select a role"
+								data-testid={testId('AdminSettings', 'General', 'DefaultUserRoleSelect')}
 							>
 								<option value="pending">{$i18n.t('pending')}</option>
 								<option value="user">{$i18n.t('user')}</option>
@@ -240,7 +242,10 @@
 					<div class=" mb-2.5 flex w-full justify-between pr-2">
 						<div class=" self-center text-xs font-medium">{$i18n.t('Enable New Sign Ups')}</div>
 
-						<Switch bind:state={adminConfig.ENABLE_SIGNUP} />
+						<Switch
+							bind:state={adminConfig.ENABLE_SIGNUP}
+							testId={testId('AdminSettings', 'General', 'EnableNewSignUpsSwitch')}
+						/>
 					</div>
 
 					<div class="mb-2.5 flex w-full items-center justify-between pr-2">
@@ -248,13 +253,23 @@
 							{$i18n.t('Show Admin Details in Account Pending Overlay')}
 						</div>
 
-						<Switch bind:state={adminConfig.SHOW_ADMIN_DETAILS} />
+						<Switch
+							bind:state={adminConfig.SHOW_ADMIN_DETAILS}
+							testId={testId(
+								'AdminSettings',
+								'General',
+								'ShowAdminDetailsInAccountPendingOverlaySwitch'
+							)}
+						/>
 					</div>
 
 					<div class="mb-2.5 flex w-full justify-between pr-2">
 						<div class=" self-center text-xs font-medium">{$i18n.t('Enable API Key')}</div>
 
-						<Switch bind:state={adminConfig.ENABLE_API_KEY} />
+						<Switch
+							bind:state={adminConfig.ENABLE_API_KEY}
+							testId={testId('AdminSettings', 'General', 'EnableApiKeySwitch')}
+						/>
 					</div>
 
 					{#if adminConfig?.ENABLE_API_KEY}
@@ -263,7 +278,14 @@
 								{$i18n.t('API Key Endpoint Restrictions')}
 							</div>
 
-							<Switch bind:state={adminConfig.ENABLE_API_KEY_ENDPOINT_RESTRICTIONS} />
+							<Switch
+								bind:state={adminConfig.ENABLE_API_KEY_ENDPOINT_RESTRICTIONS}
+								testId={testId(
+									'AdminSettings',
+									'General',
+									'EnableApiKeyEndpointRestrictionsSwitch'
+								)}
+							/>
 						</div>
 
 						{#if adminConfig?.ENABLE_API_KEY_ENDPOINT_RESTRICTIONS}
@@ -277,6 +299,7 @@
 									type="text"
 									placeholder={`e.g.) /api/v1/messages, /api/v1/channels`}
 									bind:value={adminConfig.API_KEY_ALLOWED_ENDPOINTS}
+									data-testid={testId('AdminSettings', 'General', 'ApiKeyAllowedEndpointsInput')}
 								/>
 
 								<div class="mt-2 text-xs text-gray-400 dark:text-gray-500">
@@ -607,6 +630,7 @@
 		<button
 			class="px-3.5 py-1.5 text-sm font-medium bg-black hover:bg-gray-900 text-white dark:bg-white dark:text-black dark:hover:bg-gray-100 transition rounded-full"
 			type="submit"
+			data-testid={testId('AdminSettings', 'Settings', 'SaveButton')}
 		>
 			{$i18n.t('Save')}
 		</button>

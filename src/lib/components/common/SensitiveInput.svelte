@@ -7,6 +7,7 @@
 	export let inputClassName =
 		'w-full text-sm py-0.5 placeholder:text-gray-300 dark:placeholder:text-gray-700 bg-transparent outline-hidden';
 	export let showButtonClassName = 'pl-1.5  transition bg-transparent';
+	export let testId = '';
 
 	let show = false;
 </script>
@@ -20,10 +21,12 @@
 		disabled={readOnly}
 		autocomplete="off"
 		type="text"
+		data-testid={testId}
 	/>
 	<button
 		class={showButtonClassName}
 		type="button"
+		data-testid={testId + 'VisibilityToggleButton'}
 		on:click={(e) => {
 			e.preventDefault();
 			show = !show;
