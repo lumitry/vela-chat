@@ -1,0 +1,118 @@
+{
+	"model": "mini-mediator:deterministic",
+	"created": 24681234,
+	"defaults": {
+		"profile": "token",
+		"chars_per_token": 4,
+		"chunk_batch_size": 10,
+		"finish_reason": "stop",
+		"target_tokens_per_second": 20,
+		"pause_profile": []
+	},
+	"scenarios": [
+		{
+			"name": "autocomplete-nine-plus-ten",
+			"match": {
+				"type": "exact",
+				"role": "user",
+				"text": "9+10="
+			},
+			"response": {
+				"message": "THIS IS A TEST OF MINI-MEDIATOR'S AUTOCOMPLETE SYSTEM.",
+				"think": null,
+				"tool_calls": [],
+				"attachments": []
+			},
+			"usage": {
+				"prompt": 12,
+				"completion": 9
+			},
+			"streaming": {
+				"profile": "chunky",
+				"chunk_batch_size": 10,
+				"chars_per_token": 4,
+				"pause_profile": [],
+				"finish_reason": "stop",
+				"target_tokens_per_second": 30
+			},
+			"metadata": {
+				"feature": "autocomplete"
+			}
+		},
+		{
+			"name": "chain-of-thought-basic",
+			"match": {
+				"type": "regex",
+				"role": "user",
+				"text": ".*chain of thought.*"
+			},
+			"response": {
+				"message": "Reasoning complete. The answer is 42.",
+				"think": "I will simulate detailed reasoning and reference doc IDs.",
+				"tool_calls": [],
+				"attachments": []
+			},
+			"usage": {
+				"prompt": 30,
+				"completion": 18
+			},
+			"streaming": {
+				"profile": "token",
+				"pause_profile": [],
+				"finish_reason": "stop"
+			},
+			"metadata": {
+				"feature": "cot"
+			}
+		},
+		{
+			"name": "slow-stream-pause",
+			"match": {
+				"type": "regex",
+				"role": "user",
+				"text": ".*pause stream.*"
+			},
+			"response": {
+				"message": "Chunk one. Chunk two. Chunk three after a pause.",
+				"think": null,
+				"tool_calls": [],
+				"attachments": []
+			},
+			"usage": {
+				"prompt": 22,
+				"completion": 15
+			},
+			"streaming": {
+				"profile": "token",
+				"pause_profile": [
+					{
+						"after_chunk": 2,
+						"seconds": 5
+					}
+				],
+				"finish_reason": "stop"
+			},
+			"metadata": {
+				"feature": "slow-stream"
+			}
+		},
+		{
+			"name": "rate-limit",
+			"match": {
+				"type": "regex",
+				"role": "user",
+				"text": ".*rate limit.*"
+			},
+			"response": {
+				"message": "",
+				"think": null
+			},
+			"error": {
+				"status_code": 429,
+				"type": "rate_limit_exceeded",
+				"message": "Mini-Mediator simulated rate limit.",
+				"retry_after": 2.5
+			}
+		}
+	]
+}

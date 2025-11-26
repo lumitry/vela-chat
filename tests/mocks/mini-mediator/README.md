@@ -1,35 +1,51 @@
-# Mini Mediator
+# Mini-Mediator
 
-A lightweight OpenAI API-compliant (ish) Python server to mock LLMs for testing purposes.
+A fixture-driven FastAPI server that emulates both OpenAI- and Ollama-compatible APIs for deterministic E2E testing. All behaviors (mirror, deterministic mapping, chain-of-thought, slow streaming pauses, rate limits, etc.) are data-backed so tests can evolve without touching Python.
 
-Note that using it currently requires disabling response streaming in VelaChat.
-
-Remember to set the `MINI_MEDIATOR_IP` environment variable to the IP address of the machine running this server, or it will default to `localhost`, which might not be accessible from the client you're testing with. See the `.env_example` file for an example of how to set this up.
-
-## How to Run
+## Running the server
 
 ```sh
 conda activate velachat  # or your preferred env
 cp tests/mocks/mini-mediator/.env_example tests/mocks/mini-mediator/.env
-nvim tests/mocks/mini-mediator/.env  # Edit the IP/port if needed
-python tests/mocks/mini-mediator/mini_mediator.py --reload # reload for local development
+# adjust MINI_MEDIATOR_IP / MINI_MEDIATOR_PORT as needed
+python tests/mocks/mini-mediator/mini_mediator.py --reload
 ```
 
-- Use `--reload` to enable uvicorn's hot reload for local development (files must be accessible from the activated environment; won't work with `conda run`).
-- Default host/port come from `.env`; override with `MINI_MEDIATOR_IP` / `MINI_MEDIATOR_PORT`.
+- `--reload` enables uvicorn hot reload (recommended while editing fixtures or code).
+- Environment overrides:
+  - `MINI_MEDIATOR_IP` (default `localhost`)
+  - `MINI_MEDIATOR_PORT` (default `11998`)
+  - `MINI_MEDIATOR_RELOAD` (enable reload without CLI flag)
+  - `MINI_MEDIATOR_CORS_ALLOW_ORIGINS` (comma-separated list)
+  - `MINI_MEDIATOR_FIXTURES_DIR` (point to alternative fixtures root)
 
-## Running via `conda run`
-
-When a shell can't activate the env (e.g., automation), you can still launch it with:
+### `conda run` helpers
 
 ```sh
 conda run -n velachat python tests/mocks/mini-mediator/mini_mediator.py
 ```
 
-Local E2E testing will probably use:
+> ⚠️ `conda run` buffers stdout/stderr, so logs (including hot-reload notices) may appear only when the process exits. Prefer activating the env directly when debugging.
 
-```sh
-conda run -n $CONDA_ENV python tests/mocks/mini-mediator/mini_mediator.py
-```
+## Feature overview
 
-Note: `conda run` buffers stdout/stderr, so logs (including the startup banner) may stay hidden until the process exits. Prefer activating the env directly when you need live logs or `--reload`.
+- **OpenAI endpoints**: `/v1/models`, `/v1/chat/completions`, `/v1/embeddings` (placeholder), streaming SSE with token or chunky profiles, simulated pauses, and rate-limit errors via fixtures.
+- **Ollama endpoints**: `/ollama/api/version`, `/tags`, `/generate`, `/chat` (JSON and streaming NDJSON).
+- **Fixtures**: Stored under `fixtures/` (see [`fixtures/README.md`](./fixtures/README.md) for schema details). Edit JSON/YAML files and the server hot-reloads them automatically (disable with `MINI_MEDIATOR_WATCH_FIXTURES=false` if needed).
+- **Chunk planner**: Automatically splits fixture responses into token-sized (~4 char) or chunked payloads, applies pause profiles, and throttles to a target tokens-per-second speed so UI tests can simulate both OpenAI- and Gemini-style latency.
+- **Metadata**: Every response includes a `mini_mediator` block with the scenario name, metadata tags, and streaming plan to simplify assertions in Playwright.
+
+## Editing fixtures
+
+1. Modify or add files under `tests/mocks/mini-mediator/fixtures/`.
+2. Save the file—when running with `--reload`, the server automatically reloads fixtures and recomputes chunk plans.
+3. Point Playwright tests to the relevant model slug (e.g., `mini-mediator:deterministic`) so conversations use the deterministic behavior you defined.
+
+See [`fixtures/README.md`](./fixtures/README.md) for matchers, streaming options, and examples (autocomplete, chain-of-thought, slow streams, rate limits).
+
+## Upcoming (potential) enhancements
+
+- Automatic cache builder for extremely large fixture sets.
+- Additional APIs (embeddings, tools, web search, images, code execution) once the tests require them.
+
+Contributions welcome! Keep fixtures deterministic and add plenty of metadata so tests can assert on the exact scenario that fired.

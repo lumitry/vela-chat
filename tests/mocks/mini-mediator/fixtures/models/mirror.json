@@ -1,0 +1,21 @@
+{
+	"model": "mini-mediator:mirror",
+	"created": 12345,
+	"defaults": {
+		"profile": "token",
+		"chars_per_token": 4,
+		"chunk_batch_size": 10,
+		"finish_reason": "stop",
+		"target_tokens_per_second": 2,
+		"pause_profile": []
+	},
+	"scenarios": [
+		{
+			"name": "mirror-default",
+			"match": { "type": "any" },
+			"response": { "message": "", "think": null },
+			"streaming": {},
+			"metadata": { "behavior": "mirror" }
+		}
+	]
+}

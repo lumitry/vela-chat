@@ -2,6 +2,7 @@ import type { Locator, Page } from '@playwright/test';
 import { testId } from '$lib/utils/testId';
 import { AdminSettingsPage } from './AdminSettingsPage';
 import type { OllamaEndpoint, OpenAIEndpoint } from '../../data/endpoints';
+import { AddConnectionModal } from './modals/AddConnectionModal';
 
 /**
  * Represents the Admin Settings - Settings - Connections page.
@@ -91,6 +92,13 @@ export class AdminSettingsConnectionsTab extends AdminSettingsPage {
 			await this.openAIBaseURLInput.fill(endpoint.url);
 			await this.openAIAPIKeyInput.fill(endpoint.apiKey);
 		}
+		if (endpoint.prefix) {
+			await this.openAIAPIConfigureButton.nth(index ?? 0).click();
+			const modal = new AddConnectionModal(this.page);
+			await modal.setPrefix(endpoint.prefix);
+			await modal.clickSaveButton();
+			await modal.waitForHidden();
+		}
 	}
 
 	/**
@@ -105,6 +113,13 @@ export class AdminSettingsConnectionsTab extends AdminSettingsPage {
 			await this.ollamaBaseURLInput.nth(index).fill(endpoint.url);
 		} else {
 			await this.ollamaBaseURLInput.fill(endpoint.url);
+		}
+		if (endpoint.prefix) {
+			await this.ollamaAPIConfigureButton.nth(index ?? 0).click();
+			const modal = new AddConnectionModal(this.page);
+			await modal.setPrefix(endpoint.prefix);
+			await modal.clickSaveButton();
+			await modal.waitForHidden();
 		}
 	}
 

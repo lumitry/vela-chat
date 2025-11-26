@@ -8,6 +8,8 @@
 #   DATABASE_URL - PostgreSQL connection string (defaults to test DB)
 #   CONDA_ENV - Conda environment name for backend (defaults to "velachat")
 #   PORT - Backend server port (defaults to 8080)
+#   MINI_MEDIATOR_IP - mini-mediator host (defaults to "localhost", can be overridden in tests/mocks/mini-mediator/.env)
+#   MINI_MEDIATOR_PORT - mini-mediator port (defaults to 11998, can be overridden in tests/mocks/mini-mediator/.env)
 #
 # Usage:
 #   ALLOW_DB_CLEAR=true npm run test:e2e:complete
@@ -40,6 +42,20 @@ export PORT="${PORT:-8080}"  # Export so backend dev.sh can use it
 DB_URL="${DATABASE_URL:-postgresql://testuser:testpass@localhost:5432/velachat_test}"
 BACKEND_DIR="$PROJECT_ROOT/backend"
 APP_PID_FILE="/tmp/velachat-test-app.pid"
+MINI_MEDIATOR_DIR="$PROJECT_ROOT/tests/mocks/mini-mediator"
+MINI_MEDIATOR_PID_FILE="/tmp/velachat-mini-mediator.pid"
+
+# Load mini-mediator config from .env if it exists
+MINI_MEDIATOR_IP="${MINI_MEDIATOR_IP:-localhost}"
+MINI_MEDIATOR_PORT="${MINI_MEDIATOR_PORT:-11998}"
+if [ -f "$MINI_MEDIATOR_DIR/.env" ]; then
+	set -a
+	source "$MINI_MEDIATOR_DIR/.env"
+	set +a
+	# Re-read after sourcing .env in case it was set there
+	MINI_MEDIATOR_IP="${MINI_MEDIATOR_IP:-localhost}"
+	MINI_MEDIATOR_PORT="${MINI_MEDIATOR_PORT:-11998}"
+fi
 
 # Helper function to sanitize database URL for display (masks password)
 sanitize_db_url() {
@@ -62,6 +78,22 @@ kill_by_port() {
 			echo "$remaining" | xargs kill -9 2>/dev/null || true
 		fi
 	fi
+}
+
+# Helper function to check if mini-mediator is already running
+is_mini_mediator_running() {
+	# Check if port is in use
+	local port_in_use=$(lsof -ti:"${MINI_MEDIATOR_PORT}" 2>/dev/null || true)
+	if [ -n "$port_in_use" ]; then
+		# Also check if it responds to health check
+		if curl -s "http://${MINI_MEDIATOR_IP}:${MINI_MEDIATOR_PORT}/healthz" > /dev/null 2>&1; then
+			return 0  # Running and healthy
+		fi
+		# Port is in use but health check failed - might be something else using the port
+		# Return 1 so we try to start (will fail with clear error if port conflict)
+		return 1
+	fi
+	return 1  # Not running
 }
 
 # Helper function to kill all app processes (comprehensive)
@@ -100,6 +132,21 @@ kill_app_processes() {
 cleanup() {
 	echo ""
 	echo "🧹 Cleaning up..."
+	
+	# Stop mini-mediator by PID if we started it (only if we tracked it)
+	if [ -f "$MINI_MEDIATOR_PID_FILE" ]; then
+		MINI_MEDIATOR_PID=$(cat "$MINI_MEDIATOR_PID_FILE" 2>/dev/null || true)
+		if [ -n "$MINI_MEDIATOR_PID" ] && ps -p "$MINI_MEDIATOR_PID" > /dev/null 2>&1; then
+			echo "   Stopping mini-mediator (PID: $MINI_MEDIATOR_PID)..."
+			kill -TERM "$MINI_MEDIATOR_PID" 2>/dev/null || true
+			sleep 0.5
+			# Force kill if still running
+			if ps -p "$MINI_MEDIATOR_PID" > /dev/null 2>&1; then
+				kill -9 "$MINI_MEDIATOR_PID" 2>/dev/null || true
+			fi
+		fi
+		rm -f "$MINI_MEDIATOR_PID_FILE"
+	fi
 	
 	# Stop backend by PID if we tracked it
 	if [ -f "$APP_PID_FILE" ]; then
@@ -174,7 +221,40 @@ psql "$DB_URL" -c "
 
 echo "✅ Database cleared"
 
-# Step 3: Start backend
+# Step 3: Start mini-mediator (if not already running)
+echo ""
+echo "🤖 Starting mini-mediator..."
+if is_mini_mediator_running; then
+	echo "   ✅ mini-mediator is already running on ${MINI_MEDIATOR_IP}:${MINI_MEDIATOR_PORT}"
+	echo "   ℹ️  Skipping startup (using existing instance)"
+else
+	echo "   Starting new instance on ${MINI_MEDIATOR_IP}:${MINI_MEDIATOR_PORT}..."
+	cd "$MINI_MEDIATOR_DIR"
+	source "$(conda info --base)/etc/profile.d/conda.sh"
+	conda activate "$CONDA_ENV"
+	python mini_mediator.py > /tmp/velachat-mini-mediator.log 2>&1 &
+	MINI_MEDIATOR_PID=$!
+	echo "$MINI_MEDIATOR_PID" > "$MINI_MEDIATOR_PID_FILE"
+	cd - > /dev/null
+	echo "   ✅ mini-mediator started (PID: $MINI_MEDIATOR_PID)"
+	
+	# Wait for mini-mediator to be ready
+	echo "   ⏳ Waiting for mini-mediator to be ready..."
+	for i in {1..30}; do
+		if curl -s "http://${MINI_MEDIATOR_IP}:${MINI_MEDIATOR_PORT}/healthz" > /dev/null 2>&1; then
+			echo "   ✅ mini-mediator is ready!"
+			break
+		fi
+		if [ $i -eq 30 ]; then
+			echo "   ❌ mini-mediator failed to start after 30 seconds"
+			echo "      Log: tail -f /tmp/velachat-mini-mediator.log"
+			exit 1
+		fi
+		sleep 1
+	done
+fi
+
+# Step 4: Start backend
 echo ""
 echo "🚀 Starting backend..."
 cd "$BACKEND_DIR"
@@ -186,7 +266,7 @@ echo "$BACKEND_PID" > "$APP_PID_FILE"
 cd - > /dev/null
 echo "✅ Backend started (PID: $BACKEND_PID)"
 
-# Step 4: Start frontend
+# Step 5: Start frontend
 echo ""
 echo "🚀 Starting frontend..."
 npm run dev > /tmp/velachat-frontend.log 2>&1 &
@@ -194,7 +274,7 @@ FRONTEND_PID=$!
 echo "$FRONTEND_PID" >> "$APP_PID_FILE"
 echo "✅ Frontend started (PID: $FRONTEND_PID)"
 
-# Step 5: Wait for app to be ready
+# Step 6: Wait for app to be ready
 echo ""
 echo "⏳ Waiting for app to be ready..."
 for i in {1..60}; do
@@ -211,7 +291,7 @@ for i in {1..60}; do
 	sleep 1
 done
 
-# Step 6: Run tests
+# Step 7: Run tests
 echo ""
 echo "▶️  Running Playwright tests..."
 echo ""

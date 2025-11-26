@@ -19,3 +19,13 @@ export const MINI_MEDIATOR_EMBEDDING_OLLAMA: MiniMediatorModel = {
 	name: 'mini-mediator-embedding-ollama-v1',
 	endpoint: MINI_MEDIATOR_OLLAMA
 };
+
+export const MINI_MEDIATOR_MIRROR_OPENAI: MiniMediatorModel = {
+	name: 'mini-mediator:mirror',
+	endpoint: MINI_MEDIATOR_OPENAI
+};
+
+export const MINI_MEDIATOR_MIRROR_OLLAMA: MiniMediatorModel = {
+	name: 'mini-mediator:mirror',
+	endpoint: MINI_MEDIATOR_OLLAMA
+};
