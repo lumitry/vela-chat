@@ -1419,8 +1419,11 @@
 						{/if}
 
 						{#if message.usage && message.done}
-							{@const tokensPerSecond =
+							{@const rawTokensPerSecond =
 								message.usage['response_token/s'] || message.usage.estimates?.tokens_per_second}
+							{@const tokensPerSecond = Number.isFinite(+rawTokensPerSecond)
+								? +rawTokensPerSecond
+								: null}
 							{@const promptTokens = message.usage.prompt_eval_count || message.usage.prompt_tokens}
 							{@const completionTokens =
 								message.usage.eval_count || message.usage.completion_tokens}
