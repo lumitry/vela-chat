@@ -5,9 +5,6 @@ import { testId } from '$lib/utils/testId';
 
 /**
  * Common page object for all pages. Contains functionality common to all (or most) pages.
- *
- * Exceptions:
- * - LoginPage - lacks basically everything in BasePage! But it still extends BasePage at the moment. Probably doesn't need to though.
  */
 export abstract class BasePage {
 	public toast: Toast;

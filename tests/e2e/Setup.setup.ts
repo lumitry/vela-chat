@@ -1,6 +1,6 @@
-import { expect, test } from '@playwright/test';
+import { test } from '@playwright/test';
 import { OnboardingPage } from '../pages/OnboardingPage';
-import { GetStartedPage } from '../pages/GetStartedPage';
+import { AuthPage } from '../pages/AuthPage';
 import { SHARED_USERS } from '../data/users';
 import { HomePage } from '../pages/HomePage';
 import { AdminSettingsGeneralTab } from '../pages/Admin/AdminSettingsGeneralTab';
@@ -38,9 +38,9 @@ test('setup test environment via onboarding', async ({ page }) => {
 
 	const onboardingPage = new OnboardingPage(page);
 	await onboardingPage.clickGetStartedButton();
-	const getStartedPage = new GetStartedPage(page);
-	await getStartedPage.createAccount(SHARED_USERS.preExistingAdmin);
-	await getStartedPage.toast.assertToastIsVisible('success');
+	const authPage = new AuthPage(page);
+	await authPage.signUp(SHARED_USERS.preExistingAdmin);
+	await authPage.toast.assertToastIsVisible('success');
 
 	// 2. Configure initial settings via admin panel
 	console.log('⚙️  Configuring initial settings...');

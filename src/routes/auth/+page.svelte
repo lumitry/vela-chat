@@ -18,7 +18,7 @@
 	import { testId } from '$lib/utils/testId';
 
 	const i18n = getContext('i18n');
-	const TEST_ID_SLUG = testId('Onboarding');
+	const TEST_ID_SLUG = testId('AuthPage');
 
 	let loaded = false;
 
@@ -341,6 +341,7 @@
 															mode = 'signin';
 														}
 													}}
+													data-testid={testId(TEST_ID_SLUG, 'SwitchModeButton')}
 												>
 													{mode === 'signin' ? $i18n.t('Sign up') : $i18n.t('Sign in')}
 												</button>

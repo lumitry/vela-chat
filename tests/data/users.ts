@@ -20,6 +20,31 @@ export const SHARED_USERS: Record<string, TestUser> = {
 		password: 'test',
 		role: 'admin'
 	},
+	nonExistentUser: {
+		name: 'Non Existent User',
+		email: 'non.existent@test.example.com',
+		password: 'non.existent.password',
+		role: 'user'
+	},
+	badEmailUser: {
+		name: 'Bad Email User',
+		email: 'bad.email at test dot example dot com',
+		password: 'bad.email.password',
+		role: 'user'
+	},
+	badPasswordUser: {
+		name: 'Bad Password User',
+		email: 'bad.password@test.example.com',
+		password: '', // as of right now, the backend DOES allow empty passwords, but the frontend prevents it unless you use inspect element to remove the required attribute
+		role: 'user'
+	},
+	// we like to have fun around here
+	badNameUser: {
+		name: '', // name is required
+		email: 'you_give_love@bad.name',
+		password: 'j0vi4l_p455w0rd',
+		role: 'user'
+	},
 	admin1: {
 		name: 'Admin1 User',
 		email: 'admin1@test.example.com',
@@ -92,4 +117,20 @@ export function generateUsersCSV(): string {
 		.map((user) => `${user.name},${user.email},${user.password},${user.role}`)
 		.join('\n');
 	return header + rows;
+}
+
+/**
+ * Generate a random valid user. Mostly useful if you don't need a predictable user with a sensible name and email to be identified by.
+ * @returns A random valid user
+ */
+export function generateRandomValidUser(): TestUser {
+	const name = `Test User ${Date.now()}`;
+	const email = `${name.toLowerCase().replace(/ /g, '.')}@test.example.com`;
+	const password = 'Sup3rS3cur3P455w0rd'; // in case we add proper validation later
+	return {
+		name,
+		email,
+		password,
+		role: 'user'
+	};
 }
