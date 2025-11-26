@@ -56,4 +56,6 @@ export class Toast {
 		const toasts = this.toastContainer.locator(`li[data-type="${type}"]`);
 		await expect(toasts).toHaveCount(0, { timeout: 1000 });
 	}
+
+	// TODO add method to get the nth toast, etc.
 }

@@ -3,6 +3,7 @@
 	import { createEventDispatcher, onMount, getContext, tick } from 'svelte';
 
 	const dispatch = createEventDispatcher();
+	const TEST_ID_SLUG = testId('AdminSettings', 'Connections');
 
 	import { getOllamaConfig, updateOllamaConfig } from '$lib/apis/ollama';
 	import { getOpenAIConfig, updateOpenAIConfig, getOpenAIModels } from '$lib/apis/openai';
@@ -229,7 +230,7 @@
 									on:change={async () => {
 										updateOpenAIHandler();
 									}}
-									testId={testId('AdminSettings', 'Connections', 'EnableOpenAISwitch')}
+									testId={testId(TEST_ID_SLUG, 'EnableOpenAISwitch')}
 								/>
 							</div>
 						</div>
@@ -249,11 +250,7 @@
 											showAddOpenAIConnectionModal = true;
 										}}
 										type="button"
-										data-testid={testId(
-											'AdminSettings',
-											'Connections',
-											'AddOpenAIConnectionButton'
-										)}
+										data-testid={testId(TEST_ID_SLUG, 'AddOpenAIConnectionButton')}
 									>
 										<Plus />
 									</button>
@@ -283,7 +280,7 @@
 											OPENAI_API_CONFIGS = newConfig;
 											updateOpenAIHandler();
 										}}
-										testId={testId('AdminSettings', 'Connections', 'OpenAIConnection')}
+										testId={testId(TEST_ID_SLUG, 'OpenAIConnection')}
 									/>
 								{/each}
 							</div>
@@ -304,7 +301,7 @@
 							on:change={async () => {
 								updateOllamaHandler();
 							}}
-							testId={testId('AdminSettings', 'Connections', 'EnableOllamaSwitch')}
+							testId={testId(TEST_ID_SLUG, 'EnableOllamaSwitch')}
 						/>
 					</div>
 				</div>
@@ -323,7 +320,7 @@
 										showAddOllamaConnectionModal = true;
 									}}
 									type="button"
-									data-testid={testId('AdminSettings', 'Connections', 'AddOllamaConnectionButton')}
+									data-testid={testId(TEST_ID_SLUG, 'AddOllamaConnectionButton')}
 								>
 									<Plus />
 								</button>
@@ -349,7 +346,7 @@
 											});
 											OLLAMA_API_CONFIGS = newConfig;
 										}}
-										testId={testId('AdminSettings', 'Connections', 'OllamaConnection')}
+										testId={testId(TEST_ID_SLUG, 'OllamaConnection')}
 									/>
 								{/each}
 							</div>
@@ -382,7 +379,7 @@
 								on:change={async () => {
 									updateDirectConnectionsHandler();
 								}}
-								testId={testId('AdminSettings', 'Connections', 'EnableDirectConnectionsSwitch')}
+								testId={testId(TEST_ID_SLUG, 'EnableDirectConnectionsSwitch')}
 							/>
 						</div>
 					</div>

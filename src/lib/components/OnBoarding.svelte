@@ -10,6 +10,8 @@
 	export let show = true;
 	export let getStartedHandler = () => {};
 
+	const TEST_ID_SLUG = testId('Onboarding');
+
 	function setLogoImage() {
 		const logo = document.getElementById('logo');
 
@@ -84,7 +86,7 @@
 							on:click={() => {
 								getStartedHandler();
 							}}
-							data-testid={testId('Onboarding', 'GetStartedButton')}
+							data-testid={testId(TEST_ID_SLUG, 'GetStartedButton')}
 						>
 							<ArrowRightCircle className="size-6" />
 						</button>

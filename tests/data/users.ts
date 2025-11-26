@@ -13,10 +13,11 @@ export type TestUser = {
  * in the test environment (either via CSV import or API).
  */
 export const SHARED_USERS: Record<string, TestUser> = {
+	// TODO there should be NO shared users except for the E2EManager! all tests should create their own users! unless we need an admin user pool to avoid concurrency issues with multiple tests making users from the e2emanager user at the same time?
 	preExistingAdmin: {
-		name: 'Test Admin',
-		email: 'dev@example.com',
-		password: 'dev',
+		name: 'E2EManager',
+		email: 'test@test.com',
+		password: 'test',
 		role: 'admin'
 	},
 	admin1: {

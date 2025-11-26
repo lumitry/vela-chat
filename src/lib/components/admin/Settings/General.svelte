@@ -21,6 +21,7 @@
 	import { testId } from '$lib/utils/testId';
 
 	const i18n = getContext('i18n');
+	const TEST_ID_SLUG = testId('AdminSettings', 'General');
 
 	export let saveHandler: Function;
 
@@ -230,7 +231,7 @@
 								class="dark:bg-gray-900 w-fit pr-8 rounded-sm px-2 text-xs bg-transparent outline-hidden text-right"
 								bind:value={adminConfig.DEFAULT_USER_ROLE}
 								placeholder="Select a role"
-								data-testid={testId('AdminSettings', 'General', 'DefaultUserRoleSelect')}
+								data-testid={testId(TEST_ID_SLUG, 'DefaultUserRoleSelect')}
 							>
 								<option value="pending">{$i18n.t('pending')}</option>
 								<option value="user">{$i18n.t('user')}</option>
@@ -244,7 +245,7 @@
 
 						<Switch
 							bind:state={adminConfig.ENABLE_SIGNUP}
-							testId={testId('AdminSettings', 'General', 'EnableNewSignUpsSwitch')}
+							testId={testId(TEST_ID_SLUG, 'EnableNewSignUpsSwitch')}
 						/>
 					</div>
 
@@ -255,11 +256,7 @@
 
 						<Switch
 							bind:state={adminConfig.SHOW_ADMIN_DETAILS}
-							testId={testId(
-								'AdminSettings',
-								'General',
-								'ShowAdminDetailsInAccountPendingOverlaySwitch'
-							)}
+							testId={testId(TEST_ID_SLUG, 'ShowAdminDetailsInAccountPendingOverlaySwitch')}
 						/>
 					</div>
 
@@ -268,7 +265,7 @@
 
 						<Switch
 							bind:state={adminConfig.ENABLE_API_KEY}
-							testId={testId('AdminSettings', 'General', 'EnableApiKeySwitch')}
+							testId={testId(TEST_ID_SLUG, 'EnableApiKeySwitch')}
 						/>
 					</div>
 
@@ -280,11 +277,7 @@
 
 							<Switch
 								bind:state={adminConfig.ENABLE_API_KEY_ENDPOINT_RESTRICTIONS}
-								testId={testId(
-									'AdminSettings',
-									'General',
-									'EnableApiKeyEndpointRestrictionsSwitch'
-								)}
+								testId={testId(TEST_ID_SLUG, 'EnableApiKeyEndpointRestrictionsSwitch')}
 							/>
 						</div>
 
@@ -299,7 +292,7 @@
 									type="text"
 									placeholder={`e.g.) /api/v1/messages, /api/v1/channels`}
 									bind:value={adminConfig.API_KEY_ALLOWED_ENDPOINTS}
-									data-testid={testId('AdminSettings', 'General', 'ApiKeyAllowedEndpointsInput')}
+									data-testid={testId(TEST_ID_SLUG, 'ApiKeyAllowedEndpointsInput')}
 								/>
 
 								<div class="mt-2 text-xs text-gray-400 dark:text-gray-500">

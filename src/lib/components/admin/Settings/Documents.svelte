@@ -4,6 +4,7 @@
 	import { onMount, getContext, createEventDispatcher } from 'svelte';
 
 	const dispatch = createEventDispatcher();
+	const TEST_ID_SLUG = testId('AdminSettings', 'Documents');
 
 	import {
 		getQuerySettings,
@@ -288,11 +289,7 @@
 								<select
 									class="dark:bg-gray-900 w-fit pr-8 rounded-sm px-2 text-xs bg-transparent outline-hidden text-right"
 									bind:value={RAGConfig.CONTENT_EXTRACTION_ENGINE}
-									data-testid={testId(
-										'AdminSettings',
-										'Documents',
-										'ContentExtractionEngineSelect'
-									)}
+									data-testid={testId(TEST_ID_SLUG, 'ContentExtractionEngineSelect')}
 								>
 									<option value="">{$i18n.t('Default')}</option>
 									<option value="tika">{$i18n.t('Tika')}</option>
@@ -312,7 +309,7 @@
 									<div class="flex items-center relative">
 										<Switch
 											bind:state={RAGConfig.PDF_EXTRACT_IMAGES}
-											testId={testId('AdminSettings', 'Documents', 'PdfExtractImagesSwitch')}
+											testId={testId(TEST_ID_SLUG, 'PdfExtractImagesSwitch')}
 										/>
 									</div>
 								</div>
