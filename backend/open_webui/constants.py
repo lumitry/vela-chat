@@ -28,9 +28,11 @@ class ERROR_MESSAGES(str, Enum):
     DELETE_USER_ERROR = "Oops! Something went wrong. We encountered an issue while trying to delete the user. Please give it another shot."
     EMAIL_MISMATCH = "Uh-oh! This email does not match the email your provider is registered with. Please check your email and try again."
     EMAIL_TAKEN = "Uh-oh! This email is already registered. Sign in with your existing account or choose another email to start anew."
+    EMAIL_TOO_LONG = "Uh-oh! This email is too long. Please choose an email shorter than 255 characters."
     USERNAME_TAKEN = (
         "Uh-oh! This username is already registered. Please choose another username."
     )
+    USERNAME_TOO_LONG = "Uh-oh! This username is too long. Please choose a name shorter than 255 characters."
     COMMAND_TAKEN = "Uh-oh! This command is already registered. Please choose another command string."
     FILE_EXISTS = "Uh-oh! This file is already registered. Please choose another file."
 

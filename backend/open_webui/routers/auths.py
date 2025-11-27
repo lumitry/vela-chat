@@ -472,6 +472,11 @@ async def signup(request: Request, response: Response, form_data: SignupForm):
     if Users.get_user_by_email(form_data.email.lower()):
         raise HTTPException(400, detail=ERROR_MESSAGES.EMAIL_TAKEN)
 
+    if len(form_data.name) > 255:
+        raise HTTPException(400, detail=ERROR_MESSAGES.USERNAME_TOO_LONG)
+    if len(form_data.email) > 255:
+        raise HTTPException(400, detail=ERROR_MESSAGES.EMAIL_TOO_LONG)
+
     try:
         role = (
             "admin" if user_count == 0 else request.app.state.config.DEFAULT_USER_ROLE
