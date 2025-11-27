@@ -81,7 +81,7 @@
 	let selectedChatId = null;
 	let showDropdown = false;
 
-$: userImageSrc = $user?.profile_image_url ?? '';
+	$: userImageSrc = $user?.profile_image_url ?? '';
 	let showPinnedChat = true;
 
 	let showCreateChannel = false;
@@ -92,6 +92,13 @@ $: userImageSrc = $user?.profile_image_url ?? '';
 
 	let folders = {};
 	let newFolderId = null;
+
+	// Reactively sync folders from store (for updates from command palette, etc.)
+	// This allows the command palette to refresh folders by updating the store
+	$: if ($foldersStore && Object.keys($foldersStore).length > 0) {
+		// Deep clone to ensure reactivity triggers
+		folders = JSON.parse(JSON.stringify($foldersStore));
+	}
 
 	// Sorted chats list
 	let sortedChats: any[] = [];
@@ -418,10 +425,8 @@ $: userImageSrc = $user?.profile_image_url ?? '';
 		// Reset pagination variables
 		tags.set(await getAllTags(localStorage.token));
 
-		// Only fetch pinned chats if not already populated
-		if (!$pinnedChats || $pinnedChats.length === 0) {
-			pinnedChats.set(await getPinnedChatListMetadata(localStorage.token));
-		}
+		// Always refresh pinned chats to reflect pin/unpin changes
+		pinnedChats.set(await getPinnedChatListMetadata(localStorage.token));
 
 		initFolders();
 

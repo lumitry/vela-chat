@@ -468,22 +468,16 @@ const chatCommands: Command[] = [
 		type: 'submenu',
 		label: 'Move Current Chat to Folder…',
 		keywords: ['move', 'folder', 'organize'],
-		priority: CHAT_PRIORITY,
+		priority: CHAT_PRIORITY + 20, // Higher priority to show as first result when in a chat (opinionated)
 		condition: requiresPersistentChat,
 		icon: FolderOpen,
 		getSubmenuItems: async (query: string, context?: CommandContext): Promise<SubmenuItem[]> => {
 			const currentChatId = context?.currentChatId || get(chatId);
 			if (!currentChatId) return [];
 
-			// Ensure folders are loaded - always fetch to get latest
-			let folders = get(foldersStore);
+			// Fetch folders - for reference only! does not update the store until chat is actually moved to prevent unnecessary re-renders
 			const fetched = await getFolders(localStorage.token);
-			if (fetched) {
-				foldersStore.set(fetched);
-				folders = fetched;
-			} else if (!folders || Object.keys(folders).length === 0) {
-				folders = {};
-			}
+			const folders = fetched || {};
 
 			// Get current folder
 			let currentFolderId: string | null = null;
@@ -502,6 +496,7 @@ const chatCommands: Command[] = [
 					execute: async () => {
 						await updateChatFolderIdById(localStorage.token, currentChatId, undefined);
 						await refreshChats();
+						await refreshFolders();
 						toast.success('Chat updated.');
 					}
 				}
@@ -516,8 +511,10 @@ const chatCommands: Command[] = [
 						label: folderName,
 						description: currentFolderId === (folder as any).id ? 'Current folder' : undefined,
 						execute: async () => {
-							await updateChatFolderIdById(localStorage.token, currentChatId, (folder as any).id);
+							const newFolderId = (folder as any).id;
+							await updateChatFolderIdById(localStorage.token, currentChatId, newFolderId);
 							await refreshChats();
+							await refreshFolders();
 							toast.success('Chat updated.');
 						}
 					});
@@ -691,7 +688,8 @@ const chatCommands: Command[] = [
 			if (!id) return;
 
 			await toggleChatPinnedStatusById(localStorage.token, id);
-			await refreshPinnedChats();
+			await refreshChats(); // Refresh both regular and pinned chat lists
+			await refreshFolders(); // Refresh folders to remove/add chat from folders
 		}
 	},
 	{
@@ -711,6 +709,7 @@ const chatCommands: Command[] = [
 				const cloned = await cloneChatById(localStorage.token, id, `Clone of ${title ?? ''}`);
 				if (cloned?.id) {
 					await refreshChats();
+					await refreshFolders(); // Refresh folders to show cloned chat if it's in a folder
 					await goto(`/c/${cloned.id}`);
 				}
 			} catch (error) {
@@ -733,6 +732,7 @@ const chatCommands: Command[] = [
 
 			await archiveChatById(localStorage.token, id);
 			await refreshChats();
+			await refreshFolders(); // Refresh folders to remove archived chat from folders
 			toast.success('Chat archived.');
 		}
 	},
@@ -782,6 +782,74 @@ async function refreshChats() {
 
 async function refreshPinnedChats() {
 	pinnedChats.set(await getPinnedChatList(localStorage.token));
+}
+
+export async function refreshFolders() {
+	try {
+		const folderList = await getFolders(localStorage.token);
+		if (!folderList || folderList.length === 0) {
+			foldersStore.set({});
+			return;
+		}
+
+		const processedFolders: Record<string, any> = {};
+
+		// First pass: Initialize all folder entries
+		for (const folder of folderList) {
+			processedFolders[folder.id] = { ...folder };
+
+			// Sort chats within each folder based on current sort preference
+			if (
+				processedFolders[folder.id].items?.chats &&
+				Array.isArray(processedFolders[folder.id].items.chats)
+			) {
+				// Get sort preference from localStorage (same as Sidebar does)
+				const sortBy = localStorage.getItem('chatListSortBy') || 'updated';
+				processedFolders[folder.id].items.chats = processedFolders[folder.id].items.chats.sort(
+					(a: any, b: any) => {
+						switch (sortBy) {
+							case 'created':
+								return (b.created_at ?? 0) - (a.created_at ?? 0);
+							case 'title':
+								return a.title.localeCompare(b.title, undefined, {
+									numeric: true,
+									sensitivity: 'base'
+								});
+							case 'updated':
+							default:
+								return (b.updated_at ?? 0) - (a.updated_at ?? 0);
+						}
+					}
+				);
+			}
+		}
+
+		// Second pass: Tie child folders to their parents
+		for (const folder of folderList) {
+			if (folder.parent_id) {
+				// Ensure the parent folder is initialized if it doesn't exist
+				if (!processedFolders[folder.parent_id]) {
+					processedFolders[folder.parent_id] = {};
+				}
+
+				// Initialize childrenIds array if it doesn't exist and add the current folder id
+				processedFolders[folder.parent_id].childrenIds = processedFolders[folder.parent_id]
+					.childrenIds
+					? [...processedFolders[folder.parent_id].childrenIds, folder.id]
+					: [folder.id];
+
+				// Sort the children by updated_at field
+				processedFolders[folder.parent_id].childrenIds.sort((a, b) => {
+					return (processedFolders[b].updated_at ?? 0) - (processedFolders[a].updated_at ?? 0);
+				});
+			}
+		}
+
+		// Update the folders store
+		foldersStore.set(processedFolders);
+	} catch (error) {
+		console.error('Failed to refresh folders:', error);
+	}
 }
 
 export function registerChatCommands(): void {

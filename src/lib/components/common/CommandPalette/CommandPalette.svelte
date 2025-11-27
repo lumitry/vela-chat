@@ -26,6 +26,7 @@
 	import ChatBubble from '$lib/components/icons/ChatBubble.svelte';
 	import { toast } from 'svelte-sonner';
 	import { updateChatById, getChatList, getPinnedChatList } from '$lib/apis/chats';
+	import { refreshFolders } from '$lib/utils/commandPalette/commands';
 	import { settings, models as modelsStore, socket } from '$lib/stores';
 	import { WEBUI_API_BASE_URL, WEBUI_BASE_URL } from '$lib/constants';
 	import { v4 as uuidv4 } from 'uuid';
@@ -403,11 +404,12 @@
 				chatTitleStore.set(trimmed);
 			}
 
-			// Refresh chat lists
+			// Refresh chat lists and folders
 			currentChatPage.set(1);
 			const updatedChats = await getChatList(localStorage.token, get(currentChatPage));
 			chats.set(updatedChats);
 			pinnedChats.set(await getPinnedChatList(localStorage.token));
+			await refreshFolders();
 
 			toast.success('Chat renamed.');
 			cancelRename();
@@ -429,26 +431,27 @@
 
 		let combinedResults = commandResults;
 
-		if (!query.trim() && recentChatItems.length > 0) {
-			const recentResults = recentChatItems.map((chat) => ({
-				command: {
-					id: `recent-chat:${chat.id}`,
-					type: 'action',
-					label: chat.title,
-					description: 'Recent chat',
-					keywords: ['recent', 'chat'],
-					priority: 120,
-					icon: ChatBubble,
-					execute: async () => {
-						addRecentChat({ id: chat.id, title: chat.title });
-						await goto(`/c/${chat.id}`);
-					}
-				} as Command,
-				score: null
-			}));
-
-			combinedResults = [...recentResults, ...commandResults];
-		}
+		// TODO make recent chats be optional in settings - I do not find this feature useful at all, so I'm disabling for now, but it should def be made optional eventually.
+		// if (!query.trim() && recentChatItems.length > 0) {
+		// 	const recentResults = recentChatItems.map((chat) => ({
+		// 		command: {
+		// 			id: `recent-chat:${chat.id}`,
+		// 			type: 'action',
+		// 			label: chat.title,
+		// 			description: 'Recent chat',
+		// 			keywords: ['recent', 'chat'],
+		// 			priority: 120,
+		// 			icon: ChatBubble,
+		// 			execute: async () => {
+		// 				addRecentChat({ id: chat.id, title: chat.title });
+		// 				await goto(`/c/${chat.id}`);
+		// 			}
+		// 		} as Command,
+		// 		score: null
+		// 	}));
+		//
+		// 	combinedResults = [...recentResults, ...commandResults];
+		// }
 
 		results = combinedResults;
 
@@ -560,6 +563,10 @@
 					Promise.resolve(item.execute(context))
 						.then(() => {
 							popSubmenu();
+							// Close palette after moving chat to folder (command chaining is rarer here)
+							if (activeSubmenu?.command?.id === 'chat:move-to-folder') {
+								closePalette();
+							}
 						})
 						.catch((error) => {
 							console.error('Submenu item execution failed:', error);
@@ -1350,6 +1357,7 @@
 			return 'Enter new chat title (Press Enter to save, Escape to cancel)';
 		}
 		if (activeSubmenu?.command) {
+			// TODO refactor this to make the commands be a single source of truth? i don't like having to use a ton of conditionals here...
 			const commandId = activeSubmenu.command.id;
 			if (commandId === 'chat:move-to-folder') {
 				return 'Search folders...';
@@ -1447,6 +1455,10 @@
 											Promise.resolve(item.execute(context))
 												.then(() => {
 													popSubmenu();
+													// Close palette after moving chat to folder (command chaining is rarer here)
+													if (activeSubmenu?.command?.id === 'chat:move-to-folder') {
+														closePalette();
+													}
 												})
 												.catch((error) => {
 													console.error('Submenu item execution failed:', error);
