@@ -12,12 +12,18 @@ python tests/mocks/mini-mediator/mini_mediator.py --reload
 ```
 
 - `--reload` enables uvicorn hot reload (recommended while editing fixtures or code).
+- `--log-requests` enables request/response logging (see [Request Logging](#request-logging) below).
+- `--log-file <path>` logs requests to a file instead of console.
+- `--no-log-pretty` disables pretty-printing JSON in logs (default: pretty-printed).
 - Environment overrides:
   - `MINI_MEDIATOR_IP` (default `localhost`)
   - `MINI_MEDIATOR_PORT` (default `11998`)
   - `MINI_MEDIATOR_RELOAD` (enable reload without CLI flag)
   - `MINI_MEDIATOR_CORS_ALLOW_ORIGINS` (comma-separated list)
   - `MINI_MEDIATOR_FIXTURES_DIR` (point to alternative fixtures root)
+  - `MINI_MEDIATOR_LOG_REQUESTS` (enable request logging)
+  - `MINI_MEDIATOR_LOG_FILE` (path to log file, or omit for console)
+  - `MINI_MEDIATOR_LOG_PRETTY` (pretty-print JSON, default: `true`)
 
 ### `conda run` helpers
 
@@ -34,6 +40,33 @@ conda run -n velachat python tests/mocks/mini-mediator/mini_mediator.py
 - **Fixtures**: Stored under `fixtures/` (see [`fixtures/README.md`](./fixtures/README.md) for schema details). Edit JSON/YAML files and the server hot-reloads them automatically (disable with `MINI_MEDIATOR_WATCH_FIXTURES=false` if needed).
 - **Chunk planner**: Automatically splits fixture responses into token-sized (~4 char) or chunked payloads, applies pause profiles, and throttles to a target tokens-per-second speed so UI tests can simulate both OpenAI- and Gemini-style latency.
 - **Metadata**: Every response includes a `mini_mediator` block with the scenario name, metadata tags, and streaming plan to simplify assertions in Playwright.
+
+## Request Logging
+
+Mini-Mediator can log all HTTP requests and responses for debugging E2E tests. Logs include:
+
+- Request method, path, and query parameters
+- Request body (parsed as JSON if possible)
+- Response status code and body (or indicator for streaming responses)
+- Request duration in milliseconds
+
+**Enable via CLI:**
+
+```sh
+python tests/mocks/mini-mediator/mini_mediator.py --log-requests
+python tests/mocks/mini-mediator/mini_mediator.py --log-requests --log-file requests.log
+python tests/mocks/mini-mediator/mini_mediator.py --log-requests --no-log-pretty
+```
+
+**Enable via environment variable:**
+
+```sh
+export MINI_MEDIATOR_LOG_REQUESTS=true
+export MINI_MEDIATOR_LOG_FILE=requests.log  # optional
+export MINI_MEDIATOR_LOG_PRETTY=false  # optional
+```
+
+Logs are pretty-printed JSON by default, making them easy to read. The `/healthz` endpoint is excluded from logging.
 
 ## Editing fixtures
 

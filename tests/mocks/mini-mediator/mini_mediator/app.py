@@ -11,13 +11,19 @@ from watchfiles import awatch
 from .config import get_settings
 from .engine import MiniMediatorEngine
 from .fixtures import FixturesStore
+from .logging_middleware import RequestLoggingMiddleware
 from .providers.openai import build_router as build_openai_router
 from .providers.ollama import build_router as build_ollama_router
 
 logger = logging.getLogger(__name__)
 
 
-def create_app() -> FastAPI:
+def create_app(
+    *,
+    log_requests: bool | None = None,
+    log_file: str | None = None,
+    log_pretty: bool | None = None,
+) -> FastAPI:
     settings = get_settings()
     fixtures_store = FixturesStore()
     engine = MiniMediatorEngine(fixtures_store=fixtures_store)
@@ -47,6 +53,25 @@ def create_app() -> FastAPI:
                     await watch_task
 
     app = FastAPI(title="Mini-Mediator Mock Server", lifespan=lifespan)
+
+    # Determine logging configuration (CLI args override settings)
+    final_log_requests = log_requests if log_requests is not None else settings.log_requests
+    final_log_file = log_file if log_file is not None else settings.log_file
+    final_log_pretty = log_pretty if log_pretty is not None else settings.log_pretty
+    
+    # Store in app.state for potential runtime access
+    app.state.log_requests = final_log_requests
+    app.state.log_file = final_log_file
+    app.state.log_pretty = final_log_pretty
+    
+    # Add request logging middleware if enabled
+    if final_log_requests:
+        app.add_middleware(
+            RequestLoggingMiddleware,
+            enabled=True,
+            log_file=final_log_file,
+            pretty=final_log_pretty,
+        )
 
     app.add_middleware(
         CORSMiddleware,

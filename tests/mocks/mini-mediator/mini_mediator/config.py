@@ -20,6 +20,9 @@ class Settings:
     reload: bool = _bool_env("MINI_MEDIATOR_RELOAD", False)
     watch_fixtures: bool = _bool_env("MINI_MEDIATOR_WATCH_FIXTURES", True)
     cors_allow_origins: List[str] = None  # type: ignore[assignment]
+    log_requests: bool = _bool_env("MINI_MEDIATOR_LOG_REQUESTS", False)
+    log_file: str | None = os.environ.get("MINI_MEDIATOR_LOG_FILE")
+    log_pretty: bool = _bool_env("MINI_MEDIATOR_LOG_PRETTY", True)
 
     def __post_init__(self) -> None:
         # dataclass with frozen=True requires object.__setattr__
