@@ -7,7 +7,12 @@ import { AdminSettingsGeneralTab } from '../pages/Admin/AdminSettingsGeneralTab'
 import { AdminSettingsConnectionsTab } from '../pages/Admin/AdminSettingsConnectionsTab';
 import { MINI_MEDIATOR_OLLAMA, MINI_MEDIATOR_OPENAI } from '../data/endpoints';
 import { AdminSettingsDocumentsTab } from '../pages/Admin/AdminSettingsDocumentsTab';
-import { MINI_MEDIATOR_EMBEDDING_OPENAI } from '../data/miniMediatorModels';
+import {
+	MINI_MEDIATOR_EMBEDDING_OPENAI,
+	MINI_MEDIATOR_TASK_OLLAMA,
+	MINI_MEDIATOR_TASK_OPENAI
+} from '../data/miniMediatorModels';
+import { AdminSettingsInterfaceTab } from '../pages/Admin/AdminSettingsInterface';
 
 /**
  * Setup test that runs before all other tests.
@@ -81,14 +86,12 @@ test('setup test environment via onboarding', async ({ page }) => {
 	await adminSettingsDocumentsTab.clickSaveButton();
 	await adminSettingsDocumentsTab.toast.assertToastIsVisible('success');
 
-	// TODO: Set task models to Mini-Mediator
-	// I don't have time to handle this today...
-	// await adminSettingsConnectionsTab.clickInterfaceTabButton();
-	// const adminSettingsInterfaceTab = new AdminSettingsInterfaceTab(page);
-	// await adminSettingsInterfaceTab.setInternalTaskModel(MINI_MEDIATOR_TASK.name);
-	// await adminSettingsInterfaceTab.setExternalTaskModel(MINI_MEDIATOR_TASK.name);
-	// await adminSettingsInterfaceTab.clickSaveButton();
-	// await adminSettingsInterfaceTab.toast.assertToastIsVisible('success');
+	await adminSettingsConnectionsTab.clickInterfaceTabButton();
+	const adminSettingsInterfaceTab = new AdminSettingsInterfaceTab(page);
+	await adminSettingsInterfaceTab.setLocalTaskModel(MINI_MEDIATOR_TASK_OLLAMA);
+	await adminSettingsInterfaceTab.setExternalTaskModel(MINI_MEDIATOR_TASK_OPENAI);
+	await adminSettingsInterfaceTab.clickSaveButton();
+	await adminSettingsInterfaceTab.toast.assertToastIsVisible('success');
 
 	console.log('✅ Test environment setup complete!');
 });
