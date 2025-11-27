@@ -15,7 +15,7 @@ export class Toast {
 	 */
 	async getToastText(type: 'error' | 'success' | 'info' | 'warning'): Promise<string> {
 		const toast = this.toastContainer.locator(`li[data-type="${type}"]`).first();
-		return (await toast.textContent()) ?? '';
+		return ((await toast.textContent()) ?? '').trim();
 	}
 
 	/**
@@ -37,7 +37,7 @@ export class Toast {
 	}
 
 	/**
-	 * Assert the text of the toast is equal to the expected text.
+	 * Assert the text of the first toast of the given type is equal to the expected text.
 	 * @param type - The type of toast to assert.
 	 * @param text - The expected text of the toast.
 	 */
@@ -45,7 +45,7 @@ export class Toast {
 		type: 'error' | 'success' | 'info' | 'warning',
 		text: string
 	): Promise<void> {
-		expect(this.getToastText(type)).toBe(text);
+		expect(await this.getToastText(type)).toBe(text);
 	}
 
 	/**
@@ -57,5 +57,5 @@ export class Toast {
 		await expect(toasts).toHaveCount(0, { timeout: 1000 });
 	}
 
-	// TODO add method to get the nth toast, etc.
+	// TODO add methods to get the nth toast, assert the nth toast, etc.
 }

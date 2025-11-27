@@ -52,6 +52,7 @@ export default defineConfig({
 		{
 			name: 'chromium',
 			testMatch: /.*\.spec\.ts/,
+			testIgnore: [/.*\.signupsDisabled\.spec\.ts/, /.*\.defaultRole\.spec\.ts/], // Exclude special test files
 			dependencies: ['setup'], // Run setup project first
 			use: { ...devices['Desktop Chrome'] }
 		},
@@ -59,6 +60,7 @@ export default defineConfig({
 		{
 			name: 'firefox',
 			testMatch: /.*\.spec\.ts/,
+			testIgnore: [/.*\.signupsDisabled\.spec\.ts/, /.*\.defaultRole\.spec\.ts/], // Exclude special test files
 			dependencies: ['setup'],
 			use: { ...devices['Desktop Firefox'] }
 		},
@@ -66,8 +68,46 @@ export default defineConfig({
 		{
 			name: 'webkit',
 			testMatch: /.*\.spec\.ts/,
+			testIgnore: [/.*\.signupsDisabled\.spec\.ts/, /.*\.defaultRole\.spec\.ts/], // Exclude special test files
 			dependencies: ['setup'],
 			use: { ...devices['Desktop Safari'] }
+		},
+
+		{
+			name: 'chromium-signups-disabled',
+			testMatch: /.*\.signupsDisabled\.spec\.ts/,
+			dependencies: ['setup', 'chromium'], // Run after regular chromium tests to avoid interference
+			use: { ...devices['Desktop Chrome'] }
+		},
+
+		{
+			name: 'firefox-signups-disabled',
+			testMatch: /.*\.signupsDisabled\.spec\.ts/,
+			dependencies: ['setup', 'firefox'], // Run after regular firefox tests
+			use: { ...devices['Desktop Firefox'] }
+		},
+
+		{
+			name: 'webkit-signups-disabled',
+			testMatch: /.*\.signupsDisabled\.spec\.ts/,
+			dependencies: ['setup', 'webkit'], // Run after regular webkit tests
+			use: { ...devices['Desktop Safari'] }
+		},
+
+		{
+			name: 'default-role-tests',
+			testMatch: /.*\.defaultRole\.spec\.ts/,
+			dependencies: [
+				'setup',
+				'chromium',
+				'firefox',
+				'webkit',
+				'chromium-signups-disabled',
+				'firefox-signups-disabled',
+				'webkit-signups-disabled'
+			], // Run after all regular tests AND signups-disabled tests (to ensure signups are re-enabled)
+			workers: 1, // CRITICAL: Run sequentially across browsers to avoid global state conflicts
+			use: { ...devices['Desktop Chrome'] } // Just use one browser since we're testing backend behavior
 		}
 
 		/* Test against mobile viewports. */

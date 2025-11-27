@@ -26,25 +26,6 @@ export const SHARED_USERS: Record<string, TestUser> = {
 		password: 'non.existent.password',
 		role: 'user'
 	},
-	badEmailUser: {
-		name: 'Bad Email User',
-		email: 'bad.email at test dot example dot com',
-		password: 'bad.email.password',
-		role: 'user'
-	},
-	badPasswordUser: {
-		name: 'Bad Password User',
-		email: 'bad.password@test.example.com',
-		password: '', // as of right now, the backend DOES allow empty passwords, but the frontend prevents it unless you use inspect element to remove the required attribute
-		role: 'user'
-	},
-	// we like to have fun around here
-	badNameUser: {
-		name: '', // name is required
-		email: 'you_give_love@bad.name',
-		password: 'j0vi4l_p455w0rd',
-		role: 'user'
-	},
 	admin1: {
 		name: 'Admin1 User',
 		email: 'admin1@test.example.com',

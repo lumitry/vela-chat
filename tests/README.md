@@ -75,24 +75,24 @@ npx playwright test --ui
 ### 🔥 SMOKE TESTS (Implement ASAP)
 
 - [ ] Setup Test
-  - [ ] Import Test Users
-  - [ ] Create Test User via form (as opposed to CSV import)
-  - [ ] Add OpenAI connection
-  - [ ] Add Ollama connection
-  - [ ] Set default user role to admin
-  - [ ] Enable new signups
-  - [ ] Set default embedding model to Mini-Mediator
-  - [ ] Set internal and external task models to a Mini-Mediator task model (which would recognize all the various test cases and have deterministic outputs for each of them, e.g. it would know when we're testing a knowledge base and it would return the correct title and tags)
+  - [-] Import Test Users
+  - [-] Create Test User via form (as opposed to CSV import)
+  - [x] Add OpenAI connection
+  - [x] Add Ollama connection
+  - [x] Set default user role to admin
+  - [x] Enable new signups
+  - [x] Set default embedding model to Mini-Mediator
+  - [x] Set internal and external task models to a Mini-Mediator task model (which would recognize all the various test cases and have deterministic outputs for each of them, e.g. it would know when we're testing a knowledge base and it would return the correct title and tags)
 - [ ] Login Test
-  - [ ] Login with valid credentials
-  - [ ] Login fails with invalid credentials
-  - [ ] Login fails with invalid email format
-- [ ] Registration Test
-  - [ ] Register new user when signups are enabled
-  - [ ] Registration fails when signups are disabled
-  - [ ] Registration fails with invalid email format
-  - [ ] Registration fails with duplicate email
-  - [ ] Verify default role assignment (pending vs user vs admin)
+  - [x] Login with valid credentials
+  - [x] Login fails with invalid credentials
+  - [x] Login fails with invalid email format
+- [x] Registration Test
+  - [x] Register new user when signups are enabled
+  - [x] Registration fails when signups are disabled
+  - [x] Registration fails with invalid email format
+  - [x] Registration fails with duplicate email
+  - [x] Verify default role assignment (pending vs user vs admin)
 - [ ] Basic Chat Test (send message, receive response)
   - [ ] Create new chat
   - [ ] Send message

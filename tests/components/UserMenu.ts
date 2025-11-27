@@ -1,4 +1,4 @@
-import { type Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 import { testId } from '$lib/utils/testId';
 import { Dropdown } from './Dropdown';
 
@@ -76,10 +76,17 @@ export class UserMenuDropdown extends Dropdown {
 	}
 
 	/**
+	 * Get whether the user is an admin or not
+	 */
+	async isAdmin(): Promise<boolean> {
+		return await this.adminPanelButton.isVisible();
+	}
+
+	/**
 	 * Assert that the user is an admin
 	 */
 	async assertIsAdmin(): Promise<void> {
-		await this.assertOptionExists('Admin Panel');
+		await expect(this.adminPanelButton).toBeVisible();
 	}
 
 	/**

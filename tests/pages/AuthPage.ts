@@ -123,6 +123,13 @@ export class AuthPage extends BasePage {
 	}
 
 	/**
+	 * Assert that the switch mode button is not visible.
+	 */
+	async assertSwitchModeButtonIsNotVisible(): Promise<void> {
+		await expect(this.switchModeButton).not.toBeVisible();
+	}
+
+	/**
 	 * Assert that all sign-in form elements are visible.
 	 */
 	async assertSignInFormIsVisible(): Promise<void> {
