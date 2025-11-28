@@ -10,6 +10,7 @@
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import MagnifyingGlass from '$lib/components/icons/MagnifyingGlass.svelte';
+	import { testId } from '$lib/utils/testId';
 
 	const i18n = getContext('i18n');
 
@@ -281,7 +282,9 @@
 
 		<div class="flex self-center w-[1px] h-6 mx-2.5 bg-gray-50 dark:bg-gray-850" />
 
-		<span class="text-lg font-medium text-gray-500 dark:text-gray-300 mr-1.5"
+		<span
+			class="text-lg font-medium text-gray-500 dark:text-gray-300 mr-1.5"
+			data-testid={testId('AdminSettings', 'Evaluations', 'Leaderboard', 'ModelCount')}
 			>{rankedModels.length}</span
 		>
 	</div>
@@ -299,6 +302,7 @@
 					on:focus={() => {
 						loadEmbeddingModel();
 					}}
+					data-testid={testId('AdminSettings', 'Evaluations', 'Leaderboard', 'SearchInput')}
 				/>
 			</div>
 		</Tooltip>
@@ -362,15 +366,40 @@
 										src={imageSrc}
 										alt={model.name}
 										class="size-5 rounded-full object-cover shrink-0"
+										data-testid={testId(
+											'AdminSettings',
+											'Evaluations',
+											'Leaderboard',
+											'ModelImage',
+											model.id
+										)}
 									/>
 								</div>
 
-								<div class="font-medium text-gray-800 dark:text-gray-200 pr-4">
+								<div
+									class="font-medium text-gray-800 dark:text-gray-200 pr-4"
+									data-testid={testId(
+										'AdminSettings',
+										'Evaluations',
+										'Leaderboard',
+										'ModelName',
+										model.id
+									)}
+								>
 									{model.name}
 								</div>
 							</div>
 						</td>
-						<td class="px-3 py-1.5 text-right font-medium text-gray-900 dark:text-white w-max">
+						<td
+							class="px-3 py-1.5 text-right font-medium text-gray-900 dark:text-white w-max"
+							data-testid={testId(
+								'AdminSettings',
+								'Evaluations',
+								'Leaderboard',
+								'ModelRating',
+								model.id
+							)}
+						>
 							{model.rating}
 						</td>
 
@@ -382,7 +411,16 @@
 									<span class="hidden group-hover:inline"
 										>{((model.stats.won / model.stats.count) * 100).toFixed(1)}%</span
 									>
-									<span class=" group-hover:hidden">{model.stats.won}</span>
+									<span
+										class=" group-hover:hidden"
+										data-testid={testId(
+											'AdminSettings',
+											'Evaluations',
+											'Leaderboard',
+											'ModelWonCount',
+											model.id
+										)}>{model.stats.won}</span
+									>
 								{/if}
 							</div>
 						</td>
@@ -395,7 +433,16 @@
 									<span class="hidden group-hover:inline"
 										>{((model.stats.lost / model.stats.count) * 100).toFixed(1)}%</span
 									>
-									<span class=" group-hover:hidden">{model.stats.lost}</span>
+									<span
+										class=" group-hover:hidden"
+										data-testid={testId(
+											'AdminSettings',
+											'Evaluations',
+											'Leaderboard',
+											'ModelLostCount',
+											model.id
+										)}>{model.stats.lost}</span
+									>
 								{/if}
 							</div>
 						</td>

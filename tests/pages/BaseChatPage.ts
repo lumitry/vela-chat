@@ -1,0 +1,315 @@
+import type { Locator, Page } from '@playwright/test';
+import { BasePage } from './BasePage';
+import { testId } from '$lib/utils/testId';
+import { expect } from '@playwright/test';
+
+/**
+ * Represents a user message and its associated response message IDs.
+ *
+ * Note: In multi-response scenarios (split view), there can be multiple response messages
+ * for a single user message. The `responseMessageIds` array will contain all of them.
+ * For single-response scenarios, the array will contain just one ID.
+ */
+export interface SentMessage {
+	/** The ID of the user message that was sent */
+	userMessageId: string;
+	/**
+	 * Array of response message IDs. In single-response mode, this contains one ID.
+	 * In multi-response mode (split view), this contains multiple IDs (one per selected model).
+	 */
+	responseMessageIds: string[];
+}
+
+/**
+ * Common parent page object for all chat pages.
+ *
+ * This includes the home page and the chat page.
+ */
+export abstract class BaseChatPage extends BasePage {
+	// helper functions to get test id and locator for the current page
+	protected getPageTestId = (...args: string[]): string => {
+		return testId('Chat', ...args);
+	};
+	protected getPageLocator = (...args: string[]): Locator => {
+		return this.page.getByTestId(this.getPageTestId(...args));
+	};
+
+	// Navbar element
+	/** Opens controls sidebar */
+	private controlsButton = this.getPageLocator('Navbar', 'ControlsButton');
+
+	// MessageInput elements
+	private richTextInput = this.getPageLocator('MessageInput', 'RichTextInput').locator(
+		'#chat-input'
+	);
+	private plainTextInput = this.getPageLocator('MessageInput', 'PlainTextInput').locator(
+		'#chat-input'
+	);
+	private autocompleteSuggestion = this.richTextInput.locator('.ai-autocompletion');
+	private sendMessageButton = this.getPageLocator('MessageInput', 'SendMessageButton');
+	private stopResponseButton = this.getPageLocator('MessageInput', 'StopResponseButton');
+	private callButton = this.getPageLocator('MessageInput', 'CallButton');
+
+	// Model selector elements
+	/** the model selector trigger button (the model name & chevron) in the top left of the navbar */
+	private modelSelectorTrigger = this.getPageLocator('ModelSelector', 'Selector', 'Trigger');
+	/** the current model name that shows on the model selector trigger */
+	private modelSelectorTriggerCurrentModelName = this.getPageLocator(
+		'ModelSelector',
+		'Selector',
+		'Trigger',
+		'CurrentModelName'
+	);
+	private getModelSelectorModelItem = (modelId: string) =>
+		this.getPageLocator('ModelSelector', 'ModelItem', modelId);
+	private getModelSelectorModelImage = (modelId: string) =>
+		this.getPageLocator('ModelSelector', 'ModelImage', modelId);
+	private getModelSelectorModelName = (modelId: string) =>
+		this.getPageLocator('ModelSelector', 'ModelName', modelId);
+	/** Only for Ollama models. Currently mini-mediator doesn't support this anyway. */
+	private getModelSelectorModelParameterSize = (modelId: string) =>
+		this.getPageLocator('ModelSelector', 'ModelParameterSize', modelId);
+
+	constructor(page: Page) {
+		super(page);
+	}
+
+	// ---------------- //
+	//  Model Selector  //
+	// ---------------- //
+
+	/**
+	 * Clicks the model selector trigger (the model name & chevron) to open the model selector.
+	 */
+	async openModelSelector(): Promise<void> {
+		await this.modelSelectorTrigger.click();
+	}
+
+	/**
+	 * Asserts that the current model name on the model selector trigger matches the expected model name.
+	 *
+	 * TODO: support for multiple models!
+	 *
+	 * @param modelName - The expected model name.
+	 */
+	async assertCurrentChatModelName(modelName: string): Promise<void> {
+		await expect(this.modelSelectorTriggerCurrentModelName).toHaveText(modelName);
+	}
+
+	// TODO probably refactor into a ModelSelectorDropdown component object??
+	// TODO: also add support for adding a second (and Nth) model to the chat... yikes.
+
+	/**
+	 * Asserts that the model name exists in the model selector.
+	 *
+	 * The model selector must be open before calling this method.
+	 *
+	 * @param modelId - The ID of the model.
+	 * @param modelName - The name of the model.
+	 */
+	async assertModelSelectorModelNameExists(modelId: string, modelName: string): Promise<void> {
+		await expect(this.getModelSelectorModelName(modelId)).toHaveText(modelName);
+	}
+
+	/**
+	 * Selects a model from the model selector.
+	 *
+	 * The model selector must be open before calling this method.
+	 *
+	 * Closes the model selector if it is open.
+	 *
+	 * @param modelId - The ID of the model.
+	 */
+	async selectModel(modelId: string): Promise<void> {
+		await this.getModelSelectorModelItem(modelId).click();
+	}
+
+	// --------------- //
+	//  Message Input  //
+	// --------------- //
+
+	async getMessageInputType(): Promise<'rich' | 'plain'> {
+		if (await this.richTextInput.isVisible()) {
+			return 'rich';
+		}
+		return 'plain';
+	}
+
+	async assertMessageInputType(type: 'rich' | 'plain'): Promise<void> {
+		if (type === 'rich') {
+			await expect(this.richTextInput).toBeVisible();
+		} else {
+			await expect(this.plainTextInput).toBeVisible();
+		}
+	}
+
+	/**
+	 * Helper method to get the message input locator regardless of type.
+	 */
+	private async getMessageInput(): Promise<Locator> {
+		const type = await this.getMessageInputType();
+		if (type === 'rich') {
+			return this.richTextInput;
+		} else {
+			return this.plainTextInput;
+		}
+	}
+
+	/**
+	 * Types a message into the message input.
+	 *
+	 * @param message - The message to type.
+	 */
+	async typeMessage(message: string): Promise<void> {
+		const input = await this.getMessageInput();
+		await input.fill(message);
+	}
+
+	async clickSendMessageButton(): Promise<void> {
+		await this.sendMessageButton.click();
+	}
+
+	/**
+	 * Submits a message by typing it and clicking the send message button.
+	 *
+	 * Does NOT wait for the message to be completed, or anything of the sort.
+	 *
+	 * @param message - The message to submit.
+	 */
+	async submitMessage(message: string): Promise<void> {
+		await this.typeMessage(message);
+		await this.clickSendMessageButton();
+	}
+
+	/**
+	 * Checks whether the LLM is currently responding to a message by checking if the stop response button is visible.
+	 *
+	 * @returns True if a response is in progress, false otherwise.
+	 */
+	async isResponseInProgress(): Promise<boolean> {
+		return await this.stopResponseButton.isVisible();
+	}
+
+	async assertResponseInProgress(): Promise<void> {
+		await expect(this.stopResponseButton).toBeVisible();
+	}
+
+	/**
+	 * Checks whether the LLM is not currently responding to a message by checking if the call button is visible.
+	 *
+	 * @returns True if a response is not in progress, false otherwise.
+	 */
+	async isResponseNotInProgress(): Promise<boolean> {
+		return await this.callButton.isVisible();
+	}
+
+	async assertResponseNotInProgress(): Promise<void> {
+		await expect(this.callButton).toBeVisible();
+	}
+
+	/**
+	 * Clicks the stop response button to stop the current response.
+	 */
+	async clickStopResponseButton(): Promise<void> {
+		await this.stopResponseButton.click();
+	}
+
+	/**
+	 * Gets the autocomplete suggestion for the current message input.
+	 *
+	 * MUST be in rich text input mode to use this method without errors.
+	 *
+	 * @returns The autocomplete suggestion, or null if no suggestion is available.
+	 */
+	async getAutocompleteSuggestion(): Promise<string | null> {
+		return await this.autocompleteSuggestion.getAttribute('data-suggestion');
+	}
+
+	async assertAutocompleteSuggestionExists(suggestion: string): Promise<void> {
+		await expect(this.autocompleteSuggestion).toHaveText(suggestion);
+	}
+
+	async assertAutocompleteSuggestionDoesNotExist(): Promise<void> {
+		await expect(this.autocompleteSuggestion).not.toBeVisible();
+	}
+
+	// ---------------- //
+	//  Message Helpers //
+	// ---------------- //
+
+	/**
+	 * Submits a message and captures the message IDs from the API request(s).
+	 *
+	 * This method intercepts POST requests to `/api/chat/completions` to extract
+	 * the user message ID and response message ID(s) before responses complete.
+	 * This allows for assertions during streaming responses and early access to IDs.
+	 *
+	 * For single-response scenarios, `responseMessageIds` will contain one ID.
+	 * For multi-response scenarios (split view with multiple models), it will contain
+	 * multiple IDs (one per model/API request).
+	 *
+	 * @param message - The message text to submit.
+	 * @returns A promise that resolves to an object containing the user message ID and array of response message IDs.
+	 */
+	async submitMessageAndCaptureIds(message: string): Promise<SentMessage> {
+		// TODO does this work? Cursor chat name 'Adding identifiers for E2E testing in chat app'
+		// Set up route interception to capture message IDs
+		let userMessageId: string | null = null;
+		const responseMessageIds: string[] = [];
+		let captureComplete = false;
+
+		const routePromise = new Promise<SentMessage>((resolve) => {
+			this.page.route('**/api/chat/completions', async (route) => {
+				const request = route.request();
+				const postData = request.postDataJSON();
+
+				// Extract user message ID from the messages array (should be the same across all requests)
+				const msgId =
+					postData?.messages?.find((msg: { role?: string; id?: string }) => msg.role === 'user')
+						?.id || null;
+
+				// Extract response message ID from the top-level 'id' field
+				const responseId = postData?.id || null;
+
+				if (msgId) {
+					userMessageId = msgId;
+				}
+
+				if (responseId) {
+					responseMessageIds.push(responseId);
+				}
+
+				// Continue with the request
+				await route.continue();
+
+				// Wait a bit to see if more requests come in (for multi-response scenarios)
+				// TODO we could probably skip this if there is only one model selected
+				// Then resolve with what we have
+				if (!captureComplete) {
+					captureComplete = true;
+					// Give a small delay to capture multiple requests in multi-response scenarios
+					setTimeout(() => {
+						if (userMessageId && responseMessageIds.length > 0) {
+							resolve({
+								userMessageId,
+								responseMessageIds: [...responseMessageIds]
+							});
+						}
+					}, 100);
+				}
+			});
+		});
+
+		// Submit the message
+		await this.submitMessage(message);
+
+		// Wait for the route interception to capture the IDs
+		const result = await routePromise;
+
+		if (!result.userMessageId || result.responseMessageIds.length === 0) {
+			throw new Error('Failed to capture message IDs from API request');
+		}
+
+		return result;
+	}
+}

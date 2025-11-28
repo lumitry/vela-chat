@@ -83,7 +83,7 @@ npx playwright test --ui
   - [x] Enable new signups
   - [x] Set default embedding model to Mini-Mediator
   - [x] Set internal and external task models to a Mini-Mediator task model (which would recognize all the various test cases and have deterministic outputs for each of them, e.g. it would know when we're testing a knowledge base and it would return the correct title and tags)
-- [ ] Login Test
+- [x] Login Test
   - [x] Login with valid credentials
   - [x] Login fails with invalid credentials
   - [x] Login fails with invalid email format
@@ -97,7 +97,9 @@ npx playwright test --ui
   - [ ] Create new chat
   - [ ] Send message
   - [ ] Receive response from model
-  - [ ] Verify message appears in chat history
+  - [ ] Verify message appears in chat history (+ after reloads, etc.)
+  - [ ] Verify response is stopped when the stop response button is clicked
+  - [ ] Verify you can't send a bunch of whitespace with no other content
 - [ ] Model CRUD Test - Parameterized for OpenAI & Ollama
   - [ ] Modify a model by changing its...
     - [ ] name

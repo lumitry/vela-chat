@@ -160,11 +160,13 @@ export class AdminSettingsInterfaceTab extends AdminSettingsPage {
 	}
 
 	async getAutocompleteGenInputMaxLength(): Promise<number> {
-		return await this.autocompleteGenInputMaxLengthInput.inputValue();
+		const value = await this.autocompleteGenInputMaxLengthInput.inputValue();
+		return Number(value);
 	}
 
 	async assertAutocompleteGenInputMaxLength(length: number): Promise<void> {
-		await expect(this.autocompleteGenInputMaxLengthInput).toHaveText(length.toString());
+		const value = await this.getAutocompleteGenInputMaxLength();
+		expect(value).toBe(length);
 	}
 
 	//---------------------------------------//
@@ -201,6 +203,19 @@ export class AdminSettingsInterfaceTab extends AdminSettingsPage {
 
 	async assertToolsFunctionCallingPromptTemplate(template: string): Promise<void> {
 		await expect(this.toolsFunctionCallingPromptInput).toHaveText(template);
+	}
+
+	/**
+	 * Asserts that the model option exists in the local or external task model select.
+	 *
+	 * @param provider - The provider of the model.
+	 * @param modelName - The user-facing name of the model. (NOT the model ID!)
+	 */
+	async assertModelOptionExists(provider: 'ollama' | 'openai', modelName: string): Promise<void> {
+		const selectLocator =
+			provider === 'openai' ? this.externalTaskModelSelect : this.localTaskModelSelect;
+		const optionLocator = selectLocator.locator('option', { hasText: modelName });
+		await expect(optionLocator).toHaveText(modelName); // toBeVisible doesn't work because the select dropdown is not open, so we have to do a redundant check with toHaveText
 	}
 
 	// TODO: add more methods?
