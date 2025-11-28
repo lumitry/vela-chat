@@ -115,3 +115,70 @@ export function generateRandomValidUser(): TestUser {
 		role: 'user'
 	};
 }
+
+/**
+ * Sanitize a string to be safe for use in email addresses and user names.
+ * Removes or replaces characters that could cause issues.
+ * @param str The string to sanitize
+ * @returns A sanitized string safe for use in emails/names
+ */
+function sanitizeForUserIdentifier(str: string): string {
+	return str
+		.toLowerCase()
+		.replace(/[^a-z0-9\s-]/g, '') // Remove special characters except spaces and hyphens
+		.replace(/\s+/g, '-') // Replace spaces with hyphens
+		.replace(/-+/g, '-') // Replace multiple hyphens with single hyphen
+		.replace(/^-|-$/g, '') // Remove leading/trailing hyphens
+		.substring(0, 50); // Limit length to prevent overly long identifiers
+}
+
+/**
+ * Generate a user with test context metadata embedded in the name and email.
+ * This helps prevent collisions when tests run in parallel and makes it easier
+ * to identify which test created which user.
+ *
+ * @param testInfo Test info object from Playwright (contains test title, suite title, etc.)
+ * @param customIdentifier Optional custom identifier to append to the user name/email.
+ *                         Useful when a test needs to create multiple users and track them.
+ * @returns A test user with context-aware name and email
+ */
+export function generateUserWithTestContext(
+	testInfo: { title: string; parent?: { title: string } },
+	customIdentifier?: string
+): TestUser {
+	// Build identifier from test context
+	const parts: string[] = [];
+
+	// Add suite title if available (nested describes create a parent chain)
+	let parent = testInfo.parent;
+	const suiteTitles: string[] = [];
+	while (parent) {
+		suiteTitles.unshift(parent.title);
+		parent = parent.parent;
+	}
+	if (suiteTitles.length > 0) {
+		parts.push(...suiteTitles.map(sanitizeForUserIdentifier));
+	}
+
+	// Add test title
+	parts.push(sanitizeForUserIdentifier(testInfo.title));
+
+	// Add custom identifier if provided
+	if (customIdentifier) {
+		parts.push(sanitizeForUserIdentifier(customIdentifier));
+	}
+
+	// Add timestamp for additional uniqueness (in case of exact same test names)
+	const timestamp = Date.now();
+	const baseIdentifier = parts.length > 0 ? parts.join('-') : 'test';
+	const name = `${baseIdentifier}-${timestamp}`;
+	const email = `${name}@test.example.com`;
+	const password = 'Sup3rS3cur3P455w0rd'; // in case we add proper validation later
+
+	return {
+		name,
+		email,
+		password,
+		role: 'user'
+	};
+}
