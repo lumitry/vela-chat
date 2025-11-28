@@ -106,7 +106,12 @@ export abstract class AdminSettingsPage extends AdminPage {
 		await this.databaseTabButton.click();
 	}
 
-	async clickSaveButton(): Promise<void> {
+	/** Saves the admin settings.
+	 *
+	 * Saves all settings on the current admin settings tab.
+	 * Shows a success toast after saving.
+	 */
+	async save(): Promise<void> {
 		await this.saveButton.click();
 	}
 }

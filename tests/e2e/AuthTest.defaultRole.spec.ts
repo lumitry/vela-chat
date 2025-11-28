@@ -43,7 +43,7 @@ test.describe('Sign up - default user role', () => {
 					// Set default user role
 					const adminSettings = new AdminSettingsGeneralTab(adminPage);
 					await adminSettings.setDefaultUserRole(expectedRole);
-					await adminSettings.clickSaveButton();
+					await adminSettings.save();
 					await adminSettings.toast.assertToastIsVisible('success');
 				} finally {
 					await adminContext.close();
@@ -88,7 +88,7 @@ test.describe('Sign up - default user role', () => {
 
 			const cleanupSettings = new AdminSettingsGeneralTab(cleanupPage);
 			await cleanupSettings.setDefaultUserRole('admin');
-			await cleanupSettings.clickSaveButton();
+			await cleanupSettings.save();
 			await cleanupSettings.toast.assertToastIsVisible('success');
 		} catch (error) {
 			// Log but don't fail the test if cleanup fails

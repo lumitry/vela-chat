@@ -96,7 +96,7 @@ export class AdminSettingsConnectionsTab extends AdminSettingsPage {
 			await this.openAIAPIConfigureButton.nth(index ?? 0).click();
 			const modal = new AddConnectionModal(this.page);
 			await modal.setPrefix(endpoint.prefix);
-			await modal.clickSaveButton();
+			await modal.saveAndClose();
 			await modal.waitForHidden();
 		}
 	}
@@ -118,7 +118,7 @@ export class AdminSettingsConnectionsTab extends AdminSettingsPage {
 			await this.ollamaAPIConfigureButton.nth(index ?? 0).click();
 			const modal = new AddConnectionModal(this.page);
 			await modal.setPrefix(endpoint.prefix);
-			await modal.clickSaveButton();
+			await modal.saveAndClose();
 			await modal.waitForHidden();
 		}
 	}

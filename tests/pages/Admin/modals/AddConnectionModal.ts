@@ -25,7 +25,12 @@ export class AddConnectionModal extends BaseModal {
 		await this.prefixInput.fill(prefix);
 	}
 
-	async clickSaveButton(): Promise<void> {
+	/** Saves the connection configuration and closes the modal.
+	 *
+	 * Saves the prefix configuration for the connection.
+	 * The modal will close automatically after saving.
+	 */
+	async saveAndClose(): Promise<void> {
 		await this.saveButton.click();
 	}
 }

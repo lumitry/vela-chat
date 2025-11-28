@@ -42,7 +42,7 @@ test.describe('Sign up (new signups are disabled)', () => {
 			// Disable new user signups
 			const adminSettings = new AdminSettingsGeneralTab(page);
 			await adminSettings.setEnableNewSignUps(false);
-			await adminSettings.clickSaveButton();
+			await adminSettings.save();
 			await adminSettings.toast.assertToastIsVisible('success');
 		} finally {
 			// Close the setup context (but keep the browser open)
@@ -77,7 +77,7 @@ test.describe('Sign up (new signups are disabled)', () => {
 			// Re-enable new user signups
 			const adminSettings = new AdminSettingsGeneralTab(page);
 			await adminSettings.setEnableNewSignUps(true);
-			await adminSettings.clickSaveButton();
+			await adminSettings.save();
 			await adminSettings.toast.assertToastIsVisible('success');
 		} finally {
 			// Close the cleanup context

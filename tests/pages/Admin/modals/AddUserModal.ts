@@ -39,7 +39,12 @@ export class AddUserModal extends BaseModal {
 		await this.csvImportTabButton.click();
 	}
 
-	async clickSaveButton(): Promise<void> {
+	/** Saves the user and closes the modal.
+	 *
+	 * Saves the user configuration (either from the form or CSV import).
+	 * The modal will close automatically after saving.
+	 */
+	async saveAndClose(): Promise<void> {
 		await this.saveButton.click();
 	}
 

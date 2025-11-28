@@ -55,7 +55,7 @@ test('setup test environment via onboarding', async ({ page }) => {
 	const adminSettings = new AdminSettingsGeneralTab(page);
 	await adminSettings.setDefaultUserRole('admin');
 	await adminSettings.setEnableNewSignUps(true);
-	await adminSettings.clickSaveButton();
+	await adminSettings.save();
 	await adminSettings.toast.assertToastIsVisible('success');
 
 	console.log('📝 Setting up model connections...');
@@ -70,7 +70,7 @@ test('setup test environment via onboarding', async ({ page }) => {
 	await adminSettingsConnectionsTab.setOllamaConnection(MINI_MEDIATOR_OLLAMA, 0);
 
 	await adminSettingsConnectionsTab.setEnableDirectConnectionsSwitch(true);
-	await adminSettingsConnectionsTab.clickSaveButton();
+	await adminSettingsConnectionsTab.save();
 	await adminSettingsConnectionsTab.toast.assertToastIsVisible('success');
 
 	// - Set default embedding model to Mini-Mediator
@@ -83,14 +83,14 @@ test('setup test environment via onboarding', async ({ page }) => {
 		url: MINI_MEDIATOR_EMBEDDING_OPENAI.endpoint.url,
 		batchSize: 1 // TODO at some point in the future, we'll need to test different batch sizes with mini-mediator too...
 	});
-	await adminSettingsDocumentsTab.clickSaveButton();
+	await adminSettingsDocumentsTab.save();
 	await adminSettingsDocumentsTab.toast.assertToastIsVisible('success');
 
 	await adminSettingsConnectionsTab.clickInterfaceTabButton();
 	const adminSettingsInterfaceTab = new AdminSettingsInterfaceTab(page);
 	await adminSettingsInterfaceTab.setLocalTaskModel(MINI_MEDIATOR_TASK_OLLAMA);
 	await adminSettingsInterfaceTab.setExternalTaskModel(MINI_MEDIATOR_TASK_OPENAI);
-	await adminSettingsInterfaceTab.clickSaveButton();
+	await adminSettingsInterfaceTab.save();
 	await adminSettingsInterfaceTab.toast.assertToastIsVisible('success');
 
 	console.log('✅ Test environment setup complete!');

@@ -9,12 +9,32 @@
 
 ### Methods
 
-- Assertions: All methods that compare the value of a UI element with an expected value should be named `assert*`.
-- Clickers: All methods that click on a UI element should be named `click*`.
-- Setters: All methods that set the value of a UI element should be named `set*`. (e.g. for text inputs)
-- Selectors: All methods that choose an option from a dropdown should be named `select*`.
-- Uploaders: All methods that upload a file to a UI element should be named `upload*`.
-- Getters: All methods that get the value of a UI element should be named `get*`. The same goes for methods that store the value into a holder variable.
+Page object methods fall into two categories: **low-level operations** and **high-level user actions**.
+
+#### Low-Level Operations
+
+These methods represent direct interactions with UI elements. They should follow verb-based naming:
+
+- **Assertions**: All methods that compare the value of a UI element with an expected value should be named `assert*`.
+- **Clickers**: All methods that perform a simple click on a UI element should be named `click*`. Use this for buttons that don't trigger complex workflows (e.g., `clickTabButton()` for switching tabs).
+- **Setters**: All methods that set the value of a UI element should be named `set*`. (e.g. for text inputs)
+- **Selectors**: All methods that choose an option from a dropdown should be named `select*`.
+- **Uploaders**: All methods that upload a file to a UI element should be named `upload*`.
+- **Getters**: All methods that get the value of a UI element should be named `get*`. The same goes for methods that store the value into a holder variable.
+
+#### High-Level User Actions
+
+These methods represent complete user workflows or actions that have side effects beyond a single element interaction. They should use action-oriented names that describe what the user is doing, not how it's implemented:
+
+- **Form submissions**: Use `save()`, `saveAndReturn()`, `saveAndContinue()`, `saveAndClose()`, `submit()`, etc. These methods may click buttons, but they represent the user's intent to save/submit a form, not just clicking a button.
+- **Navigation actions**: Use `signIn()`, `signUp()`, `navigateTo()`, etc. These represent complete user workflows.
+- **State changes**: Use `switchMode()`, `toggle()`, etc. when the action represents a meaningful state change.
+
+**When to use which?**
+
+- If a method only clicks a single button with no side effects (like closing a modal), use `click*`.
+- If a method represents a user workflow (like saving a form and navigating, or signing in), use an action-oriented name.
+- If you find yourself writing `click*And*` or `click*Then*`, it's probably a high-level action and should be renamed.
 
 ### Variables
 
