@@ -1,6 +1,8 @@
 const { getCache, isInitialized } = require('../utils/cache.cjs');
 const { extractTestIdFromCall, partsToPattern } = require('../utils/testIdExtractor.cjs');
 const { scanAllFiles } = require('../utils/fileScanner.cjs');
+const { extractTestIdsFromSvelteWithLocation } = require('../utils/testIdParser.cjs');
+const { traverse } = require('../utils/astTraverser.cjs');
 const path = require('path');
 
 /**
@@ -45,33 +47,27 @@ module.exports = {
 		const svelteTemplateAST = parserServices?.svelteAST?.html;
 
 		/**
-		 * Recursively find all testId() calls in the AST
+		 * Find all testId() calls in the AST using efficient traversal
+		 * This is used for the script section of Svelte files
 		 */
-		function findTestIdCalls(node) {
-			if (!node) {
+		function findTestIdCalls(rootNode) {
+			if (!rootNode) {
 				return;
 			}
 
-			// Check if this is a CallExpression for testId()
-			const testIdInfo = extractTestIdFromCall(node, context);
-			if (testIdInfo) {
-				const pattern = partsToPattern(testIdInfo.parts);
-				// Store in cache for later checking
-				cache.addSvelteTestId(filename, pattern);
-			}
-
-			// Recursively check children
-			for (const key in node) {
-				if (key === 'parent' || key === 'range') {
-					continue;
+			// Use efficient AST traversal instead of naive recursion
+			traverse(rootNode, (node) => {
+				// Only check CallExpression nodes
+				if (node.type === 'CallExpression') {
+					const testIdInfo = extractTestIdFromCall(node, context);
+					if (testIdInfo) {
+						const pattern = partsToPattern(testIdInfo.parts);
+						// Store in cache for later checking
+						cache.addSvelteTestId(filename, pattern);
+					}
 				}
-				const child = node[key];
-				if (Array.isArray(child)) {
-					child.forEach(findTestIdCalls);
-				} else if (child && typeof child === 'object') {
-					findTestIdCalls(child);
-				}
-			}
+				// Continue traversing (don't return false)
+			});
 		}
 
 		/**
@@ -80,96 +76,15 @@ module.exports = {
 		 */
 		function extractFromSvelteTemplate() {
 			const text = sourceCode.getText();
-			const lines = text.split('\n');
 			
-			// Find all data-testid={testId(...)} patterns
-			// Match: data-testid={testId('Part1', 'Part2', ...)}
-			const dataTestIdRegex = /data-testid\s*=\s*\{testId\s*\(([^}]+)\)\}/g;
-			let match;
+			// Use centralized extraction utility with location information
+			const extracted = extractTestIdsFromSvelteWithLocation(text, { includeProps: true });
 			
-			while ((match = dataTestIdRegex.exec(text)) !== null) {
-				const matchIndex = match.index;
-				// Calculate line and column from the match position
-				let line = 1;
-				let column = 0;
-				let currentIndex = 0;
-				
-				for (let i = 0; i < lines.length; i++) {
-					const lineLength = lines[i].length + 1; // +1 for newline
-					if (currentIndex + lineLength > matchIndex) {
-						line = i + 1;
-						column = matchIndex - currentIndex;
-						break;
-					}
-					currentIndex += lineLength;
-				}
-				
-				const argsStr = match[1];
-				// Parse the arguments - they're string literals separated by commas
-				// Match: 'Part1', 'Part2', model.id (variables)
-				const argRegex = /['"]([^'"]+)['"]|(\w+(?:\.\w+)*)/g;
-				const parts = [];
-				let argMatch;
-				
-				while ((argMatch = argRegex.exec(argsStr)) !== null) {
-					if (argMatch[1]) {
-						// String literal
-						parts.push(argMatch[1]);
-					} else if (argMatch[2]) {
-						// Variable - treat as wildcard
-						parts.push('*');
-					}
-				}
-				
-				if (parts.length > 0) {
-					const pattern = partsToPattern(parts);
-					cache.addSvelteTestId(filename, pattern, { line, column });
-				}
-			}
-			
-			// Also find testId={testId(...)} patterns (component props)
-			// Match: testId={testId('Part1', 'Part2', ...)}
-			// But exclude data-testid (already handled above)
-			const propTestIdRegex = /(?:^|[^a-z-])testId\s*=\s*\{testId\s*\(([^}]+)\)\}/g;
-			match = null;
-			
-			while ((match = propTestIdRegex.exec(text)) !== null) {
-				const matchIndex = match.index;
-				// Calculate line and column from the match position
-				let line = 1;
-				let column = 0;
-				let currentIndex = 0;
-				
-				for (let i = 0; i < lines.length; i++) {
-					const lineLength = lines[i].length + 1; // +1 for newline
-					if (currentIndex + lineLength > matchIndex) {
-						line = i + 1;
-						column = matchIndex - currentIndex;
-						break;
-					}
-					currentIndex += lineLength;
-				}
-				
-				const argsStr = match[1];
-				// Parse the arguments
-				const argRegex = /['"]([^'"]+)['"]|(\w+(?:\.\w+)*)/g;
-				const parts = [];
-				let argMatch;
-				
-				while ((argMatch = argRegex.exec(argsStr)) !== null) {
-					if (argMatch[1]) {
-						// String literal
-						parts.push(argMatch[1]);
-					} else if (argMatch[2]) {
-						// Variable - treat as wildcard
-						parts.push('*');
-					}
-				}
-				
-				if (parts.length > 0) {
-					const pattern = partsToPattern(parts);
-					// Store as prop testId (component prop, not direct data-testid)
-					cache.addSveltePropTestId(filename, pattern, { line, column });
+			for (const { pattern, type, location } of extracted) {
+				if (type === 'data-testid') {
+					cache.addSvelteTestId(filename, pattern, location);
+				} else if (type === 'prop') {
+					cache.addSveltePropTestId(filename, pattern, location);
 				}
 			}
 		}

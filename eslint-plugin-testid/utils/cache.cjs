@@ -32,6 +32,9 @@ class TestIdCache {
 
 	/**
 	 * Add a testId pattern found in a .svelte file (as data-testid attribute)
+	 * @param {string} filePath - Normalized file path
+	 * @param {string} pattern - TestId pattern (e.g., "Chat_InfoModal_Title")
+	 * @param {Object|null} location - Location info with {line, column, node?} or null
 	 */
 	addSvelteTestId(filePath, pattern, location = null) {
 		if (!this.svelteTestIds.has(filePath)) {
@@ -48,6 +51,9 @@ class TestIdCache {
 
 	/**
 	 * Add a testId pattern found as a prop in a .svelte file (e.g., testId={testId(...)})
+	 * @param {string} filePath - Normalized file path
+	 * @param {string} pattern - TestId pattern (e.g., "Chat_InfoModal_Title")
+	 * @param {Object|null} location - Location info with {line, column, node?} or null
 	 */
 	addSveltePropTestId(filePath, pattern, location = null) {
 		if (!this.sveltePropTestIds.has(filePath)) {
@@ -64,6 +70,9 @@ class TestIdCache {
 
 	/**
 	 * Add a testId pattern found in a page object file
+	 * @param {string} filePath - Normalized file path
+	 * @param {string} pattern - TestId pattern (e.g., "Chat_InfoModal_Title")
+	 * @param {Object|null} location - Location info with {line, column, node?} or null
 	 */
 	addPageObjectTestId(filePath, pattern, location = null) {
 		if (!this.pageObjectTestIds.has(filePath)) {
@@ -106,6 +115,8 @@ class TestIdCache {
 
 	/**
 	 * Check if a pattern is used in any page object file
+	 * @param {string} pattern - TestId pattern to check
+	 * @returns {boolean} - True if pattern is used in any page object
 	 */
 	isUsedInPageObjects(pattern) {
 		const { matchesWildcardPattern } = require('./testIdExtractor.cjs');
@@ -139,6 +150,8 @@ class TestIdCache {
 
 	/**
 	 * Check if a pattern is defined in any .svelte file (either as data-testid or as a prop)
+	 * @param {string} pattern - TestId pattern to check
+	 * @returns {boolean} - True if pattern is defined in any .svelte file
 	 */
 	isDefinedInSvelte(pattern) {
 		const { matchesWildcardPattern } = require('./testIdExtractor.cjs');

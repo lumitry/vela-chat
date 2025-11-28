@@ -1,6 +1,7 @@
 const { getCache, isInitialized } = require('../utils/cache.cjs');
 const { extractTestIdFromCall, partsToPattern } = require('../utils/testIdExtractor.cjs');
 const { scanAllFiles } = require('../utils/fileScanner.cjs');
+const { traverse } = require('../utils/astTraverser.cjs');
 const path = require('path');
 
 /**
@@ -43,33 +44,22 @@ module.exports = {
 		}
 
 		/**
-		 * Recursively find all testId() and getPageTestId() calls in the AST
+		 * Find all testId() and getPageTestId() calls in the AST using efficient traversal
 		 */
-		function findTestIdCalls(node) {
-			if (!node) {
-				return;
-			}
-
-			// Check if this is a CallExpression for testId() or getPageTestId() or getPageLocator()
-			const testIdInfo = extractTestIdFromCall(node, context);
-			if (testIdInfo) {
-				const pattern = partsToPattern(testIdInfo.parts);
-				// Store the AST node so we can report at the correct location
-				cache.addPageObjectTestId(filename, pattern, { node });
-			}
-
-			// Recursively check children
-			for (const key in node) {
-				if (key === 'parent' || key === 'range') {
-					continue;
+		function findTestIdCalls(rootNode) {
+			// Use efficient AST traversal instead of naive recursion
+			traverse(rootNode, (node) => {
+				// Only check CallExpression nodes
+				if (node.type === 'CallExpression') {
+					const testIdInfo = extractTestIdFromCall(node, context);
+					if (testIdInfo) {
+						const pattern = partsToPattern(testIdInfo.parts);
+						// Store the AST node so we can report at the correct location
+						cache.addPageObjectTestId(filename, pattern, { node });
+					}
 				}
-				const child = node[key];
-				if (Array.isArray(child)) {
-					child.forEach(findTestIdCalls);
-				} else if (child && typeof child === 'object') {
-					findTestIdCalls(child);
-				}
-			}
+				// Continue traversing (don't return false)
+			});
 		}
 
 		return {

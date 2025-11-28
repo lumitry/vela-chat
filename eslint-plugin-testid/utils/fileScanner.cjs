@@ -1,7 +1,15 @@
 const fs = require('fs');
 const path = require('path');
 const { getCache, markInitialized } = require('./cache.cjs');
-const { extractTestIdFromCall, partsToPattern } = require('./testIdExtractor.cjs');
+const { partsToPattern } = require('./testIdExtractor.cjs');
+const { extractTestIdsFromSvelteContent } = require('./testIdParser.cjs');
+const {
+	TESTID_CALL_REGEX,
+	GET_PAGE_TESTID_DEF_REGEX,
+	GET_PAGE_CALL_REGEX,
+	ARGUMENT_EXTRACTOR_REGEX,
+	STRING_LITERAL_REGEX
+} = require('./regexPatterns.cjs');
 
 /**
  * Normalize file paths to ensure consistent matching
@@ -12,6 +20,7 @@ function normalizePath(filePath) {
 
 /**
  * Scans all relevant files to build a complete cache of testIds
+ * @param {string} workspaceRoot - Root directory of the workspace
  */
 function scanAllFiles(workspaceRoot) {
 	const cache = getCache();
@@ -37,6 +46,10 @@ function scanAllFiles(workspaceRoot) {
 
 /**
  * Recursively find files matching the extension in the given directory
+ * @param {string} root - Root directory
+ * @param {string} dir - Subdirectory to search in
+ * @param {string} ext - File extension to match (e.g., '.svelte', '.ts')
+ * @returns {string[]} - Array of file paths
  */
 function findFiles(root, dir, ext) {
 	const files = [];
@@ -70,76 +83,36 @@ function findFiles(root, dir, ext) {
 
 /**
  * Extract testIds from a .svelte file using regex
+ * @param {string} filePath - Path to the .svelte file
  */
 function extractTestIdsFromSvelteFile(filePath) {
 	try {
 		const content = fs.readFileSync(filePath, 'utf8');
 		const cache = getCache();
+		const normalizedPath = normalizePath(filePath);
 		
-		// Find all data-testid={testId(...)} patterns
-		const dataTestIdRegex = /data-testid\s*=\s*\{testId\s*\(([^}]+)\)\}/g;
-		let match;
+		// Use centralized extraction utility
+		const extracted = extractTestIdsFromSvelteContent(content, { includeProps: true });
 		
-		while ((match = dataTestIdRegex.exec(content)) !== null) {
-			const argsStr = match[1];
-			// Parse the arguments
-			const argRegex = /['"]([^'"]+)['"]|(\w+(?:\.\w+)*)/g;
-			const parts = [];
-			let argMatch;
-			
-			while ((argMatch = argRegex.exec(argsStr)) !== null) {
-				if (argMatch[1]) {
-					// String literal
-					parts.push(argMatch[1]);
-				} else if (argMatch[2]) {
-					// Variable - treat as wildcard
-					parts.push('*');
-				}
-			}
-			
-			if (parts.length > 0) {
-				const pattern = partsToPattern(parts);
+		for (const { pattern, type } of extracted) {
+			if (type === 'data-testid') {
 				// File scanner doesn't have location info, rules will add it when processing files
-				cache.addSvelteTestId(normalizePath(filePath), pattern, null);
-			}
-		}
-		
-		// Also find testId={testId(...)} patterns (component props)
-		// Match: testId={testId('Part1', 'Part2', ...)}
-		// But exclude data-testid (already handled above)
-		const propTestIdRegex = /(?:^|[^a-z-])testId\s*=\s*\{testId\s*\(([^}]+)\)\}/g;
-		match = null;
-		
-		while ((match = propTestIdRegex.exec(content)) !== null) {
-			const argsStr = match[1];
-			// Parse the arguments
-			const argRegex = /['"]([^'"]+)['"]|(\w+(?:\.\w+)*)/g;
-			const parts = [];
-			let argMatch;
-			
-			while ((argMatch = argRegex.exec(argsStr)) !== null) {
-				if (argMatch[1]) {
-					// String literal
-					parts.push(argMatch[1]);
-				} else if (argMatch[2]) {
-					// Variable - treat as wildcard
-					parts.push('*');
-				}
-			}
-			
-			if (parts.length > 0) {
-				const pattern = partsToPattern(parts);
-				// File scanner doesn't have location info, rules will add it when processing files
-				cache.addSveltePropTestId(normalizePath(filePath), pattern, null);
+				cache.addSvelteTestId(normalizedPath, pattern, null);
+			} else if (type === 'prop') {
+				cache.addSveltePropTestId(normalizedPath, pattern, null);
 			}
 		}
 	} catch (error) {
 		// Silently ignore errors (file might not exist, permissions, etc.)
+		// This is intentional - we don't want to break ESLint if a file can't be read
+		// In the future, could add optional debug logging here if needed
 	}
 }
 
 /**
  * Extract testIds from a page object file using regex
+ * Handles both direct testId() calls and getPageTestId()/getPageLocator() calls
+ * @param {string} filePath - Path to the page object file
  */
 function extractTestIdsFromPageObjectFile(filePath) {
 	try {
@@ -147,10 +120,10 @@ function extractTestIdsFromPageObjectFile(filePath) {
 		const cache = getCache();
 		
 		// Find testId(...) calls, but skip ones inside method definitions
-		const testIdRegex = /testId\s*\(([^)]+)\)/g;
 		let match;
 		
-		while ((match = testIdRegex.exec(content)) !== null) {
+		TESTID_CALL_REGEX.lastIndex = 0;
+		while ((match = TESTID_CALL_REGEX.exec(content)) !== null) {
 			const argsStr = match[1];
 			
 			// Skip if this has rest parameters (...args) or spread operator
@@ -170,12 +143,13 @@ function extractTestIdsFromPageObjectFile(filePath) {
 				continue;
 			}
 			
-			const argRegex = /['"]([^'"]+)['"]|(\w+(?:\.\w+)*)/g;
+			// Use centralized argument parser
 			const parts = [];
-			let argMatch;
 			let hasStringLiteral = false;
 			
-			while ((argMatch = argRegex.exec(argsStr)) !== null) {
+			ARGUMENT_EXTRACTOR_REGEX.lastIndex = 0;
+			let argMatch;
+			while ((argMatch = ARGUMENT_EXTRACTOR_REGEX.exec(argsStr)) !== null) {
 				if (argMatch[1]) {
 					parts.push(argMatch[1]);
 					hasStringLiteral = true;
@@ -197,19 +171,19 @@ function extractTestIdsFromPageObjectFile(filePath) {
 		// These are trickier because we need to find the prefix from the class definition
 		// Match: getPageTestId = (...args) => testId('Chat', ...args)
 		// or: getPageTestId = (...args) => { return testId('Chat', ...args); }
-		const getPageTestIdRegex = /getPageTestId\s*=\s*\([^)]*\)\s*=>\s*(?:\{[^}]*return\s+)?testId\s*\(([^)]+)\)/g;
 		let pageMatch;
 		
-		while ((pageMatch = getPageTestIdRegex.exec(content)) !== null) {
+		GET_PAGE_TESTID_DEF_REGEX.lastIndex = 0;
+		while ((pageMatch = GET_PAGE_TESTID_DEF_REGEX.exec(content)) !== null) {
 			const prefixStr = pageMatch[1];
 			if (!prefixStr) continue;
 			
 			// Extract only string literals from the prefix (ignore ...args)
-			const prefixArgRegex = /['"]([^'"]+)['"]/g;
 			const prefixParts = [];
+			STRING_LITERAL_REGEX.lastIndex = 0;
 			let prefixArgMatch;
 			
-			while ((prefixArgMatch = prefixArgRegex.exec(prefixStr)) !== null) {
+			while ((prefixArgMatch = STRING_LITERAL_REGEX.exec(prefixStr)) !== null) {
 				prefixParts.push(prefixArgMatch[1]);
 			}
 			
@@ -220,13 +194,12 @@ function extractTestIdsFromPageObjectFile(filePath) {
 			// Now find all calls to getPageTestId or getPageLocator with this prefix
 			// Find calls like: this.getPageLocator('Navbar', 'ControlsButton')
 			// But skip: this.getPageTestId(...args) inside method definitions
-			const callRegex = /(?:this\.)?(?:getPageTestId|getPageLocator)\s*\(([^)]+)\)/g;
 			let callMatch;
 			
 			// Reset regex to search from beginning
-			callRegex.lastIndex = 0;
+			GET_PAGE_CALL_REGEX.lastIndex = 0;
 			
-			while ((callMatch = callRegex.exec(content)) !== null) {
+			while ((callMatch = GET_PAGE_CALL_REGEX.exec(content)) !== null) {
 				const argsStr = callMatch[1];
 				
 				// Skip if this has rest parameters (...args) or spread operator
@@ -247,12 +220,12 @@ function extractTestIdsFromPageObjectFile(filePath) {
 				}
 				
 				// Extract arguments - only string literals, treat other identifiers as wildcards
-				const argRegex = /['"]([^'"]+)['"]|(\w+(?:\.\w+)*)/g;
 				const parts = [...prefixParts];
-				let argMatch;
 				let hasStringLiteral = false;
 				
-				while ((argMatch = argRegex.exec(argsStr)) !== null) {
+				ARGUMENT_EXTRACTOR_REGEX.lastIndex = 0;
+				let argMatch;
+				while ((argMatch = ARGUMENT_EXTRACTOR_REGEX.exec(argsStr)) !== null) {
 					if (argMatch[1]) {
 						parts.push(argMatch[1]);
 						hasStringLiteral = true;
@@ -271,7 +244,8 @@ function extractTestIdsFromPageObjectFile(filePath) {
 			}
 		}
 	} catch (error) {
-		// Silently ignore errors
+		// Silently ignore errors (file might not exist, permissions, etc.)
+		// This is intentional - we don't want to break ESLint if a file can't be read
 	}
 }
 
