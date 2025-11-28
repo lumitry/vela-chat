@@ -17,6 +17,10 @@ export abstract class BasePage {
 	private userMenuButton: ReturnType<Page['getByTestId']>;
 	private accountPendingOverlay: ReturnType<Page['getByTestId']>;
 	private accountPendingOverlayAdminDetailsText: ReturnType<Page['getByTestId']>;
+	private newChatButton: ReturnType<Page['getByTestId']>;
+	private sidebarToggleButtonWhenClosed: ReturnType<Page['getByTestId']>;
+	private sidebarToggleButtonWhenOpen: ReturnType<Page['getByTestId']>;
+	private sidebar: ReturnType<Page['getByTestId']>;
 
 	constructor(protected page: Page) {
 		const toastContainer = this.page.locator('section[aria-label="Notifications alt+T"]');
@@ -29,6 +33,10 @@ export abstract class BasePage {
 		this.accountPendingOverlayAdminDetailsText = this.page.getByTestId(
 			testId('AccountPending', 'AdminDetailsText')
 		);
+		this.newChatButton = this.page.getByTestId(testId('Sidebar', 'NewChatButton'));
+		this.sidebarToggleButtonWhenClosed = this.page.getByTestId(testId('SidebarToggleButton'));
+		this.sidebarToggleButtonWhenOpen = this.page.getByTestId(testId('Sidebar', 'ToggleButton'));
+		this.sidebar = this.page.getByTestId(testId('Sidebar'));
 	}
 
 	async verifyPageLoaded(): Promise<void> {
@@ -98,5 +106,36 @@ export abstract class BasePage {
 	 */
 	async assertAccountPendingOverlayIsNotVisible(): Promise<void> {
 		await expect(this.accountPendingOverlay).not.toBeVisible();
+	}
+
+	/**
+	 * Click the sidebar toggle button.
+	 */
+	async toggleOpenSidebar(): Promise<void> {
+		if (await this.sidebar.isVisible()) {
+			await this.sidebarToggleButtonWhenOpen.click();
+		} else {
+			await this.sidebarToggleButtonWhenClosed.click();
+		}
+	}
+
+	/**
+	 * Open the sidebar if it is closed.
+	 */
+	async openSidebarIfClosed(): Promise<void> {
+		if (await this.sidebar.isVisible()) {
+			return;
+		}
+		await this.toggleOpenSidebar();
+	}
+
+	/**
+	 * Click the new chat button, opening the sidebar if it is closed.
+	 *
+	 * Takes you to the home page where you can start a new chat.
+	 */
+	async clickNewChatButton(): Promise<void> {
+		await this.openSidebarIfClosed(); // you can't click the new chat button if the sidebar is closed, and i heavily doubt anyone would try calling this method intentionally knowing that the sidebar is closed and hoping for it to fail, so we might as well not require them to call openSidebarIfClosed() every time they want to call this method.
+		await this.newChatButton.click();
 	}
 }

@@ -3,6 +3,7 @@
 	import { WEBUI_NAME, showSidebar, functions } from '$lib/stores';
 	import MenuLines from '$lib/components/icons/MenuLines.svelte';
 	import { page } from '$app/stores';
+	import { testId } from '$lib/utils/testId';
 
 	const i18n = getContext('i18n');
 
@@ -30,6 +31,7 @@
 						showSidebar.set(!$showSidebar);
 					}}
 					aria-label="Toggle Sidebar"
+					data-testid={testId('SidebarToggleButton')}
 				>
 					<div class=" m-auto self-center">
 						<MenuLines />

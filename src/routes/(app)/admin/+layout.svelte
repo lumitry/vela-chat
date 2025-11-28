@@ -41,6 +41,7 @@
 							showSidebar.set(!$showSidebar);
 						}}
 						aria-label="Toggle Sidebar"
+						data-testid={testId('SidebarToggleButton')}
 					>
 						<div class=" m-auto self-center">
 							<MenuLines />

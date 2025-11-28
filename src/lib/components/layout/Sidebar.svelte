@@ -68,6 +68,7 @@
 	import { getChannels, createNewChannel } from '$lib/apis/channels';
 	import ChannelModal from './Sidebar/ChannelModal.svelte';
 	import ChannelItem from './Sidebar/ChannelItem.svelte';
+	import { testId } from '$lib/utils/testId';
 	import PencilSquare from '../icons/PencilSquare.svelte';
 	import Home from '../icons/Home.svelte';
 
@@ -805,6 +806,7 @@
 		: 'transition-width duration-200 ease-in-out'}  shrink-0 bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-200 text-sm fixed z-50 top-0 left-0 overflow-x-hidden
         "
 	data-state={$showSidebar}
+	data-testid={testId('Sidebar')}
 >
 	<div
 		class="py-2 my-auto flex flex-col justify-between h-screen max-h-[100dvh] w-[260px] overflow-x-hidden z-50 {$showSidebar
@@ -817,6 +819,7 @@
 				on:click={() => {
 					showSidebar.set(!$showSidebar);
 				}}
+				data-testid={testId('Sidebar', 'ToggleButton')}
 			>
 				<div class=" m-auto self-center">
 					<svg
@@ -859,6 +862,7 @@
 						}, 0);
 					}
 				}}
+				data-testid={testId('Sidebar', 'NewChatButton')}
 			>
 				<div class="flex items-center">
 					<div class="self-center mx-1.5">
