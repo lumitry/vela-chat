@@ -35,11 +35,7 @@
 	import { generateAutoCompletion } from '$lib/apis';
 	import { deleteFileById } from '$lib/apis/files';
 
-import {
-	WEBUI_BASE_URL,
-	WEBUI_API_BASE_URL,
-	PASTED_TEXT_CHARACTER_LIMIT
-} from '$lib/constants';
+	import { WEBUI_BASE_URL, WEBUI_API_BASE_URL, PASTED_TEXT_CHARACTER_LIMIT } from '$lib/constants';
 
 	import InputMenu from './MessageInput/InputMenu.svelte';
 	import VoiceRecording from './MessageInput/VoiceRecording.svelte';
@@ -73,6 +69,7 @@ import {
 		loadReasoningState,
 		type ReasoningState
 	} from '$lib/utils/reasoning';
+	import { testId } from '$lib/utils/testId';
 
 	const i18n = getContext('i18n');
 
@@ -907,6 +904,7 @@ import {
 										<div
 											class="scrollbar-hidden text-left bg-transparent dark:text-gray-100 outline-hidden w-full pt-3 px-1 resize-none h-fit max-h-80 overflow-auto"
 											id="chat-input-container"
+											data-testid={testId('Chat', 'MessageInput', 'RichTextInput')}
 										>
 											<RichTextInput
 												bind:this={chatInputElement}
@@ -1139,6 +1137,7 @@ import {
 									{:else}
 										<textarea
 											id="chat-input"
+											data-testid={testId('Chat', 'MessageInput', 'PlainTextInput')}
 											dir="auto"
 											bind:this={chatInputElement}
 											class="scrollbar-hidden bg-transparent dark:text-gray-100 outline-hidden w-full pt-3 px-1 resize-none"
@@ -2002,6 +2001,7 @@ import {
 														on:click={() => {
 															stopResponse();
 														}}
+														data-testid={testId('Chat', 'MessageInput', 'StopResponseButton')}
 													>
 														<svg
 															xmlns="http://www.w3.org/2000/svg"
@@ -2075,6 +2075,7 @@ import {
 															}
 														}}
 														aria-label="Call"
+														data-testid={testId('Chat', 'MessageInput', 'CallButton')}
 													>
 														<Headphone className="size-5" />
 													</button>
@@ -2090,6 +2091,7 @@ import {
 															: 'text-white bg-gray-200 dark:text-gray-900 dark:bg-gray-700 disabled'} transition rounded-full p-1.5 self-center"
 														type="submit"
 														disabled={prompt === '' && files.length === 0}
+														data-testid={testId('Chat', 'MessageInput', 'SendMessageButton')}
 													>
 														<svg
 															xmlns="http://www.w3.org/2000/svg"

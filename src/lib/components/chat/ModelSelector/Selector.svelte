@@ -29,6 +29,7 @@
 	import Switch from '$lib/components/common/Switch.svelte';
 	import ChatBubbleOval from '$lib/components/icons/ChatBubbleOval.svelte';
 	import { goto } from '$app/navigation';
+	import { testId } from '$lib/utils/testId';
 
 	const i18n = getContext('i18n');
 	const dispatch = createEventDispatcher();
@@ -341,9 +342,11 @@
 		class="relative w-full font-primary"
 		aria-label={placeholder}
 		id="model-selector-{id}-button"
+		data-testid={testId('Chat', 'ModelSelector', 'Selector', 'Trigger')}
 	>
 		<div
 			class="flex w-full text-left px-0.5 outline-hidden bg-transparent truncate {triggerClassName} justify-between font-medium placeholder-gray-400 focus:outline-hidden"
+			data-testid={testId('Chat', 'ModelSelector', 'Selector', 'Trigger', 'CurrentModelName')}
 		>
 			{#if selectedModel}
 				{selectedModel.label}
@@ -495,6 +498,7 @@
 
 							show = false;
 						}}
+						data-testid={testId('Chat', 'ModelSelector', 'ModelItem', item.value)}
 					>
 						<div class="flex flex-col">
 							{#if $mobile && (item?.model?.tags ?? []).length > 0}
@@ -522,10 +526,14 @@
 													src={imageSrc}
 													alt="Model"
 													class="rounded-full size-5 flex items-center mr-2"
+													data-testid={testId('Chat', 'ModelSelector', 'ModelImage', item.value)}
 												/>
 
 												<div class="flex items-center line-clamp-1">
-													<div class="line-clamp-1">
+													<div
+														class="line-clamp-1"
+														data-testid={testId('Chat', 'ModelSelector', 'ModelName', item.value)}
+													>
 														{item.label}
 													</div>
 
@@ -545,7 +553,12 @@
 															>
 																<span
 																	class=" text-xs font-medium text-gray-600 dark:text-gray-400 line-clamp-1"
-																	>{item.model.ollama?.details?.parameter_size ?? ''}</span
+																	data-testid={testId(
+																		'Chat',
+																		'ModelSelector',
+																		'ModelParameterSize',
+																		item.value
+																	)}>{item.model.ollama?.details?.parameter_size ?? ''}</span
 																>
 															</Tooltip>
 														</div>

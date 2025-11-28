@@ -27,6 +27,7 @@
 		removeDetails,
 		removeAllDetails
 	} from '$lib/utils';
+	import { testId } from '$lib/utils/testId';
 
 	import Name from './Name.svelte';
 	import ProfileImage from './ProfileImage.svelte';
@@ -557,6 +558,7 @@
 	<div
 		class=" flex w-full message-{message.id}"
 		id="message-{message.id}"
+		data-testid={testId('Chat', 'Message', 'Assistant', message.id)}
 		dir={$settings.chatDirection}
 	>
 		<div class={`shrink-0 ltr:mr-3 rtl:ml-3`}>
@@ -570,7 +572,10 @@
 		<div class="flex-auto w-0 pl-1">
 			<Name>
 				<Tooltip content={model?.id ?? message.model} placement="top-start">
-					<span class="line-clamp-1 text-black dark:text-white">
+					<span
+						class="line-clamp-1 text-black dark:text-white"
+						data-testid={testId('Chat', 'Message', 'Response', 'ModelName', message.id)}
+					>
 						{model?.name ?? message.model}
 					</span>
 				</Tooltip>

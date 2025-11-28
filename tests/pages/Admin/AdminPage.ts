@@ -23,6 +23,15 @@ export abstract class AdminPage extends BasePage {
 		await this.usersPageButton.click();
 	}
 
+	/**
+	 * Takes you to the admin panel - evaluations page.
+	 *
+	 * NOT the admin settings - evaluations tab! Those are two separate things. Very distinct from one another. Related, but separate.
+	 *
+	 * URL: /admin/evaluations
+	 *
+	 * PageObject: AdminEvaluationsPage
+	 */
 	async clickEvaluationsPageButton(): Promise<void> {
 		await this.evaluationsPageButton.click();
 	}

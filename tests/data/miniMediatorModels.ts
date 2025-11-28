@@ -79,3 +79,15 @@ export const MINI_MEDIATOR_TASK_OLLAMA: MiniMediatorModel =
 
 export const MINI_MEDIATOR_TASK_OPENAI: MiniMediatorModel =
 	MiniMediatorModel.buildFromIdAndEndpoint('mini-mediator:task', MINI_MEDIATOR_OPENAI);
+
+/**
+ * A mini-mediator model that we can throw around and beat up and steal its lunch money. NEVER assert that this has a certain bit of config unless you explicitly set it to that, since this is a prime candidate for having its config changed by other tests!
+ */
+export const MINI_MEDIATOR_ANONYMOUS_OLLAMA: MiniMediatorModel =
+	MiniMediatorModel.buildFromIdAndEndpoint('mini-mediator:anonymous', MINI_MEDIATOR_OLLAMA);
+
+/**
+ * A mini-mediator model that we can throw around and beat up and steal its lunch money. NEVER assert that this has a certain bit of config unless you explicitly set it to that, since this is a prime candidate for having its config changed by other tests!
+ */
+export const MINI_MEDIATOR_ANONYMOUS_OPENAI: MiniMediatorModel =
+	MiniMediatorModel.buildFromIdAndEndpoint('mini-mediator:anonymous', MINI_MEDIATOR_OPENAI);

@@ -461,16 +461,19 @@
 									class="hidden md:flex flex-col items-center justify-center text-center px-2 pointer-events-auto cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-850 rounded-lg transition-colors absolute"
 									on:click={handleChatTitleClick}
 									aria-label="Navigate to chat location in sidebar"
+									data-testid={testId('Chat', 'Navbar', 'ChatTitle', 'Button')}
 								>
 									{#if currentFolderName}
 										<div
 											class="text-xs text-gray-500 dark:text-gray-400 truncate whitespace-nowrap"
+											data-testid={testId('Chat', 'Navbar', 'ChatTitle', 'FolderName')}
 										>
 											{currentFolderName}
 										</div>
 									{/if}
 									<div
 										class="text-sm font-medium text-gray-700 dark:text-gray-200 truncate whitespace-nowrap"
+										data-testid={testId('Chat', 'Navbar', 'ChatTitle', 'Title')}
 									>
 										{currentChatDetails.title || $i18n.t('Untitled Chat')}
 									</div>
@@ -496,6 +499,7 @@
 							<button
 								class="flex cursor-pointer px-2 py-2 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-850 transition"
 								id="chat-context-menu-button"
+								data-testid={testId('Chat', 'Navbar', 'ChatContextMenuButton')}
 							>
 								<div class=" m-auto self-center">
 									<svg
@@ -523,6 +527,7 @@
 								class="flex cursor-pointer px-2 py-2 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-850 transition"
 								on:click={openChatInfo}
 								aria-label="Chat Info"
+								data-testid={testId('Chat', 'Navbar', 'ChatInfoButton')}
 							>
 								<div class=" m-auto self-center">
 									<Info className=" size-5" strokeWidth="1.5" />
@@ -538,6 +543,7 @@
 								await showControls.set(!$showControls);
 							}}
 							aria-label="Controls"
+							data-testid={testId('Chat', 'Navbar', 'ControlsButton')}
 						>
 							<div class=" m-auto self-center">
 								<AdjustmentsHorizontal className=" size-5" strokeWidth="0.5" />
