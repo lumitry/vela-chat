@@ -103,7 +103,7 @@ npx playwright test --ui
 - [ ] Model CRUD Test - Parameterized for OpenAI & Ollama
   - [ ] Modify a model by changing its...
     - [x] name
-    - [ ] image
+    - [x] image
     - [x] description
     - [ ] tags
   - [ ] Hide a model

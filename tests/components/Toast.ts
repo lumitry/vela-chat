@@ -49,12 +49,12 @@ export class Toast {
 	}
 
 	/**
-	 * Wait for all toasts of the given type to disappear.
+	 * Wait up to 10 seconds for all toasts of the given type to disappear.
 	 * @param type - The type of toast to wait for the disappearance of.
 	 */
 	async waitForToastToDisappear(type: 'error' | 'success' | 'info' | 'warning'): Promise<void> {
 		const toasts = this.toastContainer.locator(`li[data-type="${type}"]`);
-		await expect(toasts).toHaveCount(0, { timeout: 1000 });
+		await expect(toasts).toHaveCount(0, { timeout: 10_000 });
 	}
 
 	// TODO add methods to get the nth toast, assert the nth toast, etc.

@@ -5,6 +5,8 @@ import { AdminSettingsModelsTab } from '../pages/Admin/AdminSettingsModelsTab';
 import {
 	MINI_MEDIATOR_MODELS_CRUD_DESCRIPTION_OLLAMA,
 	MINI_MEDIATOR_MODELS_CRUD_DESCRIPTION_OPENAI,
+	MINI_MEDIATOR_MODELS_CRUD_IMAGE_OLLAMA,
+	MINI_MEDIATOR_MODELS_CRUD_IMAGE_OPENAI,
 	MINI_MEDIATOR_MODELS_CRUD_RENAME_OLLAMA,
 	MINI_MEDIATOR_MODELS_CRUD_RENAME_OPENAI
 } from '../data/miniMediatorModels';
@@ -15,6 +17,16 @@ import { ChatPage } from '../pages/ChatPage';
 import { ChatInfoModal } from '../pages/modals/ChatInfoModal';
 import { generateRandomString } from '../data/random';
 import { CHANGE_MODEL_COMMAND } from '../data/commandPalette';
+import { DEFAULT_MODEL_IMAGE, FRONTEND_BASE_URL } from '../data/constants';
+import { readFileSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+import { resizeImageTo250x250 } from '../utils/imageResize';
+import { WorkspaceMetricsPage } from '../pages/workspace/WorkspaceMetricsPage';
+import { WorkspaceModelsPage } from '../pages/workspace/WorkspaceModelsPage';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 ['openai', 'ollama'].forEach((provider) => {
 	test.describe(`Admin Models CRUD Test - ${provider}`, () => {
@@ -140,6 +152,24 @@ import { CHANGE_MODEL_COMMAND } from '../data/commandPalette';
 					await chatPage.commandPalette.close();
 					// we don't verify that clicking the submenu item changes the model because that's to be tested in the command palette test!
 				});
+
+				// TODO Not testing this for now because model names in metrics only update after a server restart!
+				// (marking as a TODO because I'd like to change that at some point!)
+				// await test.step('Verify model name in Workspace Metrics page', async () => {
+				// 	const chatPage = new ChatPage(page);
+				// 	await chatPage.clickWorkspaceButton();
+				// 	const workspaceModelsPage = new WorkspaceModelsPage(page);
+				// 	await workspaceModelsPage.clickMetricsPageButton();
+				// 	const workspaceMetricsPage = new WorkspaceMetricsPage(page);
+
+				// 	await workspaceMetricsPage.assertModelUsageTableRowName(
+				// 		expectedModelId,
+				// 		expectedModelName
+				// 	);
+
+				// 	// go back to home page for later steps
+				// 	await workspaceMetricsPage.clickNewChatButton();
+				// });
 			};
 
 			// Assert model name appears correctly with new name
@@ -263,7 +293,204 @@ import { CHANGE_MODEL_COMMAND } from '../data/commandPalette';
 			await assertModelDescriptionInAllLocations(originalModelDescription, modelId);
 		});
 
-		// TODO image change and assertions
+		// Change model image and verify in all locations
+		// we do this by first uploading a new image, waiting for it to be saved, verifying the content, and then using the URL for all assertions.
+		// this means we assume that one image URL always points to the same image, which is SUPPOSED to be the case!
+		// in other words, we only verify the content of the image once, and then use the URL for all assertions after that.
+		// but we DO try changing the image a second time and verifying the content (plus all the URL locations) again, so this should hopefully catch any major issues with image URLs.
+		test('Change model image', async ({ page }) => {
+			const model =
+				provider === 'openai'
+					? MINI_MEDIATOR_MODELS_CRUD_IMAGE_OPENAI
+					: MINI_MEDIATOR_MODELS_CRUD_IMAGE_OLLAMA;
+			const modelId = model.getFullIdWithEndpointPrefix();
+			const modelName = model.name;
+			const originalModelImage = `${FRONTEND_BASE_URL}${DEFAULT_MODEL_IMAGE}`;
+			const newModelImageBuffer = readFileSync(join(__dirname, '../data/newModelImage.png'));
+			const secondNewModelImageBuffer = readFileSync(
+				join(__dirname, '../data/secondNewModelImage.png')
+			);
+
+			// Helper function to assert model image appears correctly in all locations
+			// Now simplified to only check URLs (one URL = one image, verified once)
+			const assertModelImageInAllLocations = async (expectedImageUrl: string, modelId: string) => {
+				await test.step('Verify model image in Admin Settings Models tab', async () => {
+					const adminSettings = new AdminSettingsGeneralTab(page);
+					await adminSettings.clickModelsTabButton();
+					const adminSettingsModelsTab = new AdminSettingsModelsTab(page);
+					await adminSettingsModelsTab.searchForModel(modelName);
+					await adminSettingsModelsTab.assertModelItemWithImageExists(modelId, expectedImageUrl);
+				});
+
+				await test.step('Verify model image in Admin Evaluations page (leaderboard)', async () => {
+					const adminSettingsModelsTab = new AdminSettingsModelsTab(page);
+					await adminSettingsModelsTab.clickEvaluationsPageButton();
+					const adminEvaluationsPage = new AdminEvaluationsPage(page);
+					await adminEvaluationsPage.assertLeaderboardModelImageExists(modelId, expectedImageUrl);
+				});
+
+				await test.step('Verify model image in Home Page (new chat)', async () => {
+					const homePage = new HomePage(page);
+					await homePage.clickNewChatButton();
+					await homePage.modelSelector.open();
+					await homePage.modelSelector.assertModelImage(modelId, expectedImageUrl);
+					await homePage.modelSelector.selectModel(modelId);
+					await homePage.assertPlaceholderCurrentModelImage(expectedImageUrl);
+				});
+
+				await test.step('Verify model image in chat response message', async () => {
+					const homePage = new HomePage(page);
+					const { responseMessageIds } =
+						await homePage.submitMessageAndCaptureIds('Hello, how are you?');
+					const responseMessageId = responseMessageIds[0];
+					const chatPage = new ChatPage(page);
+					await chatPage.assertResponseMessageHasModelImage(responseMessageId, expectedImageUrl);
+				});
+
+				await test.step('Verify model image in commands container (@model)', async () => {
+					const chatPage = new ChatPage(page);
+					// the commands container doesn't support spaces in the model name
+					await chatPage.typeMessage('@' + modelName.replaceAll(' ', ''));
+					await chatPage.assertModelImageInCommands(modelId, expectedImageUrl);
+					// Clear the input for the next step
+					await chatPage.typeMessage('');
+				});
+
+				await test.step('Verify model image in Chat Info modal', async () => {
+					const chatPage = new ChatPage(page);
+					const chatInfoModal = new ChatInfoModal(page);
+					await chatPage.clickChatInfoButton();
+					await chatInfoModal.assertUniqueModelImage(modelId, expectedImageUrl);
+					await chatInfoModal.close();
+				});
+
+				await test.step('Verify model image in Workspace Metrics page', async () => {
+					const chatPage = new ChatPage(page);
+					await chatPage.clickWorkspaceButton();
+					const workspaceModelsPage = new WorkspaceModelsPage(page);
+					await workspaceModelsPage.clickMetricsPageButton();
+					const workspaceMetricsPage = new WorkspaceMetricsPage(page);
+
+					await workspaceMetricsPage.assertModelUsageTableRowImage(modelId, expectedImageUrl);
+
+					// go back to home page for later steps
+					await workspaceMetricsPage.clickNewChatButton();
+				});
+			};
+
+			// Navigate to model editor
+			await test.step('Navigate to model editor', async () => {
+				const homePage = new HomePage(page);
+				await homePage.clickUserMenuButton();
+				await homePage.userMenu.clickAdminPanel();
+				const adminSettings = new AdminSettingsGeneralTab(page);
+				await adminSettings.clickModelsTabButton();
+				const adminSettingsModelsTab = new AdminSettingsModelsTab(page);
+				await adminSettingsModelsTab.clickModelItemEditButton(modelId);
+			});
+
+			// First image upload
+			await test.step('Upload first model image', async () => {
+				const modelEditor = new ModelEditorPage(page);
+				await modelEditor.setModelImage({
+					name: 'newModelImage.png',
+					mimeType: 'image/png',
+					buffer: newModelImageBuffer
+				});
+				await modelEditor.saveAndReturn();
+				await modelEditor.toast.assertToastIsVisible('success');
+			});
+
+			// Wait for image to be saved, verify content once, then use URL for all assertions
+			const firstImageUrl =
+				await test.step('Wait for first image to be saved and verify content', async () => {
+					const adminSettings = new AdminSettingsGeneralTab(page);
+					await adminSettings.clickModelsTabButton();
+					const adminSettingsModelsTab = new AdminSettingsModelsTab(page);
+					await adminSettingsModelsTab.searchForModel(modelName);
+					// Wait for the image URL to be a file URL (not data: or favicon)
+					const imageUrl = await adminSettingsModelsTab.waitForModelImageToBeSaved(modelId);
+
+					// Verify once that the saved image matches the resized original
+					const resizedExpectedBuffer = await resizeImageTo250x250(page, newModelImageBuffer);
+					await adminSettingsModelsTab.assertModelItemImageContentMatches(
+						modelId,
+						resizedExpectedBuffer
+					);
+
+					return imageUrl;
+				});
+
+			// Assert model image URL appears correctly with first image in all locations
+			await assertModelImageInAllLocations(firstImageUrl, modelId);
+
+			// Second image upload
+			await test.step('Upload second model image', async () => {
+				const currentUrl = page.url();
+				if (!currentUrl.includes('/admin')) {
+					const homePage = new HomePage(page);
+					await homePage.clickUserMenuButton();
+					await homePage.userMenu.clickAdminPanel();
+				}
+				const adminSettings = new AdminSettingsGeneralTab(page);
+				await adminSettings.clickModelsTabButton();
+				const adminSettingsModelsTab = new AdminSettingsModelsTab(page);
+				await adminSettingsModelsTab.clickModelItemEditButton(modelId);
+				const modelEditor = new ModelEditorPage(page);
+				await modelEditor.setModelImage({
+					name: 'secondNewModelImage.png',
+					mimeType: 'image/png',
+					buffer: secondNewModelImageBuffer
+				});
+				await modelEditor.saveAndReturn();
+				await modelEditor.toast.assertToastIsVisible('success');
+			});
+
+			// Wait for image to be saved, verify content once, then use URL for all assertions
+			const secondImageUrl =
+				await test.step('Wait for second image to be saved and verify content', async () => {
+					const adminSettings = new AdminSettingsGeneralTab(page);
+					await adminSettings.clickModelsTabButton();
+					const adminSettingsModelsTab = new AdminSettingsModelsTab(page);
+					await adminSettingsModelsTab.searchForModel(modelName);
+					// Wait for the image URL to be a file URL (not data: or favicon)
+					const imageUrl = await adminSettingsModelsTab.waitForModelImageToBeSaved(modelId);
+
+					// Verify once that the saved image matches the resized original
+					const resizedExpectedBuffer = await resizeImageTo250x250(page, secondNewModelImageBuffer);
+					await adminSettingsModelsTab.assertModelItemImageContentMatches(
+						modelId,
+						resizedExpectedBuffer
+					);
+
+					return imageUrl;
+				});
+
+			// Assert model image URL appears correctly with second image in all locations
+			await assertModelImageInAllLocations(secondImageUrl, modelId);
+
+			// Revert model image back to original (reset to default)
+			await test.step('Revert model image to original', async () => {
+				const currentUrl = page.url();
+				if (!currentUrl.includes('/admin')) {
+					const homePage = new HomePage(page);
+					await homePage.clickUserMenuButton();
+					await homePage.userMenu.clickAdminPanel();
+				}
+				const adminSettings = new AdminSettingsGeneralTab(page);
+				await adminSettings.clickModelsTabButton();
+				const adminSettingsModelsTab = new AdminSettingsModelsTab(page);
+				await adminSettingsModelsTab.clickModelItemEditButton(modelId);
+				const modelEditor = new ModelEditorPage(page);
+				// Reset image to default by clicking the reset button
+				await modelEditor.clickResetImageButton();
+				await modelEditor.saveAndReturn();
+				await modelEditor.toast.assertToastIsVisible('success');
+			});
+
+			// Assert model image appears correctly with original image (verifies stores are intact)
+			await assertModelImageInAllLocations(originalModelImage, modelId);
+		});
 
 		// TODO tags change and assertions. unless we want a separate tags test?
 

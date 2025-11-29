@@ -128,6 +128,7 @@
 										class=" size-9 @sm:size-10 rounded-full border-[1px] border-gray-100 dark:border-none"
 										alt="logo"
 										draggable="false"
+										data-testid={testId('Chat', 'Placeholder', 'CurrentModelImage')}
 									/>
 								</button>
 							</Tooltip>

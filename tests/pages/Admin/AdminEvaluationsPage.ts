@@ -50,5 +50,34 @@ export class AdminEvaluationsPage extends AdminPage {
 		await expect(this.getLeaderboardModelName(modelId)).toHaveText(modelName);
 	}
 
+	/**
+	 * Asserts that the model's image src attribute in the leaderboard matches the expected URL or pattern.
+	 *
+	 * @param modelId - The ID of the model.
+	 * @param expectedImageUrl - The expected image URL. Can be:
+	 *   - An exact URL string (e.g., '/static/favicon.png')
+	 *   - A regex pattern (e.g., /\/api\/v1\/files\/.*\/content/)
+	 *   - A function that returns a boolean (for custom validation)
+	 */
+	async assertLeaderboardModelImageExists(
+		modelId: string,
+		expectedImageUrl: string | RegExp | ((url: string) => boolean)
+	): Promise<void> {
+		const imageLocator = this.getLeaderboardModelImage(modelId);
+
+		if (typeof expectedImageUrl === 'string') {
+			// Exact URL match
+			await expect(imageLocator).toHaveAttribute('src', expectedImageUrl);
+		} else if (expectedImageUrl instanceof RegExp) {
+			// Regex pattern match
+			await expect(imageLocator).toHaveAttribute('src', expectedImageUrl);
+		} else {
+			// Custom function validation
+			const actualSrc = await imageLocator.getAttribute('src');
+			expect(actualSrc).not.toBeNull();
+			expect(expectedImageUrl(actualSrc!)).toBe(true);
+		}
+	}
+
 	// TODO: add more methods, probably refactor this into a leaderboard page object and a feedbacks page object
 }

@@ -923,6 +923,7 @@
 						}
 					}}
 					draggable="false"
+					data-testid={testId('Sidebar', 'WorkspaceButton')}
 				>
 					<div class="self-center">
 						<svg

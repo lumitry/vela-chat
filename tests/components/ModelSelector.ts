@@ -129,4 +129,67 @@ export class ModelSelector extends Dropdown {
 			);
 		}
 	}
+
+	/**
+	 * Asserts that the model's image src attribute matches the expected URL or pattern.
+	 *
+	 * @param modelId - The ID of the model.
+	 * @param expectedImageUrl - The expected image URL. Can be:
+	 *   - An exact URL string (e.g., '/static/favicon.png')
+	 *   - A regex pattern (e.g., /\/api\/v1\/files\/.*\/content/)
+	 *   - A function that returns a boolean (for custom validation)
+	 */
+	async assertModelImage(
+		modelId: string,
+		expectedImageUrl: string | RegExp | ((url: string) => boolean)
+	): Promise<void> {
+		const imageLocator = this.getModelSelectorModelImage(modelId);
+
+		if (typeof expectedImageUrl === 'string') {
+			// Exact URL match
+			await expect(imageLocator).toHaveAttribute('src', expectedImageUrl);
+		} else if (expectedImageUrl instanceof RegExp) {
+			// Regex pattern match
+			await expect(imageLocator).toHaveAttribute('src', expectedImageUrl);
+		} else {
+			// Custom function validation
+			const actualSrc = await imageLocator.getAttribute('src');
+			expect(actualSrc).not.toBeNull();
+			expect(expectedImageUrl(actualSrc!)).toBe(true);
+		}
+	}
+
+	/**
+	 * Asserts that the model's image is NOT the default favicon.
+	 *
+	 * @param modelId - The ID of the model.
+	 * @param defaultImageUrl - The default image URL to check against (defaults to '/static/favicon.png')
+	 */
+	async assertModelImageIsNotDefault(
+		modelId: string,
+		defaultImageUrl: string = '/static/favicon.png'
+	): Promise<void> {
+		const imageLocator = this.getModelSelectorModelImage(modelId);
+		await expect(imageLocator).not.toHaveAttribute('src', defaultImageUrl);
+	}
+
+	/**
+	 * Asserts that the model's image URL matches the uploaded file pattern.
+	 * This checks that the image is a file URL (e.g., /api/v1/files/{id}/content) and not the default.
+	 *
+	 * @param modelId - The ID of the model.
+	 * @param defaultImageUrl - The default image URL to exclude (defaults to '/static/favicon.png')
+	 */
+	async assertModelImageIsUploaded(
+		modelId: string,
+		defaultImageUrl: string = '/static/favicon.png'
+	): Promise<void> {
+		const imageLocator = this.getModelSelectorModelImage(modelId);
+		const actualSrc = await imageLocator.getAttribute('src');
+
+		expect(actualSrc).not.toBeNull();
+		expect(actualSrc).not.toBe(defaultImageUrl);
+		// Check that it's a file URL (either /api/v1/files/... or data:... or absolute URL)
+		expect(actualSrc).toMatch(/\/api\/v1\/files\/.*\/content|data:image|https?:\/\//);
+	}
 }

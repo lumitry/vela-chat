@@ -7,6 +7,7 @@ import { BaseChatPage } from './BaseChatPage';
 export class HomePage extends BaseChatPage {
 	private placeholderCurrentModelName = this.getPageLocator('Placeholder', 'CurrentModelName');
 	private placeholderDescription = this.getPageLocator('Placeholder', 'Description');
+	private placeholderCurrentModelImage = this.getPageLocator('Placeholder', 'CurrentModelImage');
 
 	constructor(page: Page) {
 		super(page);
@@ -24,4 +25,30 @@ export class HomePage extends BaseChatPage {
 			await expect(this.placeholderDescription).toHaveText(description);
 		}
 	}
+
+	/**
+	 * Asserts that the placeholder current model image src attribute matches the expected URL or pattern.
+	 *
+	 * @param expectedImageUrl - The expected image URL. Can be:
+	 *   - An exact URL string (e.g., '/static/favicon.png')
+	 *   - A regex pattern (e.g., /\/api\/v1\/files\/.*\/content/)
+	 *   - A function that returns a boolean (for custom validation)
+	 */
+	async assertPlaceholderCurrentModelImage(
+		expectedImageUrl: string | RegExp | ((url: string) => boolean)
+	): Promise<void> {
+		if (typeof expectedImageUrl === 'string') {
+			// Exact URL match
+			await expect(this.placeholderCurrentModelImage).toHaveAttribute('src', expectedImageUrl);
+		} else if (expectedImageUrl instanceof RegExp) {
+			// Regex pattern match
+			await expect(this.placeholderCurrentModelImage).toHaveAttribute('src', expectedImageUrl);
+		} else {
+			// Custom function validation
+			const actualSrc = await this.placeholderCurrentModelImage.getAttribute('src');
+			expect(actualSrc).not.toBeNull();
+			expect(expectedImageUrl(actualSrc!)).toBe(true);
+		}
+	}
+
 }

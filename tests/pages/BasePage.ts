@@ -23,7 +23,7 @@ export abstract class BasePage {
 	private sidebarToggleButtonWhenClosed: ReturnType<Page['getByTestId']>;
 	private sidebarToggleButtonWhenOpen: ReturnType<Page['getByTestId']>;
 	private sidebar: ReturnType<Page['getByTestId']>;
-
+	private workspaceButton: ReturnType<Page['getByTestId']>;
 	constructor(protected page: Page) {
 		const toastContainer = this.page.locator('section[aria-label="Notifications alt+T"]');
 		this.toast = new Toast(toastContainer);
@@ -40,6 +40,7 @@ export abstract class BasePage {
 		this.sidebarToggleButtonWhenClosed = this.page.getByTestId(testId('SidebarToggleButton'));
 		this.sidebarToggleButtonWhenOpen = this.page.getByTestId(testId('Sidebar', 'ToggleButton'));
 		this.sidebar = this.page.getByTestId(testId('Sidebar'));
+		this.workspaceButton = this.page.getByTestId(testId('Sidebar', 'WorkspaceButton'));
 	}
 
 	async verifyPageLoaded(): Promise<void> {
@@ -140,5 +141,17 @@ export abstract class BasePage {
 	async clickNewChatButton(): Promise<void> {
 		await this.openSidebarIfClosed(); // you can't click the new chat button if the sidebar is closed, and i heavily doubt anyone would try calling this method intentionally knowing that the sidebar is closed and hoping for it to fail, so we might as well not require them to call openSidebarIfClosed() every time they want to call this method.
 		await this.newChatButton.click();
+	}
+
+	/**
+	 * Click the workspace button, opening the first available workspace page.
+	 *
+	 * First opens the sidebar if it is closed.
+	 *
+	 * PageObject: WorkspaceModelsPage (or theoretically one of the other workspace pages if the user doesn't have access to the models page)
+	 */
+	async clickWorkspaceButton(): Promise<void> {
+		await this.openSidebarIfClosed();
+		await this.workspaceButton.click();
 	}
 }

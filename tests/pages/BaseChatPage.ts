@@ -269,4 +269,36 @@ export abstract class BaseChatPage extends BasePage {
 	async assertModelNameInCommands(modelId: string, modelName: string): Promise<void> {
 		await expect(this.getCommandsModelsModelName(modelId)).toHaveText(modelName);
 	}
+
+	/**
+	 * Asserts that the model's image in the commands container matches the expected URL or pattern.
+	 *
+	 * The model commands container must be visible before calling this method.
+	 * (It is accessed by entering the @ key then typing the model name)
+	 *
+	 * @param modelId - The ID of the model, including the endpoint prefix.
+	 * @param expectedImageUrl - The expected image URL. Can be:
+	 *   - An exact URL string (e.g., '/static/favicon.png')
+	 *   - A regex pattern (e.g., /\/api\/v1\/files\/.*\/content/)
+	 *   - A function that returns a boolean (for custom validation)
+	 */
+	async assertModelImageInCommands(
+		modelId: string,
+		expectedImageUrl: string | RegExp | ((url: string) => boolean)
+	): Promise<void> {
+		const imageLocator = this.getCommandsModelsModelImage(modelId);
+
+		if (typeof expectedImageUrl === 'string') {
+			// Exact URL match
+			await expect(imageLocator).toHaveAttribute('src', expectedImageUrl);
+		} else if (expectedImageUrl instanceof RegExp) {
+			// Regex pattern match
+			await expect(imageLocator).toHaveAttribute('src', expectedImageUrl);
+		} else {
+			// Custom function validation
+			const actualSrc = await imageLocator.getAttribute('src');
+			expect(actualSrc).not.toBeNull();
+			expect(expectedImageUrl(actualSrc!)).toBe(true);
+		}
+	}
 }

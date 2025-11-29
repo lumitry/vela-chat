@@ -16,9 +16,10 @@
 	import { prefetchMetrics } from '$lib/utils/metricsPrefetch';
 
 	import MenuLines from '$lib/components/icons/MenuLines.svelte';
+	import { testId } from '$lib/utils/testId';
 
 	const i18n = getContext('i18n');
-	
+
 	let metricsPrefetchTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	let loaded = false;
@@ -73,6 +74,7 @@
 							showSidebar.set(!$showSidebar);
 						}}
 						aria-label="Toggle Sidebar"
+						data-testid={testId('SidebarToggleButton')}
 					>
 						<div class=" m-auto self-center">
 							<MenuLines />
@@ -91,7 +93,8 @@
 								)
 									? ''
 									: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition"
-								href="/workspace/models">{$i18n.t('Models')}</a
+								href="/workspace/models"
+								data-testid={testId('Workspace', 'PageButton', 'Models')}>{$i18n.t('Models')}</a
 							>
 						{/if}
 
@@ -103,6 +106,7 @@
 									? ''
 									: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition"
 								href="/workspace/knowledge"
+								data-testid={testId('Workspace', 'PageButton', 'Knowledge')}
 							>
 								{$i18n.t('Knowledge')}
 							</a>
@@ -115,43 +119,48 @@
 								)
 									? ''
 									: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition"
-								href="/workspace/prompts">{$i18n.t('Prompts')}</a
+								href="/workspace/prompts"
+								data-testid={testId('Workspace', 'PageButton', 'Prompts')}>{$i18n.t('Prompts')}</a
 							>
 						{/if}
 
-					{#if $user?.role === 'admin' || $user?.permissions?.workspace?.tools}
-						<a
-							class="min-w-fit rounded-full p-1.5 {$page.url.pathname.includes('/workspace/tools')
-								? ''
-								: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition"
-							href="/workspace/tools"
-						>
-							{$i18n.t('Tools')}
-						</a>
-					{/if}
+						{#if $user?.role === 'admin' || $user?.permissions?.workspace?.tools}
+							<a
+								class="min-w-fit rounded-full p-1.5 {$page.url.pathname.includes('/workspace/tools')
+									? ''
+									: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition"
+								href="/workspace/tools"
+								data-testid={testId('Workspace', 'PageButton', 'Tools')}
+							>
+								{$i18n.t('Tools')}
+							</a>
+						{/if}
 
-					{#if $user?.role === 'admin' || $user?.permissions?.workspace?.metrics}
-						<a
-							class="min-w-fit rounded-full p-1.5 {$page.url.pathname.includes('/workspace/metrics')
-								? ''
-								: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition"
-							href="/workspace/metrics"
-							on:mouseenter={() => {
-								// Small delay to avoid prefetching on accidental hovers
-								metricsPrefetchTimeout = setTimeout(() => {
-									prefetchMetrics();
-								}, 200);
-							}}
-							on:mouseleave={() => {
-								if (metricsPrefetchTimeout) {
-									clearTimeout(metricsPrefetchTimeout);
-									metricsPrefetchTimeout = null;
-								}
-							}}
-						>
-							{$i18n.t('Metrics')}
-						</a>
-					{/if}
+						{#if $user?.role === 'admin' || $user?.permissions?.workspace?.metrics}
+							<a
+								class="min-w-fit rounded-full p-1.5 {$page.url.pathname.includes(
+									'/workspace/metrics'
+								)
+									? ''
+									: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition"
+								href="/workspace/metrics"
+								on:mouseenter={() => {
+									// Small delay to avoid prefetching on accidental hovers
+									metricsPrefetchTimeout = setTimeout(() => {
+										prefetchMetrics();
+									}, 200);
+								}}
+								on:mouseleave={() => {
+									if (metricsPrefetchTimeout) {
+										clearTimeout(metricsPrefetchTimeout);
+										metricsPrefetchTimeout = null;
+									}
+								}}
+								data-testid={testId('Workspace', 'PageButton', 'Metrics')}
+							>
+								{$i18n.t('Metrics')}
+							</a>
+						{/if}
 					</div>
 				</div>
 

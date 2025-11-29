@@ -210,9 +210,44 @@ export class ChatPage extends BaseChatPage {
 	}
 
 	/**
+	 * Asserts that a response message has the expected model image URL.
+	 *
+	 * @param responseMessageId - The ID of the response message.
+	 * @param expectedImageUrl - The expected image URL. Can be:
+	 *   - An exact URL string (e.g., '/static/favicon.png')
+	 *   - A regex pattern (e.g., /\/api\/v1\/files\/.*\/content/)
+	 *   - A function that returns a boolean (for custom validation)
+	 */
+	async assertResponseMessageHasModelImage(
+		responseMessageId: string,
+		expectedImageUrl: string | RegExp | ((url: string) => boolean)
+	): Promise<void> {
+		const imageLocator = this.getAssistantMessageLocator(responseMessageId).locator('img').first();
+
+		if (typeof expectedImageUrl === 'string') {
+			// Exact URL match
+			await expect(imageLocator).toHaveAttribute('src', expectedImageUrl);
+		} else if (expectedImageUrl instanceof RegExp) {
+			// Regex pattern match
+			await expect(imageLocator).toHaveAttribute('src', expectedImageUrl);
+		} else {
+			// Custom function validation
+			const actualSrc = await imageLocator.getAttribute('src');
+			expect(actualSrc).not.toBeNull();
+			expect(expectedImageUrl(actualSrc!)).toBe(true);
+		}
+	}
+
+	/**
 	 * Clicks the chat info button to open the {@link ChatInfoModal}.
+	 *
+	 * The button only appears when both $chatId and currentChatDetails are loaded.
+	 * This method waits for the button to exist before clicking.
 	 */
 	async clickChatInfoButton(): Promise<void> {
+		// Wait for the button to exist - it only appears when $chatId && currentChatDetails
+		// This ensures currentChatDetails has been loaded asynchronously
+		await this.chatInfoButton.waitFor({ state: 'visible' });
 		await this.chatInfoButton.click();
 	}
 }

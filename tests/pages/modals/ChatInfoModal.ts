@@ -93,6 +93,16 @@ export class ChatInfoModal extends BaseModal {
 		await expect(this.getUniqueModelImage(modelId)).toHaveAttribute('src', expectedImage);
 	}
 
+	/**
+	 * Gets the image src URL for a unique model in the chat info modal.
+	 *
+	 * @param modelId - The ID of the model.
+	 * @returns The image src URL, or null if not found
+	 */
+	async getUniqueModelImageUrl(modelId: string): Promise<string | null> {
+		return await this.getUniqueModelImage(modelId).getAttribute('src');
+	}
+
 	async assertUniqueModelLabel(modelId: string, expectedLabel: string): Promise<void> {
 		await expect(this.getUniqueModelLabel(modelId)).toHaveText(expectedLabel);
 	}
