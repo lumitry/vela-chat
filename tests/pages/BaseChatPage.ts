@@ -1,5 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 import { BasePage } from './BasePage';
+import { ModelSelector } from '../components/ModelSelector';
 import { testId } from '$lib/utils/testId';
 import { expect } from '@playwright/test';
 
@@ -26,6 +27,8 @@ export interface SentMessage {
  * This includes the home page and the chat page.
  */
 export abstract class BaseChatPage extends BasePage {
+	public modelSelector: ModelSelector;
+
 	// helper functions to get test id and locator for the current page
 	protected getPageTestId = (...args: string[]): string => {
 		return testId('Chat', ...args);
@@ -50,26 +53,6 @@ export abstract class BaseChatPage extends BasePage {
 	private stopResponseButton = this.getPageLocator('MessageInput', 'StopResponseButton');
 	private callButton = this.getPageLocator('MessageInput', 'CallButton');
 
-	// Model selector elements
-	/** the model selector trigger button (the model name & chevron) in the top left of the navbar */
-	private modelSelectorTrigger = this.getPageLocator('ModelSelector', 'Selector', 'Trigger');
-	/** the current model name that shows on the model selector trigger */
-	private modelSelectorTriggerCurrentModelName = this.getPageLocator(
-		'ModelSelector',
-		'Selector',
-		'Trigger',
-		'CurrentModelName'
-	);
-	private getModelSelectorModelItem = (modelId: string) =>
-		this.getPageLocator('ModelSelector', 'ModelItem', modelId);
-	private getModelSelectorModelImage = (modelId: string) =>
-		this.getPageLocator('ModelSelector', 'ModelImage', modelId);
-	private getModelSelectorModelName = (modelId: string) =>
-		this.getPageLocator('ModelSelector', 'ModelName', modelId);
-	/** Only for Ollama models. Currently mini-mediator doesn't support this anyway. */
-	private getModelSelectorModelParameterSize = (modelId: string) =>
-		this.getPageLocator('ModelSelector', 'ModelParameterSize', modelId);
-
 	// Commands (Models, Knowledge, Prompts)
 	private commandsContainer = this.getPageLocator('MessageInput', 'Commands', 'Container');
 	/// Models commands - show up when you type the @ symbol
@@ -80,56 +63,7 @@ export abstract class BaseChatPage extends BasePage {
 
 	constructor(page: Page) {
 		super(page);
-	}
-
-	// ---------------- //
-	//  Model Selector  //
-	// ---------------- //
-
-	/**
-	 * Clicks the model selector trigger (the model name & chevron) to open the model selector.
-	 */
-	async openModelSelector(): Promise<void> {
-		await this.modelSelectorTrigger.click();
-	}
-
-	/**
-	 * Asserts that the current model name on the model selector trigger matches the expected model name.
-	 *
-	 * TODO: support for multiple models!
-	 *
-	 * @param modelName - The expected model name.
-	 */
-	async assertCurrentChatModelName(modelName: string): Promise<void> {
-		await expect(this.modelSelectorTriggerCurrentModelName).toHaveText(modelName);
-	}
-
-	// TODO probably refactor into a ModelSelectorDropdown component object??
-	// TODO: also add support for adding a second (and Nth) model to the chat... yikes.
-
-	/**
-	 * Asserts that the model name exists in the model selector.
-	 *
-	 * The model selector must be open before calling this method.
-	 *
-	 * @param modelId - The ID of the model.
-	 * @param modelName - The name of the model.
-	 */
-	async assertModelSelectorModelNameExists(modelId: string, modelName: string): Promise<void> {
-		await expect(this.getModelSelectorModelName(modelId)).toHaveText(modelName);
-	}
-
-	/**
-	 * Selects a model from the model selector.
-	 *
-	 * The model selector must be open before calling this method.
-	 *
-	 * Closes the model selector if it is open.
-	 *
-	 * @param modelId - The ID of the model.
-	 */
-	async selectModel(modelId: string): Promise<void> {
-		await this.getModelSelectorModelItem(modelId).click();
+		this.modelSelector = new ModelSelector(page, ['Chat', 'ModelSelector']);
 	}
 
 	// --------------- //

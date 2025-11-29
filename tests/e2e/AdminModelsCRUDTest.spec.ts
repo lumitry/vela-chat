@@ -86,10 +86,10 @@ import { CHANGE_MODEL_COMMAND } from '../data/commandPalette';
 					// Navigate to home page from wherever we are
 					const homePage = new HomePage(page);
 					await homePage.clickNewChatButton();
-					await homePage.openModelSelector();
-					await homePage.assertModelSelectorModelNameExists(expectedModelId, expectedModelName);
-					await homePage.selectModel(expectedModelId);
-					await homePage.assertCurrentChatModelName(expectedModelName);
+					await homePage.modelSelector.open();
+					await homePage.modelSelector.assertModelNameExists(expectedModelId, expectedModelName);
+					await homePage.modelSelector.selectModel(expectedModelId);
+					await homePage.modelSelector.assertCurrentModelName(expectedModelName);
 					await homePage.assertPlaceholderCurrentModelName(expectedModelName);
 				});
 
@@ -124,16 +124,16 @@ import { CHANGE_MODEL_COMMAND } from '../data/commandPalette';
 
 				await test.step('Verify model name in Command Palette', async () => {
 					const chatPage = new ChatPage(page);
-					await chatPage.openCommandPalette();
-					await chatPage.typeCommandPaletteCommand(CHANGE_MODEL_COMMAND.label);
-					await chatPage.clickCommandPaletteCommand(CHANGE_MODEL_COMMAND.id);
-					await chatPage.submitCommandPaletteCommand();
-					await chatPage.assertCommandPaletteSubmenuItemContainsText(
+					await chatPage.commandPalette.open();
+					await chatPage.commandPalette.typeCommand(CHANGE_MODEL_COMMAND.label);
+					await chatPage.commandPalette.clickCommand(CHANGE_MODEL_COMMAND.id);
+					await chatPage.commandPalette.submitCommand();
+					await chatPage.commandPalette.assertSubmenuItemContainsText(
 						'model:' + expectedModelId,
 						expectedModelName
 					);
 					// Close command palette - waits for it to actually close
-					await chatPage.closeCommandPalette();
+					await chatPage.commandPalette.close();
 					// we don't verify that clicking the submenu item changes the model because that's to be tested in the command palette test!
 				});
 			};
