@@ -262,14 +262,16 @@
 			snapshot.currentBranchMessages = createMessagesList(history, history.currentId).length;
 		}
 
-		const availableModels = get(models) ?? [];
+		// Use $models directly to ensure we get the latest value from the store
+		const availableModels = $models ?? [];
+
 		const modelLookup = new Map<string, (typeof availableModels)[number]>();
 		for (const model of availableModels) {
 			if (!model) continue;
+			// Only use model.id as the key - don't use model.name because multiple models
+			// can have the same name (e.g., both ollama.mini-mediator:anonymous and mini-mediator:anonymous
+			// might have name "mini-mediator:anonymous"), which would cause collisions
 			modelLookup.set(model.id, model);
-			if (model.name) {
-				modelLookup.set(model.name, model);
-			}
 		}
 
 		const modelsUsed = new Map<
@@ -287,17 +289,53 @@
 			const normalizedId = String(identifier).trim();
 			if (!normalizedId) return null;
 
-			const matchedModel = modelLookup.get(normalizedId);
-			const resolvedLabel = labelOverride?.trim() || matchedModel?.name?.trim() || normalizedId;
+			// Try exact match first
+			let matchedModel = modelLookup.get(normalizedId);
+
+			// If not found and ID has a dot (endpoint prefix), try without prefix
+			// e.g., if message has "ollama.mini-mediator:anonymous" but store lookup fails,
+			// try "mini-mediator:anonymous"
+			if (!matchedModel && normalizedId.includes('.')) {
+				const parts = normalizedId.split('.');
+				if (parts.length > 1) {
+					const idWithoutPrefix = parts.slice(1).join('.');
+					matchedModel = modelLookup.get(idWithoutPrefix);
+				}
+			}
+
+			// If still not found and ID does NOT have a prefix, try finding models that end with this ID
+			// BUT only if there's exactly one match - we don't want to match the wrong model
+			// when both ollama.mini-mediator:anonymous and mini-mediator:anonymous exist
+			if (!matchedModel && !normalizedId.includes('.')) {
+				const candidates = availableModels.filter((model) => {
+					if (!model?.id) return false;
+					// Match if model.id ends with .normalizedId (has prefix) OR model.id === normalizedId (no prefix)
+					return model.id === normalizedId || model.id.endsWith(`.${normalizedId}`);
+				});
+				// Only use if there's exactly one candidate - prefer the one without prefix if both exist
+				if (candidates.length === 1) {
+					matchedModel = candidates[0];
+				} else if (candidates.length > 1) {
+					// If multiple candidates, prefer the one without prefix (exact match)
+					matchedModel = candidates.find((m) => m.id === normalizedId) || candidates[0];
+				}
+			}
+
+			// Always prioritize the models store as the source of truth for the current model name
+			const resolvedLabel = matchedModel?.name?.trim() || normalizedId;
 			const resolvedIcon = matchedModel?.info?.meta?.profile_image_url ?? null;
 
 			if (modelsUsed.has(normalizedId)) {
 				const existing = modelsUsed.get(normalizedId);
 				if (existing) {
-					if (existing.label === existing.id && resolvedLabel && resolvedLabel !== existing.label) {
+					// Always update the label if we have a better one (from store or override)
+					// This ensures model name changes are reflected even if the model was already registered
+					// Only update if the new label is different and not just the ID
+					if (resolvedLabel && resolvedLabel !== normalizedId && resolvedLabel !== existing.label) {
 						existing.label = resolvedLabel;
 					}
-					if (!existing.icon && resolvedIcon) {
+					// Also update icon if we have one
+					if (resolvedIcon && (!existing.icon || existing.icon !== resolvedIcon)) {
 						existing.icon = resolvedIcon;
 					}
 				}
@@ -306,7 +344,7 @@
 
 			modelsUsed.set(normalizedId, {
 				id: normalizedId,
-				label: resolvedLabel || normalizedId,
+				label: resolvedLabel,
 				icon: resolvedIcon,
 				messageCount: 0
 			});
@@ -406,6 +444,12 @@
 		chatInfoSnapshot = buildChatInfoSnapshot();
 		showChatInfoModal = true;
 	};
+
+	// Rebuild the snapshot when models store updates and modal is open
+	// This ensures the modal always shows the latest model names
+	$: if (showChatInfoModal && $models) {
+		chatInfoSnapshot = buildChatInfoSnapshot();
+	}
 </script>
 
 <ShareChatModal bind:show={showShareChatModal} chatId={$chatId} />
