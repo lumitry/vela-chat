@@ -937,6 +937,25 @@ async def inspect_websocket(request: Request, call_next):
             )
     return await call_next(request)
 
+
+@app.middleware("http")
+async def add_corp_headers(request: Request, call_next):
+    """
+    Add Cross-Origin-Resource-Policy (CORP) headers to image responses.
+    This is required when COEP (Cross-Origin Embedder Policy) is enabled
+    to prevent 'NotSameOriginAfterDefaultedToSameOriginByCoep' errors.
+    """
+    response = await call_next(request)
+    
+    # Check if the response is an image
+    content_type = response.headers.get("content-type", "").lower()
+    if content_type.startswith("image/"):
+        # Add CORP header if not already present
+        if "Cross-Origin-Resource-Policy" not in response.headers:
+            response.headers["Cross-Origin-Resource-Policy"] = "cross-origin"
+    
+    return response
+
 # Use CORS_ALLOW_ORIGIN from config (which defaults to ["*"] if not set)
 # CORS_ALLOW_ORIGIN is already a list from config.py
 # Filter out empty strings that might come from env var parsing
