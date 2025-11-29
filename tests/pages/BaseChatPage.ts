@@ -70,6 +70,14 @@ export abstract class BaseChatPage extends BasePage {
 	private getModelSelectorModelParameterSize = (modelId: string) =>
 		this.getPageLocator('ModelSelector', 'ModelParameterSize', modelId);
 
+	// Commands (Models, Knowledge, Prompts)
+	private commandsContainer = this.getPageLocator('MessageInput', 'Commands', 'Container');
+	/// Models commands - show up when you type the @ symbol
+	private getCommandsModelsModelImage = (modelId: string) =>
+		this.getPageLocator('MessageInput', 'Commands', 'Models', 'ModelImage', modelId);
+	private getCommandsModelsModelName = (modelId: string) =>
+		this.getPageLocator('MessageInput', 'Commands', 'Models', 'ModelName', modelId);
+
 	constructor(page: Page) {
 		super(page);
 	}
@@ -174,6 +182,8 @@ export abstract class BaseChatPage extends BasePage {
 	 *
 	 * Does NOT wait for the message to be completed, or anything of the sort.
 	 *
+	 * You probably want to use submitMessageAndCaptureIds() instead.
+	 *
 	 * @param message - The message to submit.
 	 */
 	async submitMessage(message: string): Promise<void> {
@@ -232,10 +242,6 @@ export abstract class BaseChatPage extends BasePage {
 	async assertAutocompleteSuggestionDoesNotExist(): Promise<void> {
 		await expect(this.autocompleteSuggestion).not.toBeVisible();
 	}
-
-	// ---------------- //
-	//  Message Helpers //
-	// ---------------- //
 
 	/**
 	 * Submits a message and captures the message IDs from the API request(s).
@@ -311,5 +317,22 @@ export abstract class BaseChatPage extends BasePage {
 		}
 
 		return result;
+	}
+
+	async assertModelExistsInCommands(modelId: string): Promise<void> {
+		await expect(this.getCommandsModelsModelName(modelId)).toBeVisible();
+	}
+
+	/**
+	 * Asserts that the model name exists in the commands container.
+	 *
+	 * The model commands container must be visible before calling this method.
+	 * (It is accessed by entering the @ key then typing the model name)
+	 *
+	 * @param modelId - The ID of the model, including the endpoint prefix.
+	 * @param modelName - The name of the model.
+	 */
+	async assertModelNameInCommands(modelId: string, modelName: string): Promise<void> {
+		await expect(this.getCommandsModelsModelName(modelId)).toHaveText(modelName);
 	}
 }

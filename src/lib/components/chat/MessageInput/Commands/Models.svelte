@@ -5,6 +5,7 @@
 	import { tick, getContext } from 'svelte';
 
 	import { models } from '$lib/stores';
+	import { testId } from '$lib/utils/testId';
 
 	const i18n = getContext('i18n');
 
@@ -95,8 +96,27 @@
 									src={imageSrc}
 									alt={model?.name ?? model.id}
 									class="rounded-full size-6 items-center mr-2"
+									data-testid={testId(
+										'Chat',
+										'MessageInput',
+										'Commands',
+										'Models',
+										'ModelImage',
+										model.id
+									)}
 								/>
-								{model.name}
+								<span
+									data-testid={testId(
+										'Chat',
+										'MessageInput',
+										'Commands',
+										'Models',
+										'ModelName',
+										model.id
+									)}
+								>
+									{model.name}
+								</span>
 							</div>
 						</button>
 					{/each}

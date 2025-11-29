@@ -71,6 +71,7 @@ export class AdminSettingsModelsTab extends AdminSettingsPage {
 	 * @param modelName The name of the model to search for.
 	 */
 	async searchForModel(modelName: string): Promise<void> {
+		await this.searchInput.clear();
 		await this.searchInput.fill(modelName);
 	}
 

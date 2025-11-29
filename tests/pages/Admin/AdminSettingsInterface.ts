@@ -210,12 +210,25 @@ export class AdminSettingsInterfaceTab extends AdminSettingsPage {
 	 *
 	 * @param provider - The provider of the model.
 	 * @param modelName - The user-facing name of the model. (NOT the model ID!)
+	 * @param modelId - The full model ID (including endpoint prefix) to uniquely identify the option when names aren't unique.
 	 */
-	async assertModelOptionExists(provider: 'ollama' | 'openai', modelName: string): Promise<void> {
+	async assertModelOptionExists(
+		provider: 'ollama' | 'openai',
+		modelName: string,
+		modelId: string
+	): Promise<void> {
 		const selectLocator =
 			provider === 'openai' ? this.externalTaskModelSelect : this.localTaskModelSelect;
-		const optionLocator = selectLocator.locator('option', { hasText: modelName });
+
+		// Save the current selected value to restore it after the assertion
+		const originalValue = await selectLocator.inputValue();
+
+		// Select by value attribute (model ID) to avoid strict mode violations when multiple models have the same name
+		const optionLocator = selectLocator.locator(`option[value="${modelId}"]`);
 		await expect(optionLocator).toHaveText(modelName); // toBeVisible doesn't work because the select dropdown is not open, so we have to do a redundant check with toHaveText
+
+		// Restore the original selection to ensure we don't accidentally change the model if the page is saved
+		await selectLocator.selectOption(originalValue);
 	}
 
 	// TODO: add more methods?
