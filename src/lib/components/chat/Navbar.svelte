@@ -167,6 +167,8 @@
 	// Reactive statement to load current chat details when chatId changes
 	$: if ($chatId && localStorage.token) {
 		loadCurrentChatDetails();
+	} else if (!$chatId) {
+		currentChatDetails = null;
 	}
 
 	// Reactive statement to update folder name when folders or chat details change
