@@ -620,6 +620,7 @@
 												'<br>'
 											)
 										)}`}
+										testId={testId('Chat', 'ModelSelector', 'ModelDescription', item.value)}
 									>
 										<div class=" translate-y-[1px]">
 											<svg

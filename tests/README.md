@@ -102,9 +102,9 @@ npx playwright test --ui
   - [ ] Verify you can't send a bunch of whitespace with no other content
 - [ ] Model CRUD Test - Parameterized for OpenAI & Ollama
   - [ ] Modify a model by changing its...
-    - [ ] name
+    - [x] name
     - [ ] image
-    - [ ] description
+    - [x] description
     - [ ] tags
   - [ ] Hide a model
   - [ ] Disable a model
@@ -208,6 +208,7 @@ npx playwright test --ui
 - [ ] Chat Info Modal Test (correct model names, message counts, cost tracking, branch/leaf count, attachment count, etc.)
   - [ ] make sure this works for split view chats too (shouldn't double-count messages or forget to count models in the non-selected branches)
 - [ ] Navbar Chat Info Test (correct chat name and folder, even in edge cases of moving it before title generation or before the first generation is completed)
+  - Idea: create a task model mediator that takes a while. So that way we can test the chat info box both with slow task generation AND with normal task generation but a slow assistant response. Like, two different ways of moving the chat before the task comes back. Make sure the edge cases are handled correctly by the chat info box!
 - [ ] Chat Message Links Test - copying a message link (then navigating away) then navigating to that link should take you to the correct message
   - [ ] Edge cases: shared chat, archived chat, deleted chat, split view chat
 - [ ] Shared Chat Viewing Test

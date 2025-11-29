@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 import { testId } from '$lib/utils/testId';
 import { Dropdown } from './Dropdown';
 
@@ -6,6 +6,10 @@ import { Dropdown } from './Dropdown';
  * Represents the Model Selector dropdown component.
  *
  * This selector appears in the chat page navbar and allows users to select models.
+ *
+ * The model selector does not technically need to be opened to use some of these methods. Methods that do not require the model selector to be open are marked as such in their docstring.
+ *
+ * Methods that DO require the model selector to be open are NOT marked as such! That much should be assumed by default, and the others are exceptions, not the rule.
  *
  * Extends Dropdown to provide both convenience methods (selectModel(), assertCurrentModelName(), etc.)
  * and generic dropdown functionality (clickOptionByText(), assertOptionExists(), etc.).
@@ -28,6 +32,7 @@ export class ModelSelector extends Dropdown {
 	private getModelSelectorModelItem: (modelId: string) => ReturnType<Page['getByTestId']>;
 	private getModelSelectorModelImage: (modelId: string) => ReturnType<Page['getByTestId']>;
 	private getModelSelectorModelName: (modelId: string) => ReturnType<Page['getByTestId']>;
+	private getModelSelectorModelDescription: (modelId: string) => ReturnType<Page['getByTestId']>;
 	/** Only for Ollama models. Currently mini-mediator doesn't support this anyway. */
 	private getModelSelectorModelParameterSize: (modelId: string) => ReturnType<Page['getByTestId']>;
 
@@ -51,12 +56,16 @@ export class ModelSelector extends Dropdown {
 			page.getByTestId(testId(...containerTestIdPrefix, 'ModelImage', modelId));
 		this.getModelSelectorModelName = (modelId: string) =>
 			page.getByTestId(testId(...containerTestIdPrefix, 'ModelName', modelId));
+		this.getModelSelectorModelDescription = (modelId: string) =>
+			page.getByTestId(testId(...containerTestIdPrefix, 'ModelDescription', modelId));
 		this.getModelSelectorModelParameterSize = (modelId: string) =>
 			page.getByTestId(testId(...containerTestIdPrefix, 'ModelParameterSize', modelId));
 	}
 
 	/**
 	 * Clicks the model selector trigger (the model name & chevron) to open the model selector.
+	 *
+	 * The model selector should be closed before calling this method.
 	 */
 	async open(): Promise<void> {
 		await this.modelSelectorTrigger.click();
@@ -69,6 +78,8 @@ export class ModelSelector extends Dropdown {
 	/**
 	 * Asserts that the current model name on the model selector trigger matches the expected model name.
 	 *
+	 * The model selector does not need to be open to call this method.
+	 *
 	 * TODO: support for multiple models!
 	 *
 	 * @param modelName - The expected model name.
@@ -80,8 +91,6 @@ export class ModelSelector extends Dropdown {
 	/**
 	 * Asserts that the model name exists in the model selector.
 	 *
-	 * The model selector must be open before calling this method.
-	 *
 	 * @param modelId - The ID of the model.
 	 * @param modelName - The name of the model.
 	 */
@@ -91,8 +100,6 @@ export class ModelSelector extends Dropdown {
 
 	/**
 	 * Selects a model from the model selector.
-	 *
-	 * The model selector must be open before calling this method.
 	 *
 	 * Closes the model selector if it is open.
 	 *
@@ -104,5 +111,22 @@ export class ModelSelector extends Dropdown {
 		await this.container.waitFor({ state: 'hidden', timeout: 2000 }).catch(() => {
 			// Dropdown might close immediately or might not use standard visibility
 		});
+	}
+
+	/**
+	 * Asserts that the model description exists in the model selector.
+	 *
+	 * @param modelId - The ID of the model.
+	 * @param modelDescription - The description of the model. If null, asserts that the description element does not exist.
+	 */
+	async assertModelDescription(modelId: string, modelDescription: string | null): Promise<void> {
+		if (modelDescription === null) {
+			await expect(this.getModelSelectorModelDescription(modelId)).not.toBeVisible();
+		} else {
+			await expect(this.getModelSelectorModelDescription(modelId)).toHaveAttribute(
+				'aria-label',
+				`<p>${modelDescription}</p>\n`
+			);
+		}
 	}
 }

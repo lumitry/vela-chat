@@ -160,6 +160,7 @@
 						>
 							<div
 								class="mt-0.5 px-2 text-sm font-normal text-gray-500 dark:text-gray-400 line-clamp-2 max-w-xl markdown"
+								data-testid={testId('Chat', 'Placeholder', 'Description')}
 							>
 								{@html marked.parse(
 									sanitizeResponseContent(models[selectedModelIdx]?.info?.meta?.description)

@@ -92,5 +92,12 @@ export class AdminSettingsModelsTab extends AdminSettingsPage {
 		await expect(this.getModelItemName(modelId)).toHaveText(modelName);
 	}
 
+	async assertModelItemWithDescriptionExists(
+		modelId: string,
+		modelDescription: string
+	): Promise<void> {
+		await expect(this.getModelItemDescription(modelId)).toHaveText(modelDescription);
+	}
+
 	// TODO: add more methods - hide model, toggle model, maybe preset import/export?
 }

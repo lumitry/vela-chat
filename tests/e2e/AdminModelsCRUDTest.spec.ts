@@ -3,8 +3,10 @@ import { HomePage } from '../pages/HomePage';
 import { AdminSettingsGeneralTab } from '../pages/Admin/AdminSettingsGeneralTab';
 import { AdminSettingsModelsTab } from '../pages/Admin/AdminSettingsModelsTab';
 import {
-	MINI_MEDIATOR_ANONYMOUS_OLLAMA,
-	MINI_MEDIATOR_ANONYMOUS_OPENAI
+	MINI_MEDIATOR_MODELS_CRUD_DESCRIPTION_OLLAMA,
+	MINI_MEDIATOR_MODELS_CRUD_DESCRIPTION_OPENAI,
+	MINI_MEDIATOR_MODELS_CRUD_RENAME_OLLAMA,
+	MINI_MEDIATOR_MODELS_CRUD_RENAME_OPENAI
 } from '../data/miniMediatorModels';
 import { ModelEditorPage } from '../pages/Admin/ModelEditorPage';
 import { AdminSettingsInterfaceTab } from '../pages/Admin/AdminSettingsInterface';
@@ -18,7 +20,9 @@ import { CHANGE_MODEL_COMMAND } from '../data/commandPalette';
 	test.describe(`Admin Models CRUD Test - ${provider}`, () => {
 		test('Change model name', async ({ page }) => {
 			const model =
-				provider === 'openai' ? MINI_MEDIATOR_ANONYMOUS_OPENAI : MINI_MEDIATOR_ANONYMOUS_OLLAMA;
+				provider === 'openai'
+					? MINI_MEDIATOR_MODELS_CRUD_RENAME_OPENAI
+					: MINI_MEDIATOR_MODELS_CRUD_RENAME_OLLAMA;
 			const modelId = model.getFullIdWithEndpointPrefix();
 			const originalModelName = model.name;
 
@@ -165,10 +169,108 @@ import { CHANGE_MODEL_COMMAND } from '../data/commandPalette';
 			await assertModelNameInAllLocations(originalModelName, modelId);
 		});
 
-		// TODO description change and assertions (i.e. in new chat page)
+		test('Change model description', async ({ page }) => {
+			const model =
+				provider === 'openai'
+					? MINI_MEDIATOR_MODELS_CRUD_DESCRIPTION_OPENAI
+					: MINI_MEDIATOR_MODELS_CRUD_DESCRIPTION_OLLAMA;
+			const modelId = model.getFullIdWithEndpointPrefix();
+			const modelName = model.name;
+			const originalModelDescription = null; // models have no description by default
+
+			// Navigate to model editor
+			await test.step('Navigate to model editor', async () => {
+				const homePage = new HomePage(page);
+				await homePage.clickUserMenuButton();
+				await homePage.userMenu.clickAdminPanel();
+				const adminSettings = new AdminSettingsGeneralTab(page);
+				await adminSettings.clickModelsTabButton();
+				const adminSettingsModelsTab = new AdminSettingsModelsTab(page);
+				await adminSettingsModelsTab.clickModelItemEditButton(modelId);
+			});
+
+			// Change model name
+			const newModelDescription = `Test Model Description ${generateRandomString(5)}`;
+			await test.step('Change model description', async () => {
+				const modelEditor = new ModelEditorPage(page);
+				await modelEditor.setDescription(newModelDescription);
+				await modelEditor.saveAndReturn();
+				await modelEditor.toast.assertToastIsVisible('success');
+			});
+
+			// Helper function to assert model description appears correctly in all locations
+			const assertModelDescriptionInAllLocations = async (
+				expectedModelDescription: string | null,
+				modelId: string
+			) => {
+				// Calculate the actual description that will be shown in the UI
+				// When description is null/empty, the UI shows:
+				// - For Ollama: `${modelId} (mini-mediator)`
+				// - For OpenAI: `${modelId}`
+				const actualExpectedDescription =
+					expectedModelDescription && expectedModelDescription.trim() !== ''
+						? expectedModelDescription
+						: provider === 'ollama'
+							? `${modelId} (mini-mediator)`
+							: modelId;
+
+				await test.step('Verify model description in Admin Settings Models tab', async () => {
+					const adminSettings = new AdminSettingsGeneralTab(page);
+					await adminSettings.clickModelsTabButton();
+					const adminSettingsModelsTab = new AdminSettingsModelsTab(page);
+					await adminSettingsModelsTab.searchForModel(modelName);
+					await adminSettingsModelsTab.assertModelItemWithDescriptionExists(
+						modelId,
+						actualExpectedDescription
+					);
+				});
+
+				await test.step('Verify model description in Home Page (new chat)', async () => {
+					// Navigate to home page from wherever we are
+					const homePage = new HomePage(page);
+					await homePage.clickNewChatButton();
+					await homePage.modelSelector.open();
+					await homePage.modelSelector.assertModelDescription(modelId, expectedModelDescription);
+					await homePage.modelSelector.selectModel(modelId);
+					await homePage.assertPlaceholderDescription(expectedModelDescription);
+				});
+			};
+
+			// Assert model description appears correctly with new description
+			await assertModelDescriptionInAllLocations(newModelDescription, modelId);
+
+			// Revert model description back to original
+			await test.step('Revert model description to original', async () => {
+				// Navigate back to admin settings from wherever we are
+				// We might be on chat page, home page, or admin settings
+				const currentUrl = page.url();
+				if (!currentUrl.includes('/admin')) {
+					const homePage = new HomePage(page);
+					await homePage.clickUserMenuButton();
+					await homePage.userMenu.clickAdminPanel();
+				}
+				const adminSettings = new AdminSettingsGeneralTab(page);
+				await adminSettings.clickModelsTabButton();
+				const adminSettingsModelsTab = new AdminSettingsModelsTab(page);
+				await adminSettingsModelsTab.clickModelItemEditButton(modelId);
+				const modelEditor = new ModelEditorPage(page);
+				await modelEditor.setDescription(originalModelDescription ?? '');
+				await modelEditor.saveAndReturn();
+				await modelEditor.toast.assertToastIsVisible('success');
+			});
+
+			// Assert model description appears correctly with original description (verifies stores are intact)
+			await assertModelDescriptionInAllLocations(originalModelDescription, modelId);
+		});
 
 		// TODO image change and assertions
 
-		// TODO is there a way to abstract all these assertions into a single function? it'd be a different method on each page, but we'd be calling some very SIMILAR methods on IDENTICAL sets of pages, more or less... hmm.
+		// TODO tags change and assertions. unless we want a separate tags test?
+
+		// TODO visibility settings change and assertions (would require multiple accounts and groups i think... this might also need to be a separate test)
+
+		// TODO hide model and assertions
+
+		// TODO disable model and assertions
 	});
 });

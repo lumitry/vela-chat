@@ -6,6 +6,7 @@ import { BaseChatPage } from './BaseChatPage';
  */
 export class HomePage extends BaseChatPage {
 	private placeholderCurrentModelName = this.getPageLocator('Placeholder', 'CurrentModelName');
+	private placeholderDescription = this.getPageLocator('Placeholder', 'Description');
 
 	constructor(page: Page) {
 		super(page);
@@ -13,5 +14,14 @@ export class HomePage extends BaseChatPage {
 
 	async assertPlaceholderCurrentModelName(modelName: string): Promise<void> {
 		await expect(this.placeholderCurrentModelName).toHaveText(modelName);
+	}
+
+	async assertPlaceholderDescription(description: string | null): Promise<void> {
+		if (description === null) {
+			// When description is null, the element should not exist
+			await expect(this.placeholderDescription).not.toBeVisible();
+		} else {
+			await expect(this.placeholderDescription).toHaveText(description);
+		}
 	}
 }

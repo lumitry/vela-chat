@@ -157,8 +157,23 @@ export class ModelEditorPage extends BasePage {
 		await this.nameInput.fill(name);
 	}
 
+	/**
+	 * Gets the text of the description toggle button. Either 'Default' or 'Custom'.
+	 * @returns The text of the description toggle button.
+	 */
+	async getDescriptionToggleButtonText(): Promise<string> {
+		return (await this.descriptionToggleButton.textContent()) ?? '';
+	}
+
+	/**
+	 * Sets the model's description. If the description is set to 'default', it will be set to 'custom' before trying to set the description.
+	 *
+	 * @param description - The description to set.
+	 */
 	async setDescription(description: string): Promise<void> {
-		// TODO: should we add handling for if the description is set to 'default' instead of ’custom'?
+		if ((await this.getDescriptionToggleButtonText()) === 'Default') {
+			await this.descriptionToggleButton.click();
+		}
 		await this.descriptionTextarea.fill(description);
 	}
 
