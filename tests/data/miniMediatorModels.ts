@@ -91,3 +91,85 @@ export const MINI_MEDIATOR_ANONYMOUS_OLLAMA: MiniMediatorModel =
  */
 export const MINI_MEDIATOR_ANONYMOUS_OPENAI: MiniMediatorModel =
 	MiniMediatorModel.buildFromIdAndEndpoint('mini-mediator:anonymous', MINI_MEDIATOR_OPENAI);
+
+// ------------------------------------------------------------- //
+//                 Admin Models CRUD Test Models                 //
+// ------------------------------------------------------------- //
+
+export const MINI_MEDIATOR_MODELS_CRUD_RENAME_OPENAI: MiniMediatorModel =
+	MiniMediatorModel.buildFromIdAndEndpoint(
+		'AdminModelsCRUDTest:ModelNameChange',
+		MINI_MEDIATOR_OPENAI
+	);
+
+export const MINI_MEDIATOR_MODELS_CRUD_RENAME_OLLAMA: MiniMediatorModel =
+	MiniMediatorModel.buildFromIdAndEndpoint(
+		'AdminModelsCRUDTest:ModelNameChange',
+		MINI_MEDIATOR_OLLAMA
+	);
+
+export const MINI_MEDIATOR_MODELS_CRUD_DESCRIPTION_OPENAI: MiniMediatorModel =
+	MiniMediatorModel.buildFromIdAndEndpoint(
+		'AdminModelsCRUDTest:ModelDescriptionChange',
+		MINI_MEDIATOR_OPENAI
+	);
+
+export const MINI_MEDIATOR_MODELS_CRUD_DESCRIPTION_OLLAMA: MiniMediatorModel =
+	MiniMediatorModel.buildFromIdAndEndpoint(
+		'AdminModelsCRUDTest:ModelDescriptionChange',
+		MINI_MEDIATOR_OLLAMA
+	);
+
+export const MINI_MEDIATOR_MODELS_CRUD_IMAGE_OPENAI: MiniMediatorModel =
+	MiniMediatorModel.buildFromIdAndEndpoint(
+		'AdminModelsCRUDTest:ModelImageChange',
+		MINI_MEDIATOR_OPENAI
+	);
+
+export const MINI_MEDIATOR_MODELS_CRUD_IMAGE_OLLAMA: MiniMediatorModel =
+	MiniMediatorModel.buildFromIdAndEndpoint(
+		'AdminModelsCRUDTest:ModelImageChange',
+		MINI_MEDIATOR_OLLAMA
+	);
+
+export const MINI_MEDIATOR_MODELS_CRUD_TAGS_OPENAI: MiniMediatorModel =
+	MiniMediatorModel.buildFromIdAndEndpoint(
+		'AdminModelsCRUDTest:ModelTagsChange',
+		MINI_MEDIATOR_OPENAI
+	);
+
+export const MINI_MEDIATOR_MODELS_CRUD_TAGS_OLLAMA: MiniMediatorModel =
+	MiniMediatorModel.buildFromIdAndEndpoint(
+		'AdminModelsCRUDTest:ModelTagsChange',
+		MINI_MEDIATOR_OLLAMA
+	);
+
+export const MINI_MEDIATOR_MODELS_CRUD_HIDE_OPENAI: MiniMediatorModel =
+	MiniMediatorModel.buildFromIdAndEndpoint('AdminModelsCRUDTest:HideModel', MINI_MEDIATOR_OPENAI);
+
+export const MINI_MEDIATOR_MODELS_CRUD_HIDE_OLLAMA: MiniMediatorModel =
+	MiniMediatorModel.buildFromIdAndEndpoint('AdminModelsCRUDTest:HideModel', MINI_MEDIATOR_OLLAMA);
+
+export const MINI_MEDIATOR_MODELS_CRUD_DISABLE_OPENAI: MiniMediatorModel =
+	MiniMediatorModel.buildFromIdAndEndpoint(
+		'AdminModelsCRUDTest:DisableModel',
+		MINI_MEDIATOR_OPENAI
+	);
+
+export const MINI_MEDIATOR_MODELS_CRUD_DISABLE_OLLAMA: MiniMediatorModel =
+	MiniMediatorModel.buildFromIdAndEndpoint(
+		'AdminModelsCRUDTest:DisableModel',
+		MINI_MEDIATOR_OLLAMA
+	);
+
+export const MINI_MEDIATOR_MODELS_CRUD_VERIFY_VISIBILITY_SETTINGS_OPENAI: MiniMediatorModel =
+	MiniMediatorModel.buildFromIdAndEndpoint(
+		'AdminModelsCRUDTest:VerifyVisibilitySettings',
+		MINI_MEDIATOR_OPENAI
+	);
+
+export const MINI_MEDIATOR_MODELS_CRUD_VERIFY_VISIBILITY_SETTINGS_OLLAMA: MiniMediatorModel =
+	MiniMediatorModel.buildFromIdAndEndpoint(
+		'AdminModelsCRUDTest:VerifyVisibilitySettings',
+		MINI_MEDIATOR_OLLAMA
+	);

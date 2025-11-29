@@ -11,9 +11,34 @@ fixtures/
   web/             # Web-search fixtures (future)
 ```
 
+## Model File Formats
+
+### Single Model Format
+
+Each file can contain a single model definition: `{ "model": "<slug>", "scenarios": [ ... ] }`.
+
+### Batch Model Format
+
+Alternatively, a file can contain an array of model definitions. This is useful when you need multiple models with similar behavior (e.g., for CRUD tests). Simply wrap multiple model objects in an array:
+
+```json
+[
+	{
+		"model": "Test:Model1",
+		"scenarios": [ ... ]
+	},
+	{
+		"model": "Test:Model2",
+		"scenarios": [ ... ]
+	}
+]
+```
+
+This allows you to define many models in one place without creating separate files for each one.
+
 ## Scenario Schema
 
-Each file contains `{ "model": "<slug>", "scenarios": [ ... ] }`. A scenario looks like:
+A scenario looks like:
 
 ```json
 {

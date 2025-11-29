@@ -155,8 +155,16 @@ class FixturesStore:
         for path in models_dir.glob("*.json"):
             with path.open("r", encoding="utf-8") as handle:
                 raw = json.load(handle)
-            fixture = ModelFixture(**raw)
-            self.model_fixtures[fixture.model] = fixture
+            # Support both single model objects and arrays of models
+            if isinstance(raw, list):
+                # Array of models - load each one
+                for model_data in raw:
+                    fixture = ModelFixture(**model_data)
+                    self.model_fixtures[fixture.model] = fixture
+            else:
+                # Single model object (backward compatible)
+                fixture = ModelFixture(**raw)
+                self.model_fixtures[fixture.model] = fixture
 
     def available_models(self) -> List[Dict[str, Any]]:
         models = []
