@@ -252,5 +252,67 @@ export class AdminSettingsModelsTab extends AdminSettingsPage {
 		).toBe(true);
 	}
 
-	// TODO: add more methods - hide model, toggle model, maybe preset import/export?
+	/**
+	 * Clicks the hide button for the given model.
+	 * The button only exists in the DOM when Shift is held, so we must hold Shift first,
+	 * wait for the button to appear, then click it.
+	 *
+	 * @param modelId - The ID of the model, including the prefix!
+	 */
+	async clickModelItemHideButton(modelId: string): Promise<void> {
+		// Hold Shift first - the button only appears when Shift is held
+		await this.page.keyboard.down('Shift');
+		try {
+			// Wait for the button to appear and then click it
+			const hideButton = this.getModelItemHideButton(modelId);
+			await hideButton.waitFor({ state: 'visible' });
+			await hideButton.click();
+		} finally {
+			// Always release Shift, even if clicking fails
+			await this.page.keyboard.up('Shift');
+		}
+	}
+
+	/**
+	 * Sets the hide state for the given model.
+	 * Waits for the API call to complete and the state to change after clicking.
+	 *
+	 * @param modelId - The ID of the model, including the prefix!
+	 * @param hideState - The hide state to set.
+	 */
+	async setModelItemHideState(modelId: string, hideState: boolean): Promise<void> {
+		const currentHideState = await this.getModelItemHideState(modelId);
+
+		if (hideState !== currentHideState) {
+			await this.clickModelItemHideButton(modelId);
+		}
+	}
+
+	/**
+	 * Asserts that the model's hide state matches the expected value.
+	 * Uses Playwright's built-in retry logic to wait for the state to match.
+	 *
+	 * @param modelId - The ID of the model, including the prefix!
+	 * @param hideState - The expected hide state.
+	 */
+	async assertModelItemHideState(modelId: string, hideState: boolean): Promise<void> {
+		// TODO this feels a little too coupled to tailwind classes. maybe we should add a data attribute on the frontend and check for that instead?
+		const modelItem = this.getModelItem(modelId);
+		// Use expect with toHaveClass which has built-in retry logic - no manual timeouts needed!
+		// The class 'opacity-50' is applied when the model is hidden
+		if (hideState) {
+			await expect(modelItem).toContainClass('opacity-50');
+		} else {
+			await expect(modelItem).not.toContainClass('opacity-50');
+		}
+	}
+
+	async getModelItemHideState(modelId: string): Promise<boolean> {
+		const element = this.getModelItem(modelId);
+		return await element.evaluate((el) => {
+			return el.classList.contains('opacity-50');
+		});
+	}
+
+	// TODO: add more methods - toggle model enabled/disabled, maybe preset import/export?
 }

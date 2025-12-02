@@ -24,6 +24,9 @@ export abstract class BasePage {
 	private sidebarToggleButtonWhenOpen: ReturnType<Page['getByTestId']>;
 	private sidebar: ReturnType<Page['getByTestId']>;
 	private workspaceButton: ReturnType<Page['getByTestId']>;
+	private getChatItem: (id: string) => ReturnType<Page['getByTestId']>;
+	private getFolderItem: (id: string) => ReturnType<Page['getByTestId']>;
+
 	constructor(protected page: Page) {
 		const toastContainer = this.page.locator('section[aria-label="Notifications alt+T"]');
 		this.toast = new Toast(toastContainer);
@@ -41,6 +44,8 @@ export abstract class BasePage {
 		this.sidebarToggleButtonWhenOpen = this.page.getByTestId(testId('Sidebar', 'ToggleButton'));
 		this.sidebar = this.page.getByTestId(testId('Sidebar'));
 		this.workspaceButton = this.page.getByTestId(testId('Sidebar', 'WorkspaceButton'));
+		this.getChatItem = (id: string) => this.page.getByTestId(testId('Sidebar', 'ChatItem', id));
+		this.getFolderItem = (id: string) => this.page.getByTestId(testId('Sidebar', 'FolderItem', id));
 	}
 
 	async verifyPageLoaded(): Promise<void> {
@@ -153,5 +158,63 @@ export abstract class BasePage {
 	async clickWorkspaceButton(): Promise<void> {
 		await this.openSidebarIfClosed();
 		await this.workspaceButton.click();
+	}
+
+	/**
+	 * Clicks the *first* chat with the given title.
+	 *
+	 * @param title The title of the chat to click.
+	 */
+	async clickChatByTitle(title: string): Promise<void> {
+		await this.page.locator('[data-chat-id] a div div').filter({ hasText: title }).first().click();
+	}
+
+	/**
+	 * Click the chat with the given chatId.
+	 *
+	 * @param chatId The chatId of the chat to click.
+	 */
+	async clickChatById(chatId: string): Promise<void> {
+		await this.getChatItem(chatId).click();
+	}
+
+	/**
+	 * Click the chat at the given index.
+	 *
+	 * **IMPORTANT** - this will look for the chat at the given index in the sidebar *absolutely*!
+	 * In other words, if you've got a folder with 3 chats in it and five chats in the root,
+	 * and you call this method with an index of 2, it will click the 3rd chat in the folder,
+	 * **NOT** the third chat in the root!
+	 *
+	 * HOWEVER, if the folder is not expanded, the chats in that folder will not be found.
+	 *
+	 * @param index The index of the chat to click.
+	 */
+	async clickChatByIndex(index: number): Promise<void> {
+		await this.page.locator('[data-chat-id] a div div').nth(index).click();
+	}
+
+	/**
+	 * Toggle the expansion state of the *first* folder with the given title.
+	 *
+	 * @param title The title of the folder to expand.
+	 */
+	async toggleFolderExpansionByTitle(title: string): Promise<void> {
+		await this.page
+			.locator(`[data-testid^="${testId('Sidebar', 'FolderItem')}"]`)
+			.filter({ hasText: title })
+			.first()
+			.click();
+	}
+
+	async toggleFolderExpansionById(id: string): Promise<void> {
+		await this.getFolderItem(id).click();
+	}
+
+	async toggleFolderExpansionByIndex(index: number): Promise<void> {
+		await this.page
+			.locator(`[data-testid^="${testId('Sidebar', 'FolderItem')}"]`)
+			.nth(index)
+			.click();
 	}
 }

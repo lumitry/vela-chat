@@ -550,6 +550,8 @@ const chatCommands: Command[] = [
 
 			const modelItems: SubmenuItem[] = models
 				.filter((model: any) => {
+					// Exclude models where meta.hidden is true
+					if (model?.info?.meta?.hidden) return false;
 					const name = model.name ?? model.id;
 					return !query || name.toLowerCase().includes(lowerQuery);
 				})

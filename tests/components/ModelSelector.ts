@@ -35,6 +35,7 @@ export class ModelSelector extends Dropdown {
 	private getModelSelectorModelDescription: (modelId: string) => ReturnType<Page['getByTestId']>;
 	/** Only for Ollama models. Currently mini-mediator doesn't support this anyway. */
 	private getModelSelectorModelParameterSize: (modelId: string) => ReturnType<Page['getByTestId']>;
+	private setDefaultButton: ReturnType<Page['getByTestId']>;
 
 	constructor(page: Page, containerTestIdPrefix: string[] = ['Chat', 'ModelSelector']) {
 		// The dropdown content appears when the selector is opened
@@ -60,6 +61,7 @@ export class ModelSelector extends Dropdown {
 			page.getByTestId(testId(...containerTestIdPrefix, 'ModelDescription', modelId));
 		this.getModelSelectorModelParameterSize = (modelId: string) =>
 			page.getByTestId(testId(...containerTestIdPrefix, 'ModelParameterSize', modelId));
+		this.setDefaultButton = page.getByTestId(testId(...containerTestIdPrefix, 'SetDefaultButton'));
 	}
 
 	/**
@@ -72,6 +74,19 @@ export class ModelSelector extends Dropdown {
 		// Wait for dropdown to be visible
 		await this.container.waitFor({ state: 'visible', timeout: 2000 }).catch(() => {
 			// Dropdown might already be visible or might not use standard visibility
+		});
+	}
+
+	/**
+	 * Closes the model selector by clicking the model selector trigger (the model name & chevron).
+	 *
+	 * The model selector should be **OPEN** before calling this method.
+	 */
+	async close(): Promise<void> {
+		await this.modelSelectorTrigger.click();
+
+		await this.container.waitFor({ state: 'hidden', timeout: 2000 }).catch(() => {
+			// Dropdown might close immediately or might not use standard visibility
 		});
 	}
 
@@ -96,6 +111,22 @@ export class ModelSelector extends Dropdown {
 	 */
 	async assertModelNameExists(modelId: string, modelName: string): Promise<void> {
 		await expect(this.getModelSelectorModelName(modelId)).toHaveText(modelName);
+	}
+
+	/**
+	 * Asserts that the model's hide state matches the expected value.
+	 *
+	 * We expect the model to not be visible in the model selector if it is hidden.
+	 *
+	 * @param modelId - The ID of the model.
+	 * @param expectedHideState - The expected hide state.
+	 */
+	async assertModelHideState(modelId: string, expectedHideState: boolean): Promise<void> {
+		if (expectedHideState) {
+			await expect(this.getModelSelectorModelName(modelId)).not.toBeVisible();
+		} else {
+			await expect(this.getModelSelectorModelName(modelId)).toBeVisible();
+		}
 	}
 
 	/**
@@ -191,5 +222,14 @@ export class ModelSelector extends Dropdown {
 		expect(actualSrc).not.toBe(defaultImageUrl);
 		// Check that it's a file URL (either /api/v1/files/... or data:... or absolute URL)
 		expect(actualSrc).toMatch(/\/api\/v1\/files\/.*\/content|data:image|https?:\/\//);
+	}
+
+	/**
+	 * Sets the current model as the default model by clicking the set default button.
+	 *
+	 * The model selector does not need to be open to call this method, but this method CANNOT be called if the model selector is open, and it cannot be called if a chat is open because the button does not appear in that case.
+	 */
+	async setCurrentModelAsDefault(): Promise<void> {
+		await this.setDefaultButton.click();
 	}
 }

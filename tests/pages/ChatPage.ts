@@ -43,6 +43,29 @@ export class ChatPage extends BaseChatPage {
 	}
 
 	/**
+	 * Gets the chat ID from the chat title button.
+	 *
+	 * @returns The chat ID.
+	 */
+	async getChatId(): Promise<string> {
+		const chatId = await this.chatTitleButton.getAttribute('data-chatid');
+		if (!chatId) {
+			throw new Error('Chat ID not found');
+		}
+		return chatId;
+	}
+
+	/**
+	 * Asserts that the chat ID is the expected value.
+	 *
+	 * @param expectedChatId - The expected chat ID.
+	 */
+	async assertChatId(expectedChatId: string): Promise<void> {
+		const chatId = await this.getChatId();
+		expect(chatId).toBe(expectedChatId);
+	}
+
+	/**
 	 * Gets all response message IDs for a given user message ID by waiting for them to appear in the DOM.
 	 *
 	 * This is useful when you need to get all response messages, including in multi-response scenarios

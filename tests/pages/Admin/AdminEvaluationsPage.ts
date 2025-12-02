@@ -79,5 +79,24 @@ export class AdminEvaluationsPage extends AdminPage {
 		}
 	}
 
+	/**
+	 * Asserts that the model's hide state matches the expected value.
+	 *
+	 * We expect the model to not be visible on the page if it is hidden.
+	 *
+	 * @param modelId - The ID of the model.
+	 * @param expectedHideState - The expected hide state.
+	 */
+	async assertLeaderboardModelHideState(
+		modelId: string,
+		expectedHideState: boolean
+	): Promise<void> {
+		if (expectedHideState) {
+			await expect(this.getLeaderboardModelName(modelId)).not.toBeVisible();
+		} else {
+			await expect(this.getLeaderboardModelName(modelId)).toBeVisible();
+		}
+	}
+
 	// TODO: add more methods, probably refactor this into a leaderboard page object and a feedbacks page object
 }

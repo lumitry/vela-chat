@@ -189,4 +189,18 @@ export class CommandPalette {
 	async assertIsClosed(): Promise<void> {
 		await expect(this.commandPalette).toHaveAttribute('aria-hidden', 'true');
 	}
+
+	/**
+	 * Assert that the model's hide state matches the expected value.
+	 *
+	 * @param modelId - The ID of the model.
+	 * @param expectedHideState - The expected hide state.
+	 */
+	async assertModelHideState(modelId: string, expectedHideState: boolean): Promise<void> {
+		if (expectedHideState) {
+			await expect(this.getCommandPaletteSubmenuItemButton(`model:${modelId}`)).not.toBeVisible();
+		} else {
+			await expect(this.getCommandPaletteSubmenuItemButton(`model:${modelId}`)).toBeVisible();
+		}
+	}
 }

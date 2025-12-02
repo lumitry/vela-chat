@@ -508,6 +508,7 @@
 									on:click={handleChatTitleClick}
 									aria-label="Navigate to chat location in sidebar"
 									data-testid={testId('Chat', 'Navbar', 'ChatTitle', 'Button')}
+									data-chatid={$chatId ?? ''}
 								>
 									{#if currentFolderName}
 										<div

@@ -301,4 +301,20 @@ export abstract class BaseChatPage extends BasePage {
 			expect(expectedImageUrl(actualSrc!)).toBe(true);
 		}
 	}
+
+	/**
+	 * Asserts that the model's hide state matches the expected value.
+	 *
+	 * @param modelId - The ID of the model.
+	 * @param expectedHideState - The expected hide state.
+	 */
+	async assertModelHideState(modelId: string, expectedHideState: boolean): Promise<void> {
+		if (expectedHideState) {
+			await expect(this.getCommandsModelsModelName(modelId)).not.toBeVisible();
+			await expect(this.getCommandsModelsModelImage(modelId)).not.toBeVisible();
+		} else {
+			await expect(this.getCommandsModelsModelName(modelId)).toBeVisible();
+			await expect(this.getCommandsModelsModelImage(modelId)).toBeVisible();
+		}
+	}
 }
