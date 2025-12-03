@@ -283,6 +283,12 @@
 								{:else}
 									<div
 										class="size-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-xs font-semibold text-gray-600 dark:text-gray-200"
+										data-testid={testId(
+											'Chat',
+											'InfoModal',
+											'UniqueModelImagePlaceholder',
+											model.id
+										)}
 									>
 										{(model.label || model.id || '?').slice(0, 1).toUpperCase()}
 									</div>

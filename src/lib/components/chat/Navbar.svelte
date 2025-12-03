@@ -283,6 +283,7 @@
 				label: string;
 				icon?: string | null;
 				messageCount: number;
+				matchedModel: (typeof availableModels)[number] | null;
 			}
 		>();
 
@@ -291,40 +292,14 @@
 			const normalizedId = String(identifier).trim();
 			if (!normalizedId) return null;
 
-			// Try exact match first
-			let matchedModel = modelLookup.get(normalizedId);
+			// Only match exact IDs - no prefix-stripping or fuzzy matching
+			// If a model ID from a message isn't in the store, it's either disabled or doesn't exist
+			// In that case, we'll just use the ID as the label
+			const matchedModel = modelLookup.get(normalizedId);
 
-			// If not found and ID has a dot (endpoint prefix), try without prefix
-			// e.g., if message has "ollama.mini-mediator:anonymous" but store lookup fails,
-			// try "mini-mediator:anonymous"
-			if (!matchedModel && normalizedId.includes('.')) {
-				const parts = normalizedId.split('.');
-				if (parts.length > 1) {
-					const idWithoutPrefix = parts.slice(1).join('.');
-					matchedModel = modelLookup.get(idWithoutPrefix);
-				}
-			}
-
-			// If still not found and ID does NOT have a prefix, try finding models that end with this ID
-			// BUT only if there's exactly one match - we don't want to match the wrong model
-			// when both ollama.mini-mediator:anonymous and mini-mediator:anonymous exist
-			if (!matchedModel && !normalizedId.includes('.')) {
-				const candidates = availableModels.filter((model) => {
-					if (!model?.id) return false;
-					// Match if model.id ends with .normalizedId (has prefix) OR model.id === normalizedId (no prefix)
-					return model.id === normalizedId || model.id.endsWith(`.${normalizedId}`);
-				});
-				// Only use if there's exactly one candidate - prefer the one without prefix if both exist
-				if (candidates.length === 1) {
-					matchedModel = candidates[0];
-				} else if (candidates.length > 1) {
-					// If multiple candidates, prefer the one without prefix (exact match)
-					matchedModel = candidates.find((m) => m.id === normalizedId) || candidates[0];
-				}
-			}
-
-			// Always prioritize the models store as the source of truth for the current model name
-			const resolvedLabel = matchedModel?.name?.trim() || normalizedId;
+			// Use the model's name from the store if available, otherwise use the ID
+			// labelOverride takes precedence if provided
+			const resolvedLabel = labelOverride?.trim() || matchedModel?.name?.trim() || normalizedId;
 			const resolvedIcon = matchedModel?.info?.meta?.profile_image_url ?? null;
 
 			if (modelsUsed.has(normalizedId)) {
@@ -332,13 +307,16 @@
 				if (existing) {
 					// Always update the label if we have a better one (from store or override)
 					// This ensures model name changes are reflected even if the model was already registered
-					// Only update if the new label is different and not just the ID
-					if (resolvedLabel && resolvedLabel !== normalizedId && resolvedLabel !== existing.label) {
+					if (resolvedLabel && resolvedLabel !== existing.label) {
 						existing.label = resolvedLabel;
 					}
 					// Also update icon if we have one
 					if (resolvedIcon && (!existing.icon || existing.icon !== resolvedIcon)) {
 						existing.icon = resolvedIcon;
+					}
+					// Update matched model if we found one (e.g., model was enabled)
+					if (matchedModel && !existing.matchedModel) {
+						existing.matchedModel = matchedModel;
 					}
 				}
 				return normalizedId;
@@ -348,7 +326,8 @@
 				id: normalizedId,
 				label: resolvedLabel,
 				icon: resolvedIcon,
-				messageCount: 0
+				messageCount: 0,
+				matchedModel: matchedModel ?? null
 			});
 
 			return normalizedId;
@@ -435,9 +414,19 @@
 			}
 		}
 
-		snapshot.uniqueModels = Array.from(modelsUsed.values()).sort((a, b) =>
-			a.label.localeCompare(b.label, undefined, { sensitivity: 'base' })
-		);
+		// Build the final list - include all models that were used, even if they're not in the store
+		// If a model isn't in the store (disabled or doesn't exist), it will show with the ID as the label and no icon
+		snapshot.uniqueModels = Array.from(modelsUsed.values())
+			.map((entry) => {
+				// Remove matchedModel from final output - only include the properties needed for uniqueModels
+				return {
+					id: entry.id,
+					label: entry.label,
+					icon: entry.icon,
+					messageCount: entry.messageCount
+				};
+			})
+			.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
 
 		return snapshot;
 	};
