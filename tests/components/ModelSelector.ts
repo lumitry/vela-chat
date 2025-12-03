@@ -27,6 +27,7 @@ import { Dropdown } from './Dropdown';
  * ```
  */
 export class ModelSelector extends Dropdown {
+	private page: Page;
 	private modelSelectorTrigger: ReturnType<Page['getByTestId']>;
 	private modelSelectorTriggerCurrentModelName: ReturnType<Page['getByTestId']>;
 	private getModelSelectorModelItem: (modelId: string) => ReturnType<Page['getByTestId']>;
@@ -37,12 +38,25 @@ export class ModelSelector extends Dropdown {
 	private getModelSelectorModelParameterSize: (modelId: string) => ReturnType<Page['getByTestId']>;
 	private setDefaultButton: ReturnType<Page['getByTestId']>;
 
+	/**
+	 * Gets a tag locator for a specific model and tag name.
+	 */
+	private getModelSelectorTag = (modelId: string, tagName: string) =>
+		this.page.getByTestId(testId('Chat', 'ModelSelector', 'ModelItem', modelId, 'Tag', tagName));
+
+	/**
+	 * Gets a tag filter button locator.
+	 */
+	private getTagFilterButton = (tagName: string) =>
+		this.page.getByTestId(testId('Chat', 'ModelSelector', 'TagFilterButton', tagName));
+
 	constructor(page: Page, containerTestIdPrefix: string[] = ['Chat', 'ModelSelector']) {
 		// The dropdown content appears when the selector is opened
 		// We need to find the dropdown content - it's typically in a DropdownMenu.Content
 		// For now, we'll use a more generic locator that should work
 		const dropdownContainer = page.locator('[role="menu"]').first();
 		super(dropdownContainer);
+		this.page = page;
 
 		// Initialize locators using test IDs
 		this.modelSelectorTrigger = page.getByTestId(
@@ -232,5 +246,58 @@ export class ModelSelector extends Dropdown {
 	 */
 	async setCurrentModelAsDefault(): Promise<void> {
 		await this.setDefaultButton.click();
+	}
+
+	/**
+	 * Asserts that the model's tags match the expected tags.
+	 *
+	 * Tags are displayed within the model item in the dropdown. On mobile, they appear above the model name.
+	 * On desktop, they appear inline with the model name.
+	 *
+	 * @param modelId - The ID of the model.
+	 * @param expectedTags - The expected tags array. Tags are sorted alphabetically in the UI.
+	 */
+	async assertModelTags(modelId: string, expectedTags: string[]): Promise<void> {
+		if (expectedTags.length === 0) {
+			// If no tags expected, verify no tag elements exist for this specific model
+			const tagElements = this.page.locator(`[data-testid*="ModelItem_${modelId}_Tag_"]`);
+			const count = await tagElements.count();
+			expect(count).toBe(0);
+		} else {
+			// Sort expected tags alphabetically (as they are in the UI)
+			const sortedExpectedTags = [...expectedTags].sort((a, b) => a.localeCompare(b));
+
+			// Verify each expected tag exists
+			for (const tagName of sortedExpectedTags) {
+				const tagLocator = this.getModelSelectorTag(modelId, tagName);
+				await expect(tagLocator).toBeVisible();
+				await expect(tagLocator).toHaveText(tagName);
+			}
+
+			// Verify we have the correct number of tags (no extra tags)
+			const tagElements = this.page.locator(`[data-testid*="ModelItem_${modelId}_Tag_"]`);
+			const actualCount = await tagElements.count();
+			expect(actualCount).toBe(expectedTags.length);
+		}
+	}
+
+	/**
+	 * Filters the model list by clicking on a tag filter button.
+	 *
+	 * The tag filter buttons appear at the top of the model selector dropdown.
+	 *
+	 * If tagName is an empty string, this method does nothing.
+	 *
+	 * @param tagName - The name of the tag to filter by.
+	 */
+	async filterByTag(tagName: string): Promise<void> {
+		if (tagName === '') {
+			return;
+		}
+		const tagButton = this.getTagFilterButton(tagName);
+		await tagButton.scrollIntoViewIfNeeded();
+		await tagButton.click();
+		// Wait a moment for the filter to apply
+		await this.page.waitForTimeout(200);
 	}
 }

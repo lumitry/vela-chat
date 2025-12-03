@@ -634,7 +634,13 @@
 									if (!(info?.meta?.tags ?? null)) {
 										info.meta.tags = [{ name: tagName }];
 									} else {
-										info.meta.tags = [...info.meta.tags, { name: tagName }];
+										// Check if tag already exists (case-insensitive)
+										const tagExists = info.meta.tags.some(
+											(tag) => tag.name.toLowerCase() === tagName.toLowerCase()
+										);
+										if (!tagExists) {
+											info.meta.tags = [...info.meta.tags, { name: tagName }];
+										}
 									}
 								}}
 								testId={testId('ModelEditor', 'TagsSelector')}

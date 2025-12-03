@@ -475,6 +475,7 @@
 										selectedConnectionType = '';
 										selectedTag = tag;
 									}}
+									data-testid={testId('Chat', 'ModelSelector', 'TagFilterButton', tag)}
 								>
 									{tag}
 								</button>
@@ -506,6 +507,14 @@
 									{#each item.model?.tags.sort((a, b) => a.name.localeCompare(b.name)) as tag}
 										<div
 											class=" text-xs font-bold px-1 rounded-sm uppercase line-clamp-1 bg-gray-500/20 text-gray-700 dark:text-gray-200"
+											data-testid={testId(
+												'Chat',
+												'ModelSelector',
+												'ModelItem',
+												item.value,
+												'Tag',
+												tag.name
+											)}
 										>
 											{tag.name}
 										</div>
@@ -649,6 +658,14 @@
 											<Tooltip content={tag.name} className="flex-shrink-0">
 												<div
 													class=" text-xs font-bold px-1 rounded-sm uppercase bg-gray-500/20 text-gray-700 dark:text-gray-200"
+													data-testid={testId(
+														'Chat',
+														'ModelSelector',
+														'ModelItem',
+														item.value,
+														'Tag',
+														tag.name
+													)}
 												>
 													{tag.name}
 												</div>

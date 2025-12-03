@@ -42,6 +42,16 @@ export class ModelEditorPage extends BasePage {
 	private filtersSelector = this.getPageLocator('FiltersSelector');
 	private actionsSelector = this.getPageLocator('ActionsSelector');
 
+	// Tags component
+	private tagsSelector = this.getPageLocator('TagsSelector');
+	private getTagLocator = (tagName: string) =>
+		this.getPageLocator('TagsSelector', 'Tag', tagName).first();
+	private getTagDeleteButton = (tagName: string) =>
+		this.getPageLocator('TagsSelector', 'Tag', tagName, 'DeleteButton').first();
+	private tagInputAddButton = this.getPageLocator('TagsSelector', 'TagInput', 'AddButton');
+	private tagInputField = this.getPageLocator('TagsSelector', 'TagInput');
+	private tagInputSaveButton = this.getPageLocator('TagsSelector', 'TagInput', 'SaveButton');
+
 	// back to supported stuff...
 	// Capabilities section
 	private visionCapabilityCheckbox = this.getPageLocator('Capabilities', 'Vision', 'Checkbox');
@@ -91,9 +101,6 @@ export class ModelEditorPage extends BasePage {
 
 	constructor(page: Page) {
 		super(page);
-		// TODO: create a Tags component object and add it as a property here
-		//  we already have testIds for tags!
-		// TODO also make sure we do testing for model tags!
 
 		// TODO: create a AccessControl component object and add it as a property here
 		//  we already have testIds for access control!
@@ -237,5 +244,116 @@ export class ModelEditorPage extends BasePage {
 
 	async assertIsCreateWorkspaceModel(): Promise<void> {
 		expect(await this.getIsCreateWorkspaceModel()).toBe(true);
+	}
+
+	// ---------------- //
+	//   Tag Methods    //
+	// ---------------- //
+
+	/**
+	 * Gets all existing tag names from the tags selector.
+	 *
+	 * @returns Array of tag names currently displayed (unique).
+	 */
+	async getExistingTags(): Promise<string[]> {
+		await this.tagInputAddButton.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
+
+		const allTagElements = this.page.locator('[data-testid^="ModelEditor_TagsSelector_Tag_"]');
+		const tagNames: string[] = [];
+		const count = await allTagElements.count();
+
+		for (let i = 0; i < count; i++) {
+			const tagElement = allTagElements.nth(i);
+			const testIdAttr = await tagElement.getAttribute('data-testid');
+			if (testIdAttr) {
+				if (testIdAttr.includes('DeleteButton') || testIdAttr.includes('TagInput')) {
+					continue;
+				}
+				const match = testIdAttr.match(/ModelEditor_TagsSelector_Tag_(.+?)$/);
+				if (match && match[1]) {
+					tagNames.push(match[1]);
+				}
+			}
+		}
+
+		const uniqueTags = new Map<string, string>();
+		for (const tag of tagNames) {
+			const lowerTag = tag.toLowerCase();
+			if (!uniqueTags.has(lowerTag)) {
+				uniqueTags.set(lowerTag, tag);
+			}
+		}
+		return Array.from(uniqueTags.values());
+	}
+
+	/**
+	 * Deletes a specific tag by name.
+	 *
+	 * @param tagName - The name of the tag to delete.
+	 */
+	async deleteTag(tagName: string): Promise<void> {
+		const tagElement = this.getTagLocator(tagName);
+		await tagElement.waitFor({ state: 'visible', timeout: 2000 });
+		await tagElement.scrollIntoViewIfNeeded();
+		await tagElement.hover({ force: true }).catch(() => {});
+		await this.page.waitForTimeout(200);
+
+		const deleteButton = this.getTagDeleteButton(tagName);
+		if (await deleteButton.isVisible()) {
+			await deleteButton.click();
+		} else {
+			await deleteButton.click({ force: true });
+		}
+
+		await tagElement.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {
+			return tagElement.waitFor({ state: 'hidden', timeout: 1000 }).catch(() => {});
+		});
+		await this.page.waitForTimeout(150);
+	}
+
+	/**
+	 * Deletes all existing tags.
+	 */
+	async deleteAllTags(): Promise<void> {
+		const maxAttempts = 50;
+		let attempts = 0;
+		let existingTags = await this.getExistingTags();
+
+		while (existingTags.length > 0 && attempts < maxAttempts) {
+			await this.deleteTag(existingTags[0]);
+			existingTags = await this.getExistingTags();
+			attempts++;
+		}
+
+		if (attempts >= maxAttempts && (await this.getExistingTags()).length > 0) {
+			const remainingTags = await this.getExistingTags();
+			throw new Error(
+				`Failed to delete all tags after ${maxAttempts} attempts. Remaining tags: ${remainingTags.join(', ')}`
+			);
+		}
+	}
+
+	/**
+	 * Adds a new tag.
+	 *
+	 * @param tagName - The name of the tag to add.
+	 */
+	async addTag(tagName: string): Promise<void> {
+		await this.tagInputAddButton.click();
+		await this.tagInputField.fill(tagName);
+		await this.tagInputSaveButton.click();
+		await this.page.waitForTimeout(100);
+	}
+
+	/**
+	 * Sets the model's tags. Removes existing tags first, then adds new ones.
+	 *
+	 * @param tags - Array of tag names to set. Empty array removes all tags.
+	 */
+	async setTags(tags: string[]): Promise<void> {
+		await this.deleteAllTags();
+		for (const tagName of tags) {
+			await this.addTag(tagName);
+		}
 	}
 }

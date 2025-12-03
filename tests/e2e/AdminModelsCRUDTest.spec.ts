@@ -12,7 +12,9 @@ import {
 	MINI_MEDIATOR_MODELS_CRUD_IMAGE_OLLAMA,
 	MINI_MEDIATOR_MODELS_CRUD_IMAGE_OPENAI,
 	MINI_MEDIATOR_MODELS_CRUD_RENAME_OLLAMA,
-	MINI_MEDIATOR_MODELS_CRUD_RENAME_OPENAI
+	MINI_MEDIATOR_MODELS_CRUD_RENAME_OPENAI,
+	MINI_MEDIATOR_MODELS_CRUD_TAGS_OLLAMA,
+	MINI_MEDIATOR_MODELS_CRUD_TAGS_OPENAI
 } from '../data/miniMediatorModels';
 import { ModelEditorPage } from '../pages/Admin/ModelEditorPage';
 import { AdminSettingsInterfaceTab } from '../pages/Admin/AdminSettingsInterface';
@@ -933,10 +935,72 @@ const __dirname = dirname(__filename);
 			await assertModelDisableStateInAllLocations(false);
 		});
 
-		// TODO tags change and assertions.
+		test('Change model tags', async ({ page }) => {
+			const model =
+				provider === 'openai'
+					? MINI_MEDIATOR_MODELS_CRUD_TAGS_OPENAI
+					: MINI_MEDIATOR_MODELS_CRUD_TAGS_OLLAMA;
+			const modelId = model.getFullIdWithEndpointPrefix();
+			const modelName = `Change Tags Test Model ${generateRandomString(5)}`;
+			const newTags = ['new tag 1', 'new tag 2', generateRandomString(5)];
 
-		// TODO visibility settings change and assertions (would require multiple accounts and groups i think... this might also need to be a separate test, probably covering a lot of the other visibility settings, which would be a lot of work and i won't bother dealing with for a long time to come...)
+			const assertModelTagsInAllLocations = async (expectedTags: string[]) => {
+				await test.step('Verify model tags on home page', async () => {
+					const adminSettingsModelsTab = new AdminSettingsModelsTab(page);
+					await adminSettingsModelsTab.clickNewChatButton();
+					const homePage = new HomePage(page);
+					await homePage.modelSelector.open();
+					await homePage.modelSelector.assertModelTags(modelId, expectedTags);
+					await homePage.modelSelector.selectModel(modelId);
+					await homePage.assertPlaceholderTags(expectedTags);
+				});
 
-		// TODO ((so refactor all the 'visibility settings' stuff in README.md to be in one big test rather than individual ones.))
+				await test.step('Verify model selector tag filtering works', async () => {
+					const homePage = new HomePage(page);
+					await homePage.modelSelector.open();
+					await homePage.modelSelector.filterByTag(expectedTags[0] ?? '');
+					await homePage.modelSelector.assertModelNameExists(modelId, modelName);
+				});
+			};
+
+			await test.step('Set up model for change tags test', async () => {
+				const homePage = new HomePage(page);
+				await homePage.clickUserMenuButton();
+				await homePage.userMenu.clickAdminPanel();
+				const adminSettings = new AdminSettingsGeneralTab(page);
+				await adminSettings.clickModelsTabButton();
+				const adminSettingsModelsTab = new AdminSettingsModelsTab(page);
+				await adminSettingsModelsTab.clickModelItemEditButton(modelId);
+				const modelEditor = new ModelEditorPage(page);
+				await modelEditor.setTags(newTags);
+				await modelEditor.setName(modelName);
+				await modelEditor.saveAndReturn();
+				await modelEditor.toast.assertToastIsVisible('success');
+			});
+
+			// Assert model tags appear correctly
+			await assertModelTagsInAllLocations(newTags);
+
+			// Remove tags
+			await test.step('Remove tags', async () => {
+				const currentUrl = page.url();
+				if (!currentUrl.includes('/admin')) {
+					const homePage = new HomePage(page);
+					await homePage.clickUserMenuButton();
+					await homePage.userMenu.clickAdminPanel();
+					const adminSettings = new AdminSettingsGeneralTab(page);
+					await adminSettings.clickModelsTabButton();
+				}
+				const adminSettingsModelsTab = new AdminSettingsModelsTab(page);
+				await adminSettingsModelsTab.clickModelItemEditButton(modelId);
+				const modelEditor = new ModelEditorPage(page);
+				await modelEditor.setTags([]);
+				await modelEditor.saveAndReturn();
+				await modelEditor.toast.assertToastIsVisible('success');
+			});
+
+			// Assert model tags appear correctly
+			await assertModelTagsInAllLocations([]);
+		});
 	});
 });

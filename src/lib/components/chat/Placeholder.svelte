@@ -112,11 +112,27 @@
 							{@const imageSrc =
 								model?.info?.meta?.profile_image_url ??
 								($i18n.language === 'dg-DG' ? `/doge.png` : `/static/favicon.png`)}
+							{@const tags = models[modelIdx]?.info?.meta?.tags ?? []}
+							{@const uniqueTagNames = (() => {
+								// Remove duplicates (case-insensitive) before displaying
+								const uniqueTags = new Map();
+								for (const tag of tags) {
+									const lowerName = tag.name.toLowerCase();
+									if (!uniqueTags.has(lowerName)) {
+										uniqueTags.set(lowerName, tag.name);
+									}
+								}
+								return Array.from(uniqueTags.values());
+							})()}
 							<Tooltip
-								content={(models[modelIdx]?.info?.meta?.tags ?? [])
-									.map((tag) => tag.name.toUpperCase())
-									.join(', ')}
+								content={uniqueTagNames.map((tagName) => tagName.toUpperCase()).join(', ')}
 								placement="top"
+								testId={testId(
+									'Chat',
+									'Placeholder',
+									'CurrentModelTagsTooltip',
+									modelIdx.toString()
+								)}
 							>
 								<button
 									on:click={() => {

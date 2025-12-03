@@ -8,6 +8,8 @@ export class HomePage extends BaseChatPage {
 	private placeholderCurrentModelName = this.getPageLocator('Placeholder', 'CurrentModelName');
 	private placeholderDescription = this.getPageLocator('Placeholder', 'Description');
 	private placeholderCurrentModelImage = this.getPageLocator('Placeholder', 'CurrentModelImage');
+	private getPlaceholderTagsTooltip = (modelIdx: number) =>
+		this.getPageLocator('Placeholder', 'CurrentModelTagsTooltip', modelIdx.toString());
 
 	constructor(page: Page) {
 		super(page);
@@ -79,6 +81,35 @@ export class HomePage extends BaseChatPage {
 				const text = await this.placeholderDescription.textContent();
 				expect(text).not.toBe(description);
 			}
+		}
+	}
+
+	/**
+	 * Asserts that the placeholder shows the expected tags in the hover tooltip.
+	 *
+	 * @param expectedTags - The expected tags array. Tags are displayed as uppercase, comma-separated in the tooltip.
+	 * @param modelIdx - The index of the model to assert tags for. Defaults to 0.
+	 */
+	async assertPlaceholderTags(expectedTags: string[], modelIdx: number = 0): Promise<void> {
+		const modelImage = this.placeholderCurrentModelImage;
+
+		// make sure the tooltip is visible
+		await modelImage.hover();
+		await this.page.waitForTimeout(300);
+
+		if (expectedTags.length === 0) {
+			// If no tags expected, verify the image is visible
+			// The tooltip might not show tags if empty, so we just verify the image exists
+			await expect(modelImage).toBeVisible();
+		} else {
+			// Tags are displayed as uppercase, comma-separated in the tooltip
+			const expectedTooltipText = expectedTags.map((t) => t.toUpperCase()).join(', ');
+
+			// Check the tooltip's aria-label (which contains the tooltip content)
+			await expect(this.getPlaceholderTagsTooltip(modelIdx)).toHaveAttribute(
+				'aria-label',
+				expectedTooltipText
+			);
 		}
 	}
 }
