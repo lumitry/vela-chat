@@ -40,6 +40,9 @@ export class ChatInfoModal extends BaseModal {
 	);
 	private getUniqueModelImage = (modelId: string): Locator =>
 		this.page.getByTestId(testId('Chat', 'InfoModal', 'UniqueModelImage', modelId));
+	/** The placeholder for a unique model image. Only used if the model is disabled or doesn't exist. This will be the first letter of the model ID in uppercase. */
+	private getUniqueModelImagePlaceholder = (modelId: string): Locator =>
+		this.page.getByTestId(testId('Chat', 'InfoModal', 'UniqueModelImagePlaceholder', modelId));
 	/** The label of the model (i.e. the model name if it has one, otherwise the model ID) */
 	private getUniqueModelLabel = (modelId: string): Locator =>
 		this.page.getByTestId(testId('Chat', 'InfoModal', 'UniqueModelLabel', modelId));
@@ -91,6 +94,19 @@ export class ChatInfoModal extends BaseModal {
 
 	async assertUniqueModelImage(modelId: string, expectedImage: string): Promise<void> {
 		await expect(this.getUniqueModelImage(modelId)).toHaveAttribute('src', expectedImage);
+	}
+
+	/**
+	 * Asserts that the unique model image placeholder text matches the first letter of the model ID in uppercase.
+	 *
+	 * This should never be used alongside {@link assertUniqueModelImage}, since the placeholder is only used if the model is disabled or doesn't exist.
+	 *
+	 * @param modelId - The ID of the model.
+	 */
+	async assertUniqueModelImagePlaceholder(modelId: string): Promise<void> {
+		// model ID should never be empty string, but just in case
+		const expectedText = (modelId || '?').slice(0, 1).toUpperCase();
+		await expect(this.getUniqueModelImagePlaceholder(modelId)).toHaveText(expectedText);
 	}
 
 	/**

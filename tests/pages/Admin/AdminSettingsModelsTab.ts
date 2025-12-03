@@ -2,6 +2,7 @@ import type { Locator, Page } from '@playwright/test';
 import { expect } from '@playwright/test';
 import { testId } from '$lib/utils/testId';
 import { AdminSettingsPage } from './AdminSettingsPage';
+import { DEFAULT_MODEL_IMAGE } from '../../data/constants';
 
 /**
  * Represents the Admin Settings - Settings - Models page.
@@ -158,13 +159,13 @@ export class AdminSettingsModelsTab extends AdminSettingsPage {
 	 * This should be called after saving a model with a new image to wait for the backend to process it.
 	 *
 	 * @param modelId - The ID of the model, including the prefix!
-	 * @param defaultImageUrl - The default image URL to exclude (defaults to '/static/favicon.png')
+	 * @param defaultImageUrl - The default image URL to exclude (defaults to frontend's favicon, e.g. '/static/favicon.png')
 	 * @param timeout - Maximum time to wait in milliseconds (default: 10000ms)
 	 * @returns The saved image file URL
 	 */
 	async waitForModelImageToBeSaved(
 		modelId: string,
-		defaultImageUrl: string = '/static/favicon.png',
+		defaultImageUrl: string = DEFAULT_MODEL_IMAGE,
 		timeout: number = 10000
 	): Promise<string> {
 		const startTime = Date.now();
@@ -182,6 +183,13 @@ export class AdminSettingsModelsTab extends AdminSettingsPage {
 			await this.page.waitForTimeout(200);
 		}
 		const currentUrl = await this.getModelItemImageUrl(modelId);
+		// console.log(
+		// 	'Waited ' +
+		// 		(Date.now() - startTime) +
+		// 		'ms for model image to be saved. Current URL="' +
+		// 		currentUrl +
+		// 		'"'
+		// );
 		throw new Error(`Model image was not saved within ${timeout}ms. Current URL: ${currentUrl}`);
 	}
 
@@ -314,5 +322,42 @@ export class AdminSettingsModelsTab extends AdminSettingsPage {
 		});
 	}
 
-	// TODO: add more methods - toggle model enabled/disabled, maybe preset import/export?
+	/**
+	 * Gets the disabled state for the given model.
+	 *
+	 * @param modelId - The ID of the model, including the prefix!
+	 * @returns True if the model is **disabled**, false if it is enabled.
+	 */
+	async getModelItemDisabledState(modelId: string): Promise<boolean> {
+		const element = this.getModelItemToggleSwitch(modelId);
+		return await element.evaluate((el) => {
+			return el.getAttribute('data-state') === 'unchecked'; // unchecked = disabled -> return true because isDisabled
+		});
+	}
+
+	/**
+	 * Sets the disabled state for the given model.
+	 *
+	 * @param modelId - The ID of the model, including the prefix!
+	 * @param disabledState - The disabled state to set.
+	 */
+	async setModelItemDisabledState(modelId: string, disabledState: boolean): Promise<void> {
+		const currentDisabledState = await this.getModelItemDisabledState(modelId);
+
+		if (disabledState !== currentDisabledState) {
+			const element = this.getModelItemToggleSwitch(modelId);
+			await element.click();
+		}
+	}
+
+	/**
+	 * Asserts that the model's disabled state matches the expected value.
+	 *
+	 * @param modelId - The ID of the model, including the prefix!
+	 * @param disabledState - The expected disabled state.
+	 */
+	async assertModelItemDisabledState(modelId: string, disabledState: boolean): Promise<void> {
+		expect(await this.getModelItemDisabledState(modelId)).toBe(disabledState);
+	}
+	// TODO: add more methods - maybe preset import/export?
 }

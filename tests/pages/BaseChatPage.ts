@@ -193,6 +193,7 @@ export abstract class BaseChatPage extends BasePage {
 	 */
 	async submitMessageAndCaptureIds(message: string): Promise<SentMessage> {
 		// TODO does this work? Cursor chat name 'Adding identifiers for E2E testing in chat app'
+		// TODO i'm specifically worried about multi-response/side-by-side view!
 		// Set up route interception to capture message IDs
 		let userMessageId: string | null = null;
 		const responseMessageIds: string[] = [];
@@ -304,6 +305,8 @@ export abstract class BaseChatPage extends BasePage {
 
 	/**
 	 * Asserts that the model's hide state matches the expected value.
+	 *
+	 * We expect the model to **NOT** be visible in the commands container if it is hidden.
 	 *
 	 * @param modelId - The ID of the model.
 	 * @param expectedHideState - The expected hide state.

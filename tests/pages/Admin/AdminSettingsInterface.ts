@@ -231,6 +231,48 @@ export class AdminSettingsInterfaceTab extends AdminSettingsPage {
 		await selectLocator.selectOption(originalValue);
 	}
 
+	/**
+	 * Asserts that the model option does not exist in the local or external task model select.
+	 *
+	 * @param provider - The provider of the model.
+	 * @param modelName - The user-facing name of the model. (NOT the model ID!)
+	 * @param modelId - The full model ID (including endpoint prefix) to uniquely identify the option when names aren't unique.
+	 */
+	async assertModelOptionDoesNotExist(
+		provider: 'ollama' | 'openai',
+		modelId: string
+	): Promise<void> {
+		const selectLocator =
+			provider === 'openai' ? this.externalTaskModelSelect : this.localTaskModelSelect;
+
+		// Use count() instead of toBeVisible() because toBeVisible() is flaky for select options
+		// (the dropdown might not be open, so options aren't visible even if they exist).
+		// Count works reliably regardless of dropdown state.
+		const optionLocator = selectLocator.locator(`option[value="${modelId}"]`);
+		const count = await optionLocator.count();
+		expect(count).toBe(0);
+	}
+
+	/**
+	 * Asserts that the model option exists or does not exist in the local or external task model select.
+	 *
+	 * @param provider - The provider of the model. Used to determine whether to check the local or external task model select.
+	 * @param modelName - The user-facing name of the model. (NOT the model ID!)
+	 * @param modelId - The full model ID (including endpoint prefix) to uniquely identify the option when names aren't unique.
+	 * @param expectedPresence - Whether we expect the model option to be present or absent.
+	 */
+	async assertPresenceOfModelOption(
+		provider: 'ollama' | 'openai',
+		modelName: string,
+		modelId: string,
+		expectedPresence: boolean
+	): Promise<void> {
+		if (expectedPresence) {
+			await this.assertModelOptionExists(provider, modelName, modelId);
+		} else {
+			await this.assertModelOptionDoesNotExist(provider, modelId);
+		}
+	}
 	// TODO: add more methods?
 	// TODO banners
 }

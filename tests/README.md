@@ -106,8 +106,8 @@ npx playwright test --ui
     - [x] image
     - [x] description
     - [ ] tags
-  - [ ] Hide a model
-  - [ ] Disable a model
+  - [x] Hide a model
+  - [x] Disable a model
   - [ ] Verify visibility settings are respected
 - [ ] User Management Test (Admin)
   - [ ] Edit user details (name, email, role) (role is done by clicking the role pill in the user list, not in the edit user modal)

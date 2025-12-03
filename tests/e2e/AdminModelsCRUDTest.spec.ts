@@ -5,6 +5,8 @@ import { AdminSettingsModelsTab } from '../pages/Admin/AdminSettingsModelsTab';
 import {
 	MINI_MEDIATOR_MODELS_CRUD_DESCRIPTION_OLLAMA,
 	MINI_MEDIATOR_MODELS_CRUD_DESCRIPTION_OPENAI,
+	MINI_MEDIATOR_MODELS_CRUD_DISABLE_OLLAMA,
+	MINI_MEDIATOR_MODELS_CRUD_DISABLE_OPENAI,
 	MINI_MEDIATOR_MODELS_CRUD_HIDE_OLLAMA,
 	MINI_MEDIATOR_MODELS_CRUD_HIDE_OPENAI,
 	MINI_MEDIATOR_MODELS_CRUD_IMAGE_OLLAMA,
@@ -454,8 +456,11 @@ const __dirname = dirname(__filename);
 					await adminSettings.clickModelsTabButton();
 					const adminSettingsModelsTab = new AdminSettingsModelsTab(page);
 					await adminSettingsModelsTab.searchForModel(modelName);
-					// Wait for the image URL to be a file URL (not data: or favicon)
-					const imageUrl = await adminSettingsModelsTab.waitForModelImageToBeSaved(modelId);
+					// Wait for the image URL to be a file URL (not data: or favicon or first image URL)
+					const imageUrl = await adminSettingsModelsTab.waitForModelImageToBeSaved(
+						modelId,
+						firstImageUrl
+					);
 
 					// Verify once that the saved image matches the resized original
 					const resizedExpectedBuffer = await resizeImageTo250x250(page, secondNewModelImageBuffer);
@@ -703,9 +708,232 @@ const __dirname = dirname(__filename);
 			await assertModelHideStateInAllLocations(false);
 		});
 
-		// TODO tags change and assertions.
+		test('Disable model', async ({ page }) => {
+			const model =
+				provider === 'openai'
+					? MINI_MEDIATOR_MODELS_CRUD_DISABLE_OPENAI
+					: MINI_MEDIATOR_MODELS_CRUD_DISABLE_OLLAMA;
+			const modelId = model.getFullIdWithEndpointPrefix();
+			const modelName = `Disable Test Model ${generateRandomString(5)}`;
+			// We will change the image for this model too.
+			// This unfortunately couples it to the change model image test a little, but it's important to differentiate between this test and the disable model test!
+			const newModelImageBuffer = readFileSync(join(__dirname, '../data/newModelImage.png'));
+			// same thing for description!
+			const modelDescription = `Disable Test Model Description ${generateRandomString(5)}`;
 
-		// TODO disable model and assertions
+			await test.step('Set up model for disable test', async () => {
+				const homePage = new HomePage(page);
+				await homePage.clickUserMenuButton();
+				await homePage.userMenu.clickAdminPanel();
+				const adminSettings = new AdminSettingsGeneralTab(page);
+				await adminSettings.clickModelsTabButton();
+				const adminSettingsModelsTab = new AdminSettingsModelsTab(page);
+				await adminSettingsModelsTab.clickModelItemEditButton(modelId);
+				const modelEditor = new ModelEditorPage(page);
+				await modelEditor.setModelImage({
+					name: 'newModelImage.png',
+					mimeType: 'image/png',
+					buffer: newModelImageBuffer
+				});
+				await modelEditor.setDescription(modelDescription);
+				await modelEditor.setName(modelName);
+				await modelEditor.saveAndReturn();
+				await modelEditor.toast.assertToastIsVisible('success');
+			});
+
+			// Wait for image to be saved, verify content once, then use URL for all assertions
+			const expectedImageUrl =
+				await test.step('Wait for first image to be saved and verify content', async () => {
+					const adminSettings = new AdminSettingsGeneralTab(page);
+					await adminSettings.clickModelsTabButton();
+					const adminSettingsModelsTab = new AdminSettingsModelsTab(page);
+					await adminSettingsModelsTab.searchForModel(modelName);
+					// Wait for the image URL to be a file URL (not data: or favicon)
+					const imageUrl = await adminSettingsModelsTab.waitForModelImageToBeSaved(modelId);
+
+					// Verify once that the saved image matches the resized original
+					const resizedExpectedBuffer = await resizeImageTo250x250(page, newModelImageBuffer);
+					await adminSettingsModelsTab.assertModelItemImageContentMatches(
+						modelId,
+						resizedExpectedBuffer
+					);
+
+					return imageUrl;
+				});
+
+			let chatId: string;
+			let responseMessageId: string;
+
+			// creates a new chat with the model & sets it as the default model. this is for future assertions.
+			await test.step('Create new chat with not-yet-disabled model', async () => {
+				const homePage = new HomePage(page);
+				await homePage.clickNewChatButton();
+				await homePage.modelSelector.open();
+				await homePage.modelSelector.selectModel(modelId);
+				await homePage.modelSelector.setCurrentModelAsDefault();
+
+				// we do these assertions here to make the test fail early if these assertions are broken, since we will need to do them anyway later, and it would be better to fail in the setup when it's clear that something is wrong with these assertions rather than the model hide functionality itself.
+				await homePage.assertPlaceholderCurrentModelName(modelName);
+				await homePage.assertPlaceholderCurrentModelImage(expectedImageUrl);
+				await homePage.assertPlaceholderDescription(modelDescription);
+
+				const { responseMessageIds } =
+					await homePage.submitMessageAndCaptureIds('Hello, how are you?');
+				responseMessageId = responseMessageIds[0];
+				const chatPage = new ChatPage(page);
+				await chatPage.assertResponseMessageHasModelName(responseMessageId, modelName);
+				await chatPage.assertResponseMessageHasModelImage(responseMessageId, expectedImageUrl);
+				chatId = await chatPage.getChatId();
+			});
+
+			// Helper function to assert model hide state appears correctly in all locations
+			const assertModelDisableStateInAllLocations = async (expectedDisableState: boolean) => {
+				await test.step('Verify model disable state in Admin Settings Models tab', async () => {
+					const adminSettings = new AdminSettingsGeneralTab(page);
+					await adminSettings.clickModelsTabButton();
+					const adminSettingsModelsTab = new AdminSettingsModelsTab(page);
+					await adminSettingsModelsTab.searchForModel(modelName);
+					await adminSettingsModelsTab.assertModelItemDisabledState(modelId, expectedDisableState);
+
+					// TODO this is messy, but it stabilizes the test for now.
+					await page.waitForTimeout(1000);
+				});
+
+				await test.step('Verify model appears in Admin Settings Interface tab', async () => {
+					const adminSettingsModelsTab = new AdminSettingsModelsTab(page);
+					await adminSettingsModelsTab.clickInterfaceTabButton();
+					const adminSettingsInterfaceTab = new AdminSettingsInterfaceTab(page);
+					await adminSettingsInterfaceTab.assertPresenceOfModelOption(
+						provider as 'ollama' | 'openai',
+						modelName,
+						modelId,
+						!expectedDisableState // expectedPresence = !expectedDisableState
+					);
+				});
+
+				await test.step('Verify model disable state in Admin Evaluations page (leaderboard)', async () => {
+					const adminSettingsModelsTab = new AdminSettingsModelsTab(page);
+					await adminSettingsModelsTab.clickEvaluationsPageButton();
+					const adminEvaluationsPage = new AdminEvaluationsPage(page);
+
+					// reusing the assertLeaderboardModelHideState method here because it's the same logic
+					await adminEvaluationsPage.assertLeaderboardModelHideState(modelId, expectedDisableState);
+				});
+
+				await test.step('Verify model disable state in Home Page (new chat)', async () => {
+					const homePage = new HomePage(page);
+					await homePage.clickNewChatButton();
+					await homePage.modelSelector.open();
+					// model will not apear in model selector if it is disabled, even if it is the default model!
+					// reusing the assertModelHideState function here because it's the same logic
+					await homePage.modelSelector.assertModelHideState(modelId, expectedDisableState);
+					await homePage.modelSelector.close();
+					await homePage.assertPlaceholderCurrentModelPresence(
+						!expectedDisableState, // expectedPresence = !expectedDisableState
+						modelName,
+						expectedImageUrl,
+						modelDescription
+					);
+				});
+
+				await test.step('Verify the chat you made earlier still has the model name and image', async () => {
+					const homePage = new HomePage(page);
+					await homePage.clickChatById(chatId);
+					const chatPage = new ChatPage(page);
+
+					// disabled models show the model ID and default image instead of the set image and name
+					const expectedModelName = expectedDisableState ? modelId : modelName;
+					const expectedModelImageUrl = expectedDisableState
+						? DEFAULT_MODEL_IMAGE
+						: expectedImageUrl;
+
+					await chatPage.assertResponseMessageHasModelName(responseMessageId, expectedModelName);
+					await chatPage.assertResponseMessageHasModelImage(
+						responseMessageId,
+						expectedModelImageUrl
+					);
+				});
+
+				await test.step('Verify model disable state in commands container (@model)', async () => {
+					const chatPage = new ChatPage(page);
+					// the commands container doesn't support spaces in the model name
+					await chatPage.typeMessage('@' + modelName.replaceAll(' ', ''));
+					// reusing the assertModelHideState method here because it's the same logic
+					await chatPage.assertModelHideState(modelId, expectedDisableState);
+					// Clear the input for the next step
+					await chatPage.typeMessage('');
+				});
+
+				await test.step('Verify model name and image in Chat Info modal', async () => {
+					const chatPage = new ChatPage(page);
+					const chatInfoModal = new ChatInfoModal(page);
+					await chatPage.clickChatInfoButton();
+
+					// disabled models show the model ID and default image instead of the set image and name
+					const expectedModelName = expectedDisableState ? modelId : modelName;
+
+					await chatInfoModal.assertUniqueModelLabel(modelId, expectedModelName);
+					if (expectedDisableState) {
+						await chatInfoModal.assertUniqueModelImagePlaceholder(modelId);
+					} else {
+						await chatInfoModal.assertUniqueModelImage(modelId, expectedImageUrl);
+					}
+					await chatInfoModal.close();
+				});
+
+				await test.step('Verify model disable state in Command Palette', async () => {
+					const chatPage = new ChatPage(page);
+					await chatPage.commandPalette.open();
+					await chatPage.commandPalette.typeCommand(CHANGE_MODEL_COMMAND.label);
+					await chatPage.commandPalette.clickCommand(CHANGE_MODEL_COMMAND.id);
+					await chatPage.commandPalette.submitCommand();
+					await chatPage.commandPalette.typeCommand(modelName);
+
+					// reusing the assertModelHideState method here because it's the same logic
+					await chatPage.commandPalette.assertModelHideState(modelId, expectedDisableState);
+
+					await chatPage.commandPalette.close();
+				});
+			};
+
+			// Disable model
+			await test.step('Disable model', async () => {
+				const currentUrl = page.url();
+				if (!currentUrl.includes('/admin')) {
+					const homePage = new HomePage(page);
+					await homePage.clickUserMenuButton();
+					await homePage.userMenu.clickAdminPanel();
+				}
+				const adminSettings = new AdminSettingsGeneralTab(page);
+				await adminSettings.clickModelsTabButton();
+				const adminSettingsModelsTab = new AdminSettingsModelsTab(page);
+				await adminSettingsModelsTab.searchForModel(modelName);
+				await adminSettingsModelsTab.setModelItemDisabledState(modelId, true);
+			});
+
+			// Assert model disable state appears correctly with disabled state
+			await assertModelDisableStateInAllLocations(true);
+
+			// Enable model
+			await test.step('Enable model', async () => {
+				const currentUrl = page.url();
+				if (!currentUrl.includes('/admin')) {
+					const homePage = new HomePage(page);
+					await homePage.clickUserMenuButton();
+					await homePage.userMenu.clickAdminPanel();
+				}
+				const adminSettings = new AdminSettingsGeneralTab(page);
+				await adminSettings.clickModelsTabButton();
+				const adminSettingsModelsTab = new AdminSettingsModelsTab(page);
+				await adminSettingsModelsTab.searchForModel(modelName);
+				await adminSettingsModelsTab.setModelItemDisabledState(modelId, false);
+			});
+
+			// Assert model hide state appears correctly with unhidden state
+			await assertModelDisableStateInAllLocations(false);
+		});
+
+		// TODO tags change and assertions.
 
 		// TODO visibility settings change and assertions (would require multiple accounts and groups i think... this might also need to be a separate test, probably covering a lot of the other visibility settings, which would be a lot of work and i won't bother dealing with for a long time to come...)
 

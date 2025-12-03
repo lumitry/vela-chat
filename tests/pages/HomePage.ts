@@ -51,4 +51,34 @@ export class HomePage extends BaseChatPage {
 		}
 	}
 
+	/**
+	 * Asserts that the placeholder current model is present or absent depending on the expected disable state.
+	 *
+	 * @param expectedPresence - Whether we expect the model to be present or absent.
+	 * @param modelName - The name of the model.
+	 * @param expectedImageUrl - The expected image URL.
+	 * @param description - The expected description.
+	 */
+	async assertPlaceholderCurrentModelPresence(
+		expectedPresence: boolean,
+		modelName: string,
+		expectedImageUrl: string,
+		description: string
+	): Promise<void> {
+		// if the model is disabled, the placeholder will show some other model's name and image and description
+		if (expectedPresence) {
+			await this.assertPlaceholderCurrentModelName(modelName);
+			await this.assertPlaceholderCurrentModelImage(expectedImageUrl);
+			await this.assertPlaceholderDescription(description);
+		} else {
+			await expect(this.placeholderCurrentModelName).not.toHaveText(modelName);
+			await expect(this.placeholderCurrentModelImage).not.toHaveAttribute('src', expectedImageUrl);
+			// The description should either NOT match the string (if visible), OR it can simply not be visible at all.
+			if (await this.placeholderDescription.isVisible({ timeout: 50 })) {
+				// super low timeout because the other assertions on the page will already make sure the placeholder is loaded/stable
+				const text = await this.placeholderDescription.textContent();
+				expect(text).not.toBe(description);
+			}
+		}
+	}
 }

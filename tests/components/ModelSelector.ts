@@ -87,6 +87,7 @@ export class ModelSelector extends Dropdown {
 
 		await this.container.waitFor({ state: 'hidden', timeout: 2000 }).catch(() => {
 			// Dropdown might close immediately or might not use standard visibility
+			// TODO i've seen this fail to catch a still-open dropdown before!
 		});
 	}
 
