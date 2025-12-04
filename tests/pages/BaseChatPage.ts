@@ -147,7 +147,22 @@ export abstract class BaseChatPage extends BasePage {
 		return await this.callButton.isVisible();
 	}
 
+	/**
+	 * Asserts that the response is not in progress by checking if the call button is visible.
+	 */
 	async assertResponseNotInProgress(): Promise<void> {
+		await expect(this.callButton).toBeVisible();
+	}
+
+	/**
+	 * Asserts that the message cannot be submitted by checking if the send message button is not visible.
+	 *
+	 * Also asserts that the call button is still visible (as it will be when input is determined to be empty).
+	 *
+	 * This should be used either when a response is in progress, or when the input should be detected as effectively empty.
+	 */
+	async assertCannotSubmitMessage(): Promise<void> {
+		await expect(this.sendMessageButton).not.toBeVisible();
 		await expect(this.callButton).toBeVisible();
 	}
 
@@ -204,10 +219,15 @@ export abstract class BaseChatPage extends BasePage {
 				const request = route.request();
 				const postData = request.postDataJSON();
 
-				// Extract user message ID from the messages array (should be the same across all requests)
-				const msgId =
-					postData?.messages?.find((msg: { role?: string; id?: string }) => msg.role === 'user')
-						?.id || null;
+				// Extract user message ID from the messages array.
+				// There can be multiple user messages in the history; we always want the *latest* one.
+				type ChatMessage = { role?: string; id?: string };
+				const messages: ChatMessage[] = Array.isArray(postData?.messages)
+					? (postData.messages as ChatMessage[])
+					: [];
+				const userMessages = messages.filter((msg) => msg.role === 'user');
+				const latestUserMessage = userMessages[userMessages.length - 1];
+				const msgId = latestUserMessage?.id ?? null;
 
 				// Extract response message ID from the top-level 'id' field
 				const responseId = postData?.id || null;

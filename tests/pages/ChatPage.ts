@@ -177,6 +177,20 @@ export class ChatPage extends BaseChatPage {
 	}
 
 	/**
+	 * Gets the text content of an assistant message.
+	 *
+	 * @param messageId - The ID of the assistant message.
+	 * @returns The text content of the assistant message.
+	 */
+	async getAssistantMessageText(messageId: string): Promise<string> {
+		const text = await this.getAssistantMessageLocator(messageId).textContent();
+		if (!text) {
+			throw new Error('Assistant message text not found');
+		}
+		return text;
+	}
+
+	/**
 	 * Asserts that a user message contains the expected text.
 	 *
 	 * @param messageId - The ID of the user message.
@@ -194,6 +208,21 @@ export class ChatPage extends BaseChatPage {
 	 */
 	async assertAssistantMessageText(messageId: string, expectedText: string): Promise<void> {
 		await expect(this.getAssistantMessageLocator(messageId)).toContainText(expectedText);
+	}
+
+	/**
+	 * Asserts that an assistant message does not contain the expected text (also ignoring case).
+	 *
+	 * @param messageId - The ID of the assistant message.
+	 * @param unexpectedText - The text content that should not be present.
+	 */
+	async assertAssistantMessageNotContainsText(
+		messageId: string,
+		unexpectedText: string
+	): Promise<void> {
+		await expect(this.getAssistantMessageLocator(messageId)).not.toContainText(unexpectedText, {
+			ignoreCase: true
+		});
 	}
 
 	/**

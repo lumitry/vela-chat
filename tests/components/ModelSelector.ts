@@ -1,6 +1,7 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 import { testId } from '$lib/utils/testId';
 import { Dropdown } from './Dropdown';
+import { MiniMediatorModel } from '../data/miniMediatorModels';
 
 /**
  * Represents the Model Selector dropdown component.
@@ -37,6 +38,7 @@ export class ModelSelector extends Dropdown {
 	/** Only for Ollama models. Currently mini-mediator doesn't support this anyway. */
 	private getModelSelectorModelParameterSize: (modelId: string) => ReturnType<Page['getByTestId']>;
 	private setDefaultButton: ReturnType<Page['getByTestId']>;
+	private modelItems: Locator;
 
 	/**
 	 * Gets a tag locator for a specific model and tag name.
@@ -76,6 +78,10 @@ export class ModelSelector extends Dropdown {
 		this.getModelSelectorModelParameterSize = (modelId: string) =>
 			page.getByTestId(testId(...containerTestIdPrefix, 'ModelParameterSize', modelId));
 		this.setDefaultButton = page.getByTestId(testId(...containerTestIdPrefix, 'SetDefaultButton'));
+
+		// Any model item rendered in the dropdown for this selector
+		const modelItemPrefix = testId(...containerTestIdPrefix, 'ModelItem');
+		this.modelItems = page.locator(`[data-testid^="${modelItemPrefix}"]`);
 	}
 
 	/**
@@ -84,11 +90,31 @@ export class ModelSelector extends Dropdown {
 	 * The model selector should be closed before calling this method.
 	 */
 	async open(): Promise<void> {
+		// If we already see at least one model item, assume the selector is open
+		if (
+			await this.modelItems
+				.first()
+				.isVisible()
+				.catch(() => false)
+		) {
+			return;
+		}
+
+		// Make sure the trigger is actually visible/clickable
+		await expect(this.modelSelectorTrigger).toBeVisible();
 		await this.modelSelectorTrigger.click();
-		// Wait for dropdown to be visible
-		await this.container.waitFor({ state: 'visible', timeout: 2000 }).catch(() => {
-			// Dropdown might already be visible or might not use standard visibility
-		});
+
+		// Wait for at least one model item to become visible.
+		// This is the most reliable signal that the dropdown is actually open and populated.
+		await this.modelItems
+			.first()
+			.waitFor({ state: 'visible', timeout: 5000 })
+			.catch(async () => {
+				// Fallback: at least ensure the generic container became visible
+				await this.container.waitFor({ state: 'visible', timeout: 1000 }).catch(() => {
+					console.warn('Model selector dropdown did not become visible or show items in time');
+				});
+			});
 	}
 
 	/**
@@ -102,6 +128,7 @@ export class ModelSelector extends Dropdown {
 		await this.container.waitFor({ state: 'hidden', timeout: 2000 }).catch(() => {
 			// Dropdown might close immediately or might not use standard visibility
 			// TODO i've seen this fail to catch a still-open dropdown before!
+			console.warn('Model selector dropdown was not hidden when it should have been');
 		});
 	}
 
@@ -149,10 +176,26 @@ export class ModelSelector extends Dropdown {
 	 *
 	 * Closes the model selector if it is open.
 	 *
-	 * @param modelId - The ID of the model.
+	 * @param model - The model to select. Can be a MiniMediatorModel or the model ID with endpoint prefix.
 	 */
-	async selectModel(modelId: string): Promise<void> {
-		await this.getModelSelectorModelItem(modelId).click();
+	async selectModel(model: string | MiniMediatorModel): Promise<void> {
+		let modelId: string;
+		if (model instanceof MiniMediatorModel) {
+			modelId = model.getFullIdWithEndpointPrefix();
+		} else {
+			modelId = model;
+		}
+
+		const modelItem = this.getModelSelectorModelItem(modelId);
+
+		// Ensure the dropdown is open and the specific model item is visible before clicking.
+		if (!(await modelItem.isVisible().catch(() => false))) {
+			await this.open();
+		}
+
+		await modelItem.waitFor({ state: 'visible', timeout: 5000 });
+		await modelItem.click();
+
 		// Wait for dropdown to close after selection
 		await this.container.waitFor({ state: 'hidden', timeout: 2000 }).catch(() => {
 			// Dropdown might close immediately or might not use standard visibility

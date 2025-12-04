@@ -6,7 +6,7 @@
 		"chars_per_token": 4,
 		"chunk_batch_size": 10,
 		"finish_reason": "stop",
-		"target_tokens_per_second": 20,
+		"target_tokens_per_second": 200,
 		"pause_profile": []
 	},
 	"scenarios": [
@@ -87,7 +87,7 @@
 				"pause_profile": [
 					{
 						"after_chunk": 2,
-						"seconds": 5
+						"seconds": 2
 					}
 				],
 				"finish_reason": "stop"
@@ -112,6 +112,30 @@
 				"type": "rate_limit_exceeded",
 				"message": "Mini-Mediator simulated rate limit.",
 				"retry_after": 2.5
+			}
+		},
+		{
+			"name": "basic-chat",
+			"match": {
+				"type": "exact",
+				"role": "user",
+				"text": "Hello, how are you?"
+			},
+			"response": {
+				"message": "I'm doing well, thank you! How can I help you today?",
+				"think": null
+			}
+		},
+		{
+			"name": "basic-chat-follow-up",
+			"match": {
+				"type": "exact",
+				"role": "user",
+				"text": "What is the capital of France?"
+			},
+			"response": {
+				"message": "Rome is the capital of France.",
+				"think": null
 			}
 		}
 	]

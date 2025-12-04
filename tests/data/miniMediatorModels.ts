@@ -82,15 +82,35 @@ export const MINI_MEDIATOR_TASK_OPENAI: MiniMediatorModel =
 
 /**
  * A mini-mediator model that we can throw around and beat up and steal its lunch money. NEVER assert that this has a certain bit of config unless you explicitly set it to that, since this is a prime candidate for having its config changed by other tests!
+ *
+ * Behavior is mirror.
  */
 export const MINI_MEDIATOR_ANONYMOUS_OLLAMA: MiniMediatorModel =
 	MiniMediatorModel.buildFromIdAndEndpoint('mini-mediator:anonymous', MINI_MEDIATOR_OLLAMA);
 
 /**
  * A mini-mediator model that we can throw around and beat up and steal its lunch money. NEVER assert that this has a certain bit of config unless you explicitly set it to that, since this is a prime candidate for having its config changed by other tests!
+ *
+ * Behavior is mirror.
  */
 export const MINI_MEDIATOR_ANONYMOUS_OPENAI: MiniMediatorModel =
 	MiniMediatorModel.buildFromIdAndEndpoint('mini-mediator:anonymous', MINI_MEDIATOR_OPENAI);
+
+/**
+ * A mini-mediator model that provides deterministic behavior, mapping a specific input to a specific output.
+ *
+ * See also: `tests/mocks/mini-mediator/fixtures/models/deterministic.json`
+ */
+export const MINI_MEDIATOR_DETERMINISTIC_OPENAI: MiniMediatorModel =
+	MiniMediatorModel.buildFromIdAndEndpoint('mini-mediator:deterministic', MINI_MEDIATOR_OPENAI);
+
+/**
+ * A mini-mediator model that provides deterministic behavior, mapping a specific input to a specific output.
+ *
+ * See also: `tests/mocks/mini-mediator/fixtures/models/deterministic.json`
+ */
+export const MINI_MEDIATOR_DETERMINISTIC_OLLAMA: MiniMediatorModel =
+	MiniMediatorModel.buildFromIdAndEndpoint('mini-mediator:deterministic', MINI_MEDIATOR_OLLAMA);
 
 // ------------------------------------------------------------- //
 //                 Admin Models CRUD Test Models                 //

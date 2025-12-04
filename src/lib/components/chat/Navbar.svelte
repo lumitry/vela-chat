@@ -466,6 +466,7 @@
 					<button
 						id="sidebar-toggle-button"
 						class="cursor-pointer px-2 py-2 flex rounded-xl hover:bg-gray-50 dark:hover:bg-gray-850 transition"
+						data-testid={testId('SidebarToggleButton')}
 						on:click={() => {
 							showSidebar.set(!$showSidebar);
 						}}

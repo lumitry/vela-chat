@@ -93,14 +93,14 @@ npx playwright test --ui
   - [x] Registration fails with invalid email format
   - [x] Registration fails with duplicate email
   - [x] Verify default role assignment (pending vs user vs admin)
-- [ ] Basic Chat Test (send message, receive response)
-  - [ ] Create new chat
-  - [ ] Send message
-  - [ ] Receive response from model
-  - [ ] Verify message appears in chat history (+ after reloads, etc.)
-  - [ ] Verify response is stopped when the stop response button is clicked
-  - [ ] Verify you can't send a bunch of whitespace with no other content
-- [ ] Model CRUD Test - Parameterized for OpenAI & Ollama
+- [x] Basic Chat Test (send message, receive response)
+  - [x] Create new chat
+  - [x] Send message and verify response
+  - [x] Verify message appears in chat history (+ after reloads, etc.)
+  - [x] Verify response is stopped when the stop response button is clicked
+  - [x] Verify you can't send a bunch of whitespace with no other content
+  - [x] Verify whitespace is trimmed before submission
+- [x] Model CRUD Test - Parameterized for OpenAI & Ollama
   - [x] Modify a model by changing its...
     - [x] name
     - [x] image
