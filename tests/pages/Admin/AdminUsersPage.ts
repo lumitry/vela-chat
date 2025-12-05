@@ -94,23 +94,32 @@ export class AdminUsersPage extends AdminPage {
 	}
 
 	/**
+	 * Gets a user on the page by index.
+	 * @param index the index of the user to get
+	 * @returns the user on the page
+	 */
+	async getUserOnPage(index: number): Promise<UserInfo> {
+		const role = await this.getUserRowRole(index);
+		const name = await this.getUsername(index);
+		const email = await this.getUserEmail(index);
+
+		const lastActiveAtValue = await this.getUserRowLastActiveAt(index).getAttribute('data-value');
+		const createdAtValue = await this.getUserRowCreatedAt(index).getAttribute('data-value');
+		const lastActiveAt = lastActiveAtValue ? parseInt(lastActiveAtValue) : 0;
+		const createdAt = createdAtValue ? parseInt(createdAtValue) : 0;
+
+		return { idx: index, role, name, email, lastActiveAt, createdAt };
+	}
+
+	/**
 	 * Gets a list of the users in the user list on this page.
 	 * @returns the users on the page
 	 */
 	async getUsersOnPage(): Promise<UserInfo[]> {
 		const users = await this.userRows.all();
 		return Promise.all(
-			users.map(async (user, idx) => {
-				const role = await this.getUserRowRole(idx);
-				const name = await this.getUsername(idx);
-				const email = await this.getUserEmail(idx);
-
-				const lastActiveAtValue = await this.getUserRowLastActiveAt(idx).getAttribute('data-value');
-				const createdAtValue = await this.getUserRowCreatedAt(idx).getAttribute('data-value');
-				const lastActiveAt = lastActiveAtValue ? parseInt(lastActiveAtValue) : 0;
-				const createdAt = createdAtValue ? parseInt(createdAtValue) : 0;
-
-				return { idx, role, name, email, lastActiveAt, createdAt };
+			users.map(async (_, idx) => {
+				return this.getUserOnPage(idx);
 			})
 		);
 	}

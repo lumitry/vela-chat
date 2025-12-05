@@ -1,17 +1,43 @@
-import { DEFAULT_PASSWORD } from '../data/users';
-import { expect, test } from '../fixtures/testUser';
+import { randomUUID } from 'crypto';
+import { DEFAULT_PASSWORD, SHARED_USERS, generateUsersCSV, type TestUser } from '../data/users';
+import { expect, test } from '@playwright/test';
 import { AdminSettingsGeneralTab } from '../pages/Admin/AdminSettingsGeneralTab';
 import { AdminUsersPage, type UserInfo } from '../pages/Admin/AdminUsersPage';
+import { AddUserModal } from '../pages/Admin/modals/AddUserModal';
 import { EditUserModal, type EditUserModaEditableField } from '../pages/Admin/modals/EditUserModal';
 import { AuthMode, AuthPage } from '../pages/AuthPage';
 import { HomePage } from '../pages/HomePage';
 
 type UserRole = 'admin' | 'user' | 'pending';
 
+/**
+ * Creates a unique test user for this specific test run.
+ * Uses a random UUID to ensure no collisions with parallel tests.
+ */
+function createUniqueTestUser(testName: string, role: UserRole = 'admin'): TestUser {
+	const uniqueId = randomUUID().slice(0, 8);
+	return {
+		name: `Test-${uniqueId}`,
+		email: `test-${uniqueId}@usertest.local`,
+		password: DEFAULT_PASSWORD,
+		role
+	};
+}
+
+/** Expected user state for verification */
+type ExpectedUserState = {
+	name: string;
+	email: string;
+	password: string;
+	role: UserRole;
+};
+
+// Test case definitions
+// newValue can be a string or a function that returns a string (for dynamic values like email)
 type UserFieldTestCase =
 	| {
 			field: EditUserModaEditableField;
-			newValue: string;
+			newValue: string | (() => string);
 			isModalField: true;
 	  }
 	| {
@@ -22,45 +48,101 @@ type UserFieldTestCase =
 
 const testCases: UserFieldTestCase[] = [
 	{ field: 'name', newValue: 'RenamedTestUser', isModalField: true },
-	{ field: 'email', newValue: 'renamed_user@test.local', isModalField: true },
-	{ field: 'password', newValue: `${DEFAULT_PASSWORD}_REPLACEMENT`, isModalField: true },
+	{
+		field: 'email',
+		newValue: () => `renamed-${randomUUID().slice(0, 8)}@usertest.local`,
+		isModalField: true
+	},
+	{ field: 'password', newValue: `${DEFAULT_PASSWORD}_CHANGED`, isModalField: true },
 	{ field: 'role', newValue: 'user', isModalField: false }
 ];
 
-/** Expected user state for verification */
-type ExpectedUserState = {
-	name: string;
-	email: string;
-	password: string;
-	role: UserRole;
-};
+/** Resolves a newValue - if it's a function, call it; otherwise return as-is */
+function resolveNewValue(value: string | (() => string)): string {
+	return typeof value === 'function' ? value() : value;
+}
 
 test.describe('User Management Test', { tag: '@smoke' }, () => {
+	/**
+	 * Helper to sign in as admin and navigate to users page
+	 */
+	async function signInAsAdmin(page: import('@playwright/test').Page) {
+		await page.goto('/', { waitUntil: 'load' });
+		const authPage = new AuthPage(page);
+		await authPage.switchPageModeIfNeeded(AuthMode.SignIn);
+		await authPage.signIn(SHARED_USERS.preExistingAdmin);
+		await authPage.toast.assertToastIsVisible('success');
+		await expect(page).toHaveURL('/');
+		return new HomePage(page);
+	}
+
+	/**
+	 * Helper to navigate to admin users page
+	 */
+	async function goToAdminUsersPage(page: import('@playwright/test').Page, homePage: HomePage) {
+		await homePage.clickUserMenuButton();
+		await homePage.userMenu.clickAdminPanel();
+		const adminSettings = new AdminSettingsGeneralTab(page);
+		await adminSettings.clickUsersPageButton();
+		const adminUsersPage = new AdminUsersPage(page);
+		await adminUsersPage.waitForUsersToLoad();
+		return adminUsersPage;
+	}
+
+	/**
+	 * Helper to create a test user via CSV import
+	 */
+	async function createTestUser(
+		page: import('@playwright/test').Page,
+		adminUsersPage: AdminUsersPage,
+		user: TestUser
+	) {
+		await adminUsersPage.clickAddUserButton();
+		const addUserModal = new AddUserModal(page);
+		await addUserModal.clickCSVImportTabButton();
+		await addUserModal.uploadCSVFile({
+			name: 'user.csv',
+			mimeType: 'text/csv',
+			buffer: Buffer.from(generateUsersCSV([user]))
+		});
+		await addUserModal.saveAndClose();
+		await addUserModal.close();
+	}
+
+	/**
+	 * Helper to find a user by email on the current page
+	 */
+	async function findUserByEmail(adminUsersPage: AdminUsersPage, email: string): Promise<UserInfo> {
+		await adminUsersPage.searchForUser(email);
+		await adminUsersPage.waitForUsersToLoad();
+		const users = await adminUsersPage.getUsersOnPage();
+		const foundUser = users.find((u) => u.email === email);
+		expect(foundUser, `User with email ${email} not found`).toBeDefined();
+		return foundUser!;
+	}
+
 	for (const testCase of testCases) {
 		test(`Verify admin can edit another user's ${testCase.field}`, async ({ page }) => {
+			// Create a unique user for THIS test
+			const testUser = createUniqueTestUser(testCase.field);
+			// Resolve newValue once per test run (important for dynamic values like email)
+			const newValue =
+				testCase.field === 'role' ? testCase.newValue : resolveNewValue(testCase.newValue);
 			let targetUser: UserInfo;
 			let originalState: ExpectedUserState;
 			let expectedState: ExpectedUserState;
 
-			const homePage = new HomePage(page);
-			await homePage.clickUserMenuButton();
-			await homePage.userMenu.clickAdminPanel();
-			const adminSettings = new AdminSettingsGeneralTab(page);
-			await adminSettings.clickUsersPageButton();
+			const homePage = await signInAsAdmin(page);
+			const adminUsersPage = await goToAdminUsersPage(page, homePage);
 
-			const adminUsersPage = new AdminUsersPage(page);
-			await adminUsersPage.waitForUsersToLoad();
-
-			// TODO we should make users for this test (i.e. via csv import) to avoid concurrency issues with modifying a user while another test is using it.
-			// TODO also would be nice to do that for the delete user test
-			// TODO and we'll need to make a few chats for the view user chats test...
+			await test.step('Create test user', async () => {
+				await createTestUser(page, adminUsersPage, testUser);
+			});
 
 			await test.step(`Change user ${testCase.field}`, async () => {
-				await adminUsersPage.pagination.randomPage();
-				targetUser = await adminUsersPage.getRandomUserOnPage();
-				expect(targetUser).toBeDefined();
+				targetUser = await findUserByEmail(adminUsersPage, testUser.email);
 
-				// Store original state (password is assumed to be DEFAULT_PASSWORD)
+				// Store original state
 				originalState = {
 					name: targetUser.name,
 					email: targetUser.email,
@@ -71,20 +153,19 @@ test.describe('User Management Test', { tag: '@smoke' }, () => {
 				// Calculate expected state after change
 				expectedState = { ...originalState };
 				if (testCase.field === 'role') {
-					expectedState.role = testCase.newValue;
+					expectedState.role = newValue as UserRole;
 				} else {
-					expectedState[testCase.field] = testCase.newValue;
+					expectedState[testCase.field] = newValue;
 				}
 
 				// Apply the change
 				if (testCase.isModalField) {
 					await adminUsersPage.clickUserRowEditButton(targetUser.idx);
 					const editUserModal = new EditUserModal(page);
-					await editUserModal.setField(testCase.field, testCase.newValue);
+					await editUserModal.setField(testCase.field, newValue);
 					await editUserModal.saveAndClose();
 				} else {
-					// Role change via clicking role button
-					await adminUsersPage.setUserRowRole(targetUser.idx, testCase.newValue);
+					await adminUsersPage.setUserRowRole(targetUser.idx, newValue as UserRole);
 				}
 			});
 
@@ -122,24 +203,16 @@ test.describe('User Management Test', { tag: '@smoke' }, () => {
 			});
 
 			await test.step(`Revert ${testCase.field} to original`, async () => {
-				// Need to find the user again (may have moved due to sorting/pagination)
-				await adminUsersPage.searchForUser(expectedState.email);
-				await adminUsersPage.pagination.firstPage(); // using search doesn't automatically change the current page
-				// TODO that's a bug, we should fix it
-				await adminUsersPage.waitForUsersToLoad();
-
-				// Get the user (should be first result after search)
-				const users = await adminUsersPage.getUsersOnPage();
-				const updatedUser = users.find((u) => u.email === expectedState.email);
-				expect(updatedUser).toBeDefined();
+				// Find the user by their (possibly changed) email
+				const updatedUser = await findUserByEmail(adminUsersPage, expectedState.email);
 
 				if (testCase.isModalField) {
-					await adminUsersPage.clickUserRowEditButton(updatedUser!.idx);
+					await adminUsersPage.clickUserRowEditButton(updatedUser.idx);
 					const editUserModal = new EditUserModal(page);
 					await editUserModal.setField(testCase.field, originalState[testCase.field]);
 					await editUserModal.saveAndClose();
 				} else {
-					await adminUsersPage.setUserRowRole(updatedUser!.idx, originalState.role);
+					await adminUsersPage.setUserRowRole(updatedUser.idx, originalState.role);
 				}
 			});
 
@@ -148,4 +221,33 @@ test.describe('User Management Test', { tag: '@smoke' }, () => {
 			});
 		});
 	}
+
+	test('Verify admin can delete a user', async ({ page }) => {
+		const testUser = createUniqueTestUser('delete', 'user');
+
+		const homePage = await signInAsAdmin(page);
+		const adminUsersPage = await goToAdminUsersPage(page, homePage);
+
+		await test.step('Create test user', async () => {
+			await createTestUser(page, adminUsersPage, testUser);
+		});
+
+		await test.step('Delete user', async () => {
+			const foundUser = await findUserByEmail(adminUsersPage, testUser.email);
+			await adminUsersPage.clickUserRowDeleteButton(foundUser.idx);
+		});
+
+		await test.step('Verify user is deleted', async () => {
+			await adminUsersPage.searchForUser(testUser.email);
+			// Wait a moment for search to complete, but don't require rows to be visible
+			// since the user should be deleted
+			await page.waitForTimeout(500);
+			const users = await adminUsersPage.getUsersOnPage();
+			const deletedUser = users.find((u) => u.email === testUser.email);
+			expect(deletedUser, 'Deleted user should not be found').toBeUndefined();
+		});
+	});
+
+	// TODO: Verify admin can view another user's chats
+	// This requires creating chats for a test user first
 });

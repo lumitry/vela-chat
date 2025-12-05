@@ -92,9 +92,9 @@ export const SHARED_USERS: Record<string, TestUser> = {
  * Generate CSV content from SHARED_USERS.
  * Format: Name,Email,Password,Role
  */
-export function generateUsersCSV(): string {
+export function generateUsersCSV(users: TestUser[]): string {
 	const header = 'Name,Email,Password,Role\n';
-	const rows = Object.values(SHARED_USERS)
+	const rows = users
 		.map((user) => `${user.name},${user.email},${user.password},${user.role}`)
 		.join('\n');
 	return header + rows;
