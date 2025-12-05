@@ -1280,9 +1280,15 @@
 									src={userImageSrc}
 									class=" max-w-[30px] object-cover rounded-full"
 									alt="User profile"
+									data-testid={testId('Sidebar', 'UserMenu', 'UserImage')}
 								/>
 							</div>
-							<div class=" self-center font-medium">{$user?.name}</div>
+							<div
+								class=" self-center font-medium"
+								data-testid={testId('Sidebar', 'UserMenu', 'UserName')}
+							>
+								{$user?.name}
+							</div>
 						</button>
 					</UserMenu>
 				{/if}

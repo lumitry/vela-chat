@@ -5,6 +5,7 @@
 
 	import { fade } from 'svelte/transition';
 	import { flyAndScale } from '$lib/utils/transitions';
+	import { testId } from '$lib/utils/testId';
 
 	export let title = '';
 	export let message = '';
@@ -115,6 +116,7 @@
 							dispatch('cancel');
 						}}
 						type="button"
+						data-testid={testId('Common', 'ConfirmDialog', 'CancelButton')}
 					>
 						{cancelLabel}
 					</button>
@@ -124,6 +126,7 @@
 							confirmHandler();
 						}}
 						type="button"
+						data-testid={testId('Common', 'ConfirmDialog', 'ConfirmButton')}
 					>
 						{confirmLabel}
 					</button>

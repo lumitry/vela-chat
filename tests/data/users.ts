@@ -100,6 +100,11 @@ export function generateUsersCSV(): string {
 	return header + rows;
 }
 
+/** The default password for all users.
+ *
+ * We use something complex here in case we add validation later. */
+export const DEFAULT_PASSWORD = 'Sup3rS3cur3P455w0rd';
+
 /**
  * Generate a random valid user. Mostly useful if you don't need a predictable user with a sensible name and email to be identified by.
  * @returns A random valid user
@@ -107,7 +112,7 @@ export function generateUsersCSV(): string {
 export function generateRandomValidUser(): TestUser {
 	const name = `Test User ${Date.now()}`;
 	const email = `${name.toLowerCase().replace(/ /g, '.')}@test.example.com`;
-	const password = 'Sup3rS3cur3P455w0rd'; // in case we add proper validation later
+	const password = DEFAULT_PASSWORD;
 	return {
 		name,
 		email,

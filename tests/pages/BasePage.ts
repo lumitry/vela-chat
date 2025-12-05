@@ -26,6 +26,11 @@ export abstract class BasePage {
 	private workspaceButton: ReturnType<Page['getByTestId']>;
 	private getChatItem: (id: string) => ReturnType<Page['getByTestId']>;
 	private getFolderItem: (id: string) => ReturnType<Page['getByTestId']>;
+	private userName: ReturnType<Page['getByTestId']>;
+
+	// common confirm dialog buttons
+	protected confirmDialogCancelButton: ReturnType<Page['getByTestId']>;
+	protected confirmDialogConfirmButton: ReturnType<Page['getByTestId']>;
 
 	constructor(protected page: Page) {
 		const toastContainer = this.page.locator('section[aria-label="Notifications alt+T"]');
@@ -46,6 +51,14 @@ export abstract class BasePage {
 		this.workspaceButton = this.page.getByTestId(testId('Sidebar', 'WorkspaceButton'));
 		this.getChatItem = (id: string) => this.page.getByTestId(testId('Sidebar', 'ChatItem', id));
 		this.getFolderItem = (id: string) => this.page.getByTestId(testId('Sidebar', 'FolderItem', id));
+		this.userName = this.page.getByTestId(testId('Sidebar', 'UserMenu', 'UserName'));
+
+		this.confirmDialogCancelButton = this.page.getByTestId(
+			testId('Common', 'ConfirmDialog', 'CancelButton')
+		);
+		this.confirmDialogConfirmButton = this.page.getByTestId(
+			testId('Common', 'ConfirmDialog', 'ConfirmButton')
+		);
 	}
 
 	async verifyPageLoaded(): Promise<void> {
@@ -92,6 +105,14 @@ export abstract class BasePage {
 	async assertUserRole(role: 'admin' | 'user' | 'pending'): Promise<void> {
 		const userRole = await this.getUserRole();
 		expect(userRole).toBe(role);
+	}
+
+	/** Assert that the user name is equal to the expected name.
+	 *
+	 * The sidebar should be opened before calling this method!
+	 */
+	async assertUserName(name: string): Promise<void> {
+		await expect(this.userName).toHaveText(name);
 	}
 
 	/**
@@ -216,5 +237,15 @@ export abstract class BasePage {
 			.locator(`[data-testid^="${testId('Sidebar', 'FolderItem')}"]`)
 			.nth(index)
 			.click();
+	}
+
+	/** Clicks the cancel button in the confirm dialog. */
+	async clickConfirmDialogCancelButton(): Promise<void> {
+		await this.confirmDialogCancelButton.click();
+	}
+
+	/** Clicks the confirm button in the confirm dialog. */
+	async clickConfirmDialogConfirmButton(): Promise<void> {
+		await this.confirmDialogConfirmButton.click();
 	}
 }

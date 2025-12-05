@@ -161,7 +161,10 @@
 				>
 			{/if}
 		{:else}
-			<span class="text-lg font-medium text-gray-500 dark:text-gray-300">{users.length}</span>
+			<span
+				class="text-lg font-medium text-gray-500 dark:text-gray-300"
+				data-testid={testId('AdminSettings', 'Users', 'UserCount')}>{users.length}</span
+			>
 		{/if}
 	</div>
 
@@ -186,6 +189,7 @@
 					class=" w-full text-sm pr-4 py-1 rounded-r-xl outline-hidden bg-transparent"
 					bind:value={search}
 					placeholder={$i18n.t('Search')}
+					data-testid={testId('AdminSettings', 'Users', 'SearchInput')}
 				/>
 			</div>
 
@@ -362,7 +366,11 @@
 		<tbody class="">
 			{#each filteredUsers as user, userIdx}
 				{@const userImageSrc = user.profile_image_url || '/user.png'}
-				<tr class="bg-white dark:bg-gray-900 dark:border-gray-850 text-xs">
+				<tr
+					class="bg-white dark:bg-gray-900 dark:border-gray-850 text-xs"
+					data-testid={testId('AdminSettings', 'Users', 'UserRow')}
+					data-testid-index={userIdx}
+				>
 					<td class="px-3 py-1 min-w-[7rem] w-28">
 						<button
 							class=" translate-y-0.5"
@@ -375,6 +383,7 @@
 									updateRoleHandler(user.id, 'pending');
 								}
 							}}
+							data-testid={testId('AdminSettings', 'Users', 'UserRow', 'RoleButton', `${userIdx}`)}
 						>
 							<Badge
 								type={user.role === 'admin' ? 'info' : user.role === 'user' ? 'success' : 'muted'}
@@ -388,18 +397,37 @@
 								class=" rounded-full w-6 h-6 object-cover mr-2.5"
 								src={userImageSrc}
 								alt="user"
+								data-testid={testId('AdminSettings', 'Users', 'UserRow', 'UserImage', `${userIdx}`)}
 							/>
 
-							<div class=" font-medium self-center">{user.name}</div>
+							<div
+								class=" font-medium self-center"
+								data-testid={testId('AdminSettings', 'Users', 'UserRow', 'UserName', `${userIdx}`)}
+							>
+								{user.name}
+							</div>
 						</div>
 					</td>
-					<td class=" px-3 py-1"> {user.email} </td>
+					<td
+						class=" px-3 py-1"
+						data-testid={testId('AdminSettings', 'Users', 'UserRow', 'Email', `${userIdx}`)}
+					>
+						{user.email}
+					</td>
 
-					<td class=" px-3 py-1">
+					<td
+						class=" px-3 py-1"
+						data-testid={testId('AdminSettings', 'Users', 'UserRow', 'LastActiveAt', `${userIdx}`)}
+						data-value={user.last_active_at}
+					>
 						{dayjs(user.last_active_at * 1000).fromNow()}
 					</td>
 
-					<td class=" px-3 py-1">
+					<td
+						class=" px-3 py-1"
+						data-testid={testId('AdminSettings', 'Users', 'UserRow', 'CreatedAt', `${userIdx}`)}
+						data-value={user.created_at}
+					>
 						{dayjs(user.created_at * 1000).format('LL')}
 					</td>
 
@@ -415,6 +443,13 @@
 											showUserChatsModal = !showUserChatsModal;
 											selectedUser = user;
 										}}
+										data-testid={testId(
+											'AdminSettings',
+											'Users',
+											'UserRow',
+											'ChatsButton',
+											`${userIdx}`
+										)}
 									>
 										<ChatBubbles />
 									</button>
@@ -428,6 +463,13 @@
 										showEditUserModal = !showEditUserModal;
 										selectedUser = user;
 									}}
+									data-testid={testId(
+										'AdminSettings',
+										'Users',
+										'UserRow',
+										'EditButton',
+										`${userIdx}`
+									)}
 								>
 									<svg
 										xmlns="http://www.w3.org/2000/svg"
@@ -454,6 +496,13 @@
 											showDeleteConfirmDialog = true;
 											selectedUser = user;
 										}}
+										data-testid={testId(
+											'AdminSettings',
+											'Users',
+											'UserRow',
+											'DeleteButton',
+											`${userIdx}`
+										)}
 									>
 										<svg
 											xmlns="http://www.w3.org/2000/svg"
@@ -485,27 +534,3 @@
 </div>
 
 <Pagination bind:page count={users.length} />
-
-<!-- {#if !$config?.license_metadata}
-	{#if users.length > 50}
-		<div class="text-sm">
-			<Markdown
-				content={`
-> [!NOTE]
-> # **Hey there! 👋**
->
-> It looks like you have over 50 users — that usually falls under organizational usage.
-> 
-> Open WebUI is proudly open source and completely free, with no hidden limits — and we'd love to keep it that way. 🌱  
->
-> By supporting the project through sponsorship or an enterprise license, you’re not only helping us stay independent, you’re also helping us ship new features faster, improve stability, and grow the project for the long haul. With an *enterprise license*, you also get additional perks like dedicated support, customization options, and more — all at a fraction of what it would cost to build and maintain internally.  
-> 
-> Your support helps us stay independent and continue building great tools for everyone. 💛
-> 
-> - 👉 **[Click here to learn more about enterprise licensing](https://docs.openwebui.com/enterprise)**
-> - 👉 *[Click here to sponsor the project on GitHub](https://github.com/sponsors/tjbck)*
-`}
-			/>
-		</div>
-	{/if}
-{/if} -->

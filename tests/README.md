@@ -112,8 +112,8 @@ npx playwright test --ui
     - [ ] TODO actually visibility settings should be their own separate test suite since there'd be a lot of custom stuff needed to test (multi-user setup)
     - [ ] so that's all the 'visibility settings' tests that should be written, all in one, rather than separate like i've got them in this README right now
 - [ ] User Management Test (Admin)
-  - [ ] Edit user details (name, email, role) (role is done by clicking the role pill in the user list, not in the edit user modal)
-  - [ ] Change user password
+  - [x] Edit user details (name, email, role) (role is done by clicking the role pill in the user list, not in the edit user modal)
+  - [x] Change user password
   - [ ] Delete user
   - [ ] View user chats
 
