@@ -26,6 +26,7 @@
 	import ChatBubble from '$lib/components/icons/ChatBubble.svelte';
 	import { toast } from 'svelte-sonner';
 	import { updateChatById, getChatList, getPinnedChatList } from '$lib/apis/chats';
+	import { refreshFolders } from '$lib/utils/commandPalette/commands';
 	import { settings, models as modelsStore, socket } from '$lib/stores';
 	import { WEBUI_API_BASE_URL, WEBUI_BASE_URL } from '$lib/constants';
 	import { v4 as uuidv4 } from 'uuid';
@@ -42,6 +43,7 @@
 		addRecentChat,
 		type RecentChat
 	} from '$lib/utils/commandPalette/recentChats';
+	import { testId } from '$lib/utils/testId';
 
 	type ChatSearchResultItem = {
 		id: string;
@@ -403,11 +405,12 @@
 				chatTitleStore.set(trimmed);
 			}
 
-			// Refresh chat lists
+			// Refresh chat lists and folders
 			currentChatPage.set(1);
 			const updatedChats = await getChatList(localStorage.token, get(currentChatPage));
 			chats.set(updatedChats);
 			pinnedChats.set(await getPinnedChatList(localStorage.token));
+			await refreshFolders();
 
 			toast.success('Chat renamed.');
 			cancelRename();
@@ -429,26 +432,27 @@
 
 		let combinedResults = commandResults;
 
-		if (!query.trim() && recentChatItems.length > 0) {
-			const recentResults = recentChatItems.map((chat) => ({
-				command: {
-					id: `recent-chat:${chat.id}`,
-					type: 'action',
-					label: chat.title,
-					description: 'Recent chat',
-					keywords: ['recent', 'chat'],
-					priority: 120,
-					icon: ChatBubble,
-					execute: async () => {
-						addRecentChat({ id: chat.id, title: chat.title });
-						await goto(`/c/${chat.id}`);
-					}
-				} as Command,
-				score: null
-			}));
-
-			combinedResults = [...recentResults, ...commandResults];
-		}
+		// TODO make recent chats be optional in settings - I do not find this feature useful at all, so I'm disabling for now, but it should def be made optional eventually.
+		// if (!query.trim() && recentChatItems.length > 0) {
+		// 	const recentResults = recentChatItems.map((chat) => ({
+		// 		command: {
+		// 			id: `recent-chat:${chat.id}`,
+		// 			type: 'action',
+		// 			label: chat.title,
+		// 			description: 'Recent chat',
+		// 			keywords: ['recent', 'chat'],
+		// 			priority: 120,
+		// 			icon: ChatBubble,
+		// 			execute: async () => {
+		// 				addRecentChat({ id: chat.id, title: chat.title });
+		// 				await goto(`/c/${chat.id}`);
+		// 			}
+		// 		} as Command,
+		// 		score: null
+		// 	}));
+		//
+		// 	combinedResults = [...recentResults, ...commandResults];
+		// }
 
 		results = combinedResults;
 
@@ -560,6 +564,10 @@
 					Promise.resolve(item.execute(context))
 						.then(() => {
 							popSubmenu();
+							// Close palette after moving chat to folder (command chaining is rarer here)
+							if (activeSubmenu?.command?.id === 'chat:move-to-folder') {
+								closePalette();
+							}
 						})
 						.catch((error) => {
 							console.error('Submenu item execution failed:', error);
@@ -1350,6 +1358,7 @@
 			return 'Enter new chat title (Press Enter to save, Escape to cancel)';
 		}
 		if (activeSubmenu?.command) {
+			// TODO refactor this to make the commands be a single source of truth? i don't like having to use a ton of conditionals here...
 			const commandId = activeSubmenu.command.id;
 			if (commandId === 'chat:move-to-folder') {
 				return 'Search folders...';
@@ -1383,6 +1392,7 @@
 		role="presentation"
 		aria-hidden={!show}
 		on:mousedown={show ? handleBackdropMouseDown : undefined}
+		data-testid={testId('CommandPalette')}
 	>
 		<div
 			class={`w-full max-w-2xl bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 rounded-2xl shadow-3xl overflow-hidden transition-transform duration-75 ${show ? 'scale-100' : 'scale-95'}`}
@@ -1400,6 +1410,7 @@
 					on:keydown={handleKeyDown}
 					autofocus
 					tabindex="0"
+					data-testid={testId('CommandPalette', 'CommandInput')}
 				/>
 				{#if !renameMode && !activeSubmenu && !chatSearchMode && !newChatMode && !backgroundChatMode}
 					<div class="mt-2 flex gap-4 text-xs text-gray-400 dark:text-gray-500">
@@ -1447,11 +1458,16 @@
 											Promise.resolve(item.execute(context))
 												.then(() => {
 													popSubmenu();
+													// Close palette after moving chat to folder (command chaining is rarer here)
+													if (activeSubmenu?.command?.id === 'chat:move-to-folder') {
+														closePalette();
+													}
 												})
 												.catch((error) => {
 													console.error('Submenu item execution failed:', error);
 												});
 										}}
+										data-testid={testId('CommandPalette', 'SubmenuItem', item.id)}
 									>
 										<CommandItem
 											command={submenuItemToCommand(item)}
@@ -1484,6 +1500,11 @@
 									type="button"
 									class="text-left w-full"
 									on:click={() => handleChatSearchItemClick(item)}
+									data-testid={testId(
+										'CommandPalette',
+										'ChatSearchItem',
+										item.kind === 'chat' ? item.data.id : item.data.id
+									)}
 								>
 									<div
 										class={`px-3 py-2 rounded-lg transition-colors flex items-center gap-3 ${
@@ -1539,6 +1560,7 @@
 									type="button"
 									class="text-left"
 									on:click={() => triggerCommand(result.command)}
+									data-testid={testId('CommandPalette', 'CommandItem', result.command.id)}
 								>
 									<CommandItem command={result.command} selected={index === selectionIndex} />
 								</button>

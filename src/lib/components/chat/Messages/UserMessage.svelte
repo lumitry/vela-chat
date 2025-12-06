@@ -6,6 +6,7 @@
 	import { models, settings } from '$lib/stores';
 	import { user as _user } from '$lib/stores';
 	import { copyToClipboard as _copyToClipboard, formatDate } from '$lib/utils';
+	import { testId } from '$lib/utils/testId';
 
 	import Name from './Name.svelte';
 	import ProfileImage from './ProfileImage.svelte';
@@ -101,7 +102,12 @@
 	}}
 />
 
-<div class=" flex w-full user-message" dir={$settings.chatDirection} id="message-{message.id}">
+<div
+	class=" flex w-full user-message"
+	dir={$settings.chatDirection}
+	id="message-{message.id}"
+	data-testid={testId('Chat', 'Message', 'User', message.id)}
+>
 	{#if !($settings?.chatBubble ?? true)}
 		<div class={`shrink-0 ltr:mr-3 rtl:ml-3`}>
 			<ProfileImage

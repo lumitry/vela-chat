@@ -68,6 +68,7 @@
 	import { getChannels, createNewChannel } from '$lib/apis/channels';
 	import ChannelModal from './Sidebar/ChannelModal.svelte';
 	import ChannelItem from './Sidebar/ChannelItem.svelte';
+	import { testId } from '$lib/utils/testId';
 	import PencilSquare from '../icons/PencilSquare.svelte';
 	import Home from '../icons/Home.svelte';
 
@@ -81,7 +82,7 @@
 	let selectedChatId = null;
 	let showDropdown = false;
 
-$: userImageSrc = $user?.profile_image_url ?? '';
+	$: userImageSrc = $user?.profile_image_url ?? '';
 	let showPinnedChat = true;
 
 	let showCreateChannel = false;
@@ -92,6 +93,13 @@ $: userImageSrc = $user?.profile_image_url ?? '';
 
 	let folders = {};
 	let newFolderId = null;
+
+	// Reactively sync folders from store (for updates from command palette, etc.)
+	// This allows the command palette to refresh folders by updating the store
+	$: if ($foldersStore && Object.keys($foldersStore).length > 0) {
+		// Deep clone to ensure reactivity triggers
+		folders = JSON.parse(JSON.stringify($foldersStore));
+	}
 
 	// Sorted chats list
 	let sortedChats: any[] = [];
@@ -418,10 +426,8 @@ $: userImageSrc = $user?.profile_image_url ?? '';
 		// Reset pagination variables
 		tags.set(await getAllTags(localStorage.token));
 
-		// Only fetch pinned chats if not already populated
-		if (!$pinnedChats || $pinnedChats.length === 0) {
-			pinnedChats.set(await getPinnedChatListMetadata(localStorage.token));
-		}
+		// Always refresh pinned chats to reflect pin/unpin changes
+		pinnedChats.set(await getPinnedChatListMetadata(localStorage.token));
 
 		initFolders();
 
@@ -800,6 +806,7 @@ $: userImageSrc = $user?.profile_image_url ?? '';
 		: 'transition-width duration-200 ease-in-out'}  shrink-0 bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-200 text-sm fixed z-50 top-0 left-0 overflow-x-hidden
         "
 	data-state={$showSidebar}
+	data-testid={testId('Sidebar')}
 >
 	<div
 		class="py-2 my-auto flex flex-col justify-between h-screen max-h-[100dvh] w-[260px] overflow-x-hidden z-50 {$showSidebar
@@ -812,6 +819,7 @@ $: userImageSrc = $user?.profile_image_url ?? '';
 				on:click={() => {
 					showSidebar.set(!$showSidebar);
 				}}
+				data-testid={testId('Sidebar', 'ToggleButton')}
 			>
 				<div class=" m-auto self-center">
 					<svg
@@ -854,6 +862,7 @@ $: userImageSrc = $user?.profile_image_url ?? '';
 						}, 0);
 					}
 				}}
+				data-testid={testId('Sidebar', 'NewChatButton')}
 			>
 				<div class="flex items-center">
 					<div class="self-center mx-1.5">
@@ -914,6 +923,7 @@ $: userImageSrc = $user?.profile_image_url ?? '';
 						}
 					}}
 					draggable="false"
+					data-testid={testId('Sidebar', 'WorkspaceButton')}
 				>
 					<div class="self-center">
 						<svg

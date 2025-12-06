@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { getAdminDetails } from '$lib/apis/auths';
+	import { testId } from '$lib/utils/testId';
 	import { onMount, tick, getContext } from 'svelte';
 
 	const i18n = getContext('i18n');
@@ -34,7 +35,9 @@
 
 				{#if adminDetails}
 					<div class="mt-4 text-sm font-medium text-center">
-						<div>{$i18n.t('Admin')}: {adminDetails.name} ({adminDetails.email})</div>
+						<div data-testid={testId('AccountPending', 'AdminDetailsText')}>
+							{$i18n.t('Admin')}: {adminDetails.name} ({adminDetails.email})
+						</div>
 					</div>
 				{/if}
 
@@ -44,6 +47,7 @@
 						on:click={async () => {
 							location.href = '/';
 						}}
+						data-testid={testId('AccountPending', 'CheckAgainButton')}
 					>
 						{$i18n.t('Check Again')}
 					</button>
@@ -53,7 +57,8 @@
 						on:click={async () => {
 							localStorage.removeItem('token');
 							location.href = '/auth';
-						}}>{$i18n.t('Sign Out')}</button
+						}}
+						data-testid={testId('AccountPending', 'SignOutButton')}>{$i18n.t('Sign Out')}</button
 					>
 				</div>
 			</div>

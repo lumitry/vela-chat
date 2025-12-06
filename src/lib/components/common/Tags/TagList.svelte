@@ -3,15 +3,18 @@
 	import Tooltip from '../Tooltip.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
 	import Badge from '../Badge.svelte';
+	import { testId as getTestId } from '$lib/utils/testId';
 	const dispatch = createEventDispatcher();
 
 	export let tags = [];
+	export let testId: string | null = null;
 </script>
 
 {#each tags as tag}
 	<Tooltip content={tag.name}>
 		<div
 			class="relative group/tags px-1.5 py-[0.2px] gap-0.5 flex justify-between h-fit max-h-fit w-fit items-center rounded-full bg-gray-500/20 text-gray-700 dark:text-gray-200 transition cursor-pointer"
+			data-testid={testId ? getTestId(testId, 'Tag', tag.name) : null}
 		>
 			<div class=" text-[0.7rem] font-medium self-center line-clamp-1 w-fit">
 				{tag.name}
@@ -23,6 +26,7 @@
 						dispatch('delete', tag.name);
 					}}
 					type="button"
+					data-testid={testId ? getTestId(testId, 'Tag', tag.name, 'DeleteButton') : null}
 				>
 					<XMark className="size-3" strokeWidth="2.5" />
 				</button>

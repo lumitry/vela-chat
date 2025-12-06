@@ -9,9 +9,11 @@
 	import UserCircleSolid from '$lib/components/icons/UserCircleSolid.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
 	import Badge from '$lib/components/common/Badge.svelte';
+	import { testId as getTestId } from '$lib/utils/testId';
 
 	export let onChange: Function = () => {};
 
+	export let testId: string | null = null;
 	export let accessRoles = ['read'];
 	export let accessControl = {};
 
@@ -126,6 +128,7 @@
 			<div>
 				<select
 					id="models"
+					data-testid={testId ? getTestId(testId, 'VisibilitySelect') : null}
 					class="outline-hidden bg-transparent text-sm font-medium rounded-lg block w-fit pr-10 max-w-full placeholder-gray-400"
 					value={accessControl !== null ? 'private' : 'public'}
 					on:change={(e) => {
@@ -182,6 +185,7 @@
 									{selectedGroupId ? '' : 'text-gray-500'}
 									dark:placeholder-gray-500"
 									bind:value={selectedGroupId}
+									data-testid={testId ? getTestId(testId, 'GroupsSelect') : null}
 								>
 									<option class=" text-gray-700" value="" disabled selected
 										>{$i18n.t('Select a group')}</option
@@ -225,6 +229,9 @@
 								<div class="w-full flex justify-end items-center gap-0.5">
 									<button
 										class=""
+										data-testid={testId
+											? getTestId(testId, 'Groups', group.id, 'WriteButton')
+											: null}
 										type="button"
 										on:click={() => {
 											if (accessRoles.includes('write')) {
@@ -250,6 +257,9 @@
 
 									<button
 										class=" rounded-full p-1 hover:bg-gray-100 dark:hover:bg-gray-850 transition"
+										data-testid={testId
+											? getTestId(testId, 'Groups', group.id, 'DeleteButton')
+											: null}
 										type="button"
 										on:click={() => {
 											accessControl.read.group_ids = accessControl.read.group_ids.filter(

@@ -8,7 +8,7 @@ module.exports = {
 		'prettier'
 	],
 	parser: '@typescript-eslint/parser',
-	plugins: ['@typescript-eslint'],
+	plugins: ['@typescript-eslint', 'testid'],
 	parserOptions: {
 		sourceType: 'module',
 		ecmaVersion: 2020,
@@ -25,6 +25,15 @@ module.exports = {
 			parser: 'svelte-eslint-parser',
 			parserOptions: {
 				parser: '@typescript-eslint/parser'
+			},
+			rules: {
+				'testid/unused-testid-in-svelte': 'warn'
+			}
+		},
+		{
+			files: ['tests/pages/**/*.ts'],
+			rules: {
+				'testid/undefined-testid-in-page-objects': 'warn'
 			}
 		}
 	]

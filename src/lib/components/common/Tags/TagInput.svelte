@@ -2,11 +2,13 @@
 	import { createEventDispatcher, getContext } from 'svelte';
 	import { tags } from '$lib/stores';
 	import { toast } from 'svelte-sonner';
+	import { testId as getTestId } from '$lib/utils/testId';
 	const dispatch = createEventDispatcher();
 
 	const i18n = getContext('i18n');
 
 	export let label = '';
+	export let testId: string | null = null;
 	let showTagInput = false;
 	let tagName = '';
 
@@ -30,6 +32,7 @@
 				class=" px-2 cursor-pointer self-center text-xs h-fit bg-transparent outline-hidden line-clamp-1 w-[6.5rem]"
 				placeholder={$i18n.t('Add a tag')}
 				list="tagOptions"
+				data-testid={testId ? getTestId(testId, 'TagInput') : null}
 				on:keydown={(event) => {
 					if (event.key === 'Enter') {
 						addTagHandler();
@@ -42,7 +45,12 @@
 				{/each}
 			</datalist>
 
-			<button type="button" aria-label={$i18n.t('Save Tag')} on:click={addTagHandler}>
+			<button
+				type="button"
+				aria-label={$i18n.t('Save Tag')}
+				on:click={addTagHandler}
+				data-testid={testId ? getTestId(testId, 'TagInput', 'SaveButton') : null}
+			>
 				<svg
 					xmlns="http://www.w3.org/2000/svg"
 					viewBox="0 0 16 16"
@@ -67,6 +75,7 @@
 		on:click={() => {
 			showTagInput = !showTagInput;
 		}}
+		data-testid={testId ? getTestId(testId, 'TagInput', 'AddButton') : null}
 	>
 		<div class=" m-auto self-center">
 			<svg

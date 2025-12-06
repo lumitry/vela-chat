@@ -14,6 +14,7 @@
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import EyeSlash from '$lib/components/icons/EyeSlash.svelte';
 	import MessageInput from './MessageInput.svelte';
+	import { testId } from '$lib/utils/testId';
 
 	const i18n = getContext('i18n');
 
@@ -111,11 +112,27 @@
 							{@const imageSrc =
 								model?.info?.meta?.profile_image_url ??
 								($i18n.language === 'dg-DG' ? `/doge.png` : `/static/favicon.png`)}
+							{@const tags = models[modelIdx]?.info?.meta?.tags ?? []}
+							{@const uniqueTagNames = (() => {
+								// Remove duplicates (case-insensitive) before displaying
+								const uniqueTags = new Map();
+								for (const tag of tags) {
+									const lowerName = tag.name.toLowerCase();
+									if (!uniqueTags.has(lowerName)) {
+										uniqueTags.set(lowerName, tag.name);
+									}
+								}
+								return Array.from(uniqueTags.values());
+							})()}
 							<Tooltip
-								content={(models[modelIdx]?.info?.meta?.tags ?? [])
-									.map((tag) => tag.name.toUpperCase())
-									.join(', ')}
+								content={uniqueTagNames.map((tagName) => tagName.toUpperCase()).join(', ')}
 								placement="top"
+								testId={testId(
+									'Chat',
+									'Placeholder',
+									'CurrentModelTagsTooltip',
+									modelIdx.toString()
+								)}
 							>
 								<button
 									on:click={() => {
@@ -127,6 +144,7 @@
 										class=" size-9 @sm:size-10 rounded-full border-[1px] border-gray-100 dark:border-none"
 										alt="logo"
 										draggable="false"
+										data-testid={testId('Chat', 'Placeholder', 'CurrentModelImage')}
 									/>
 								</button>
 							</Tooltip>
@@ -134,7 +152,11 @@
 					</div>
 				</div>
 
-				<div class=" text-3xl @sm:text-4xl line-clamp-1" in:fade={{ duration: 100 }}>
+				<div
+					class=" text-3xl @sm:text-4xl line-clamp-1"
+					in:fade={{ duration: 100 }}
+					data-testid={testId('Chat', 'Placeholder', 'CurrentModelName')}
+				>
 					{#if models[selectedModelIdx]?.name}
 						{models[selectedModelIdx]?.name}
 					{:else}
@@ -155,6 +177,7 @@
 						>
 							<div
 								class="mt-0.5 px-2 text-sm font-normal text-gray-500 dark:text-gray-400 line-clamp-2 max-w-xl markdown"
+								data-testid={testId('Chat', 'Placeholder', 'Description')}
 							>
 								{@html marked.parse(
 									sanitizeResponseContent(models[selectedModelIdx]?.info?.meta?.description)

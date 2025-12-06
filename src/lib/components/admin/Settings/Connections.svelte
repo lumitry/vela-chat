@@ -3,6 +3,7 @@
 	import { createEventDispatcher, onMount, getContext, tick } from 'svelte';
 
 	const dispatch = createEventDispatcher();
+	const TEST_ID_SLUG = testId('AdminSettings', 'Connections');
 
 	import { getOllamaConfig, updateOllamaConfig } from '$lib/apis/ollama';
 	import { getOpenAIConfig, updateOpenAIConfig, getOpenAIModels } from '$lib/apis/openai';
@@ -19,6 +20,7 @@
 	import OpenAIConnection from './Connections/OpenAIConnection.svelte';
 	import AddConnectionModal from '$lib/components/AddConnectionModal.svelte';
 	import OllamaConnection from './Connections/OllamaConnection.svelte';
+	import { testId } from '$lib/utils/testId';
 
 	const i18n = getContext('i18n');
 
@@ -228,6 +230,7 @@
 									on:change={async () => {
 										updateOpenAIHandler();
 									}}
+									testId={testId(TEST_ID_SLUG, 'EnableOpenAISwitch')}
 								/>
 							</div>
 						</div>
@@ -247,6 +250,7 @@
 											showAddOpenAIConnectionModal = true;
 										}}
 										type="button"
+										data-testid={testId(TEST_ID_SLUG, 'AddOpenAIConnectionButton')}
 									>
 										<Plus />
 									</button>
@@ -276,6 +280,7 @@
 											OPENAI_API_CONFIGS = newConfig;
 											updateOpenAIHandler();
 										}}
+										testId={testId(TEST_ID_SLUG, 'OpenAIConnection')}
 									/>
 								{/each}
 							</div>
@@ -296,6 +301,7 @@
 							on:change={async () => {
 								updateOllamaHandler();
 							}}
+							testId={testId(TEST_ID_SLUG, 'EnableOllamaSwitch')}
 						/>
 					</div>
 				</div>
@@ -314,6 +320,7 @@
 										showAddOllamaConnectionModal = true;
 									}}
 									type="button"
+									data-testid={testId(TEST_ID_SLUG, 'AddOllamaConnectionButton')}
 								>
 									<Plus />
 								</button>
@@ -339,6 +346,7 @@
 											});
 											OLLAMA_API_CONFIGS = newConfig;
 										}}
+										testId={testId(TEST_ID_SLUG, 'OllamaConnection')}
 									/>
 								{/each}
 							</div>
@@ -371,6 +379,7 @@
 								on:change={async () => {
 									updateDirectConnectionsHandler();
 								}}
+								testId={testId(TEST_ID_SLUG, 'EnableDirectConnectionsSwitch')}
 							/>
 						</div>
 					</div>
@@ -397,6 +406,7 @@
 		<button
 			class="px-3.5 py-1.5 text-sm font-medium bg-black hover:bg-gray-900 text-white dark:bg-white dark:text-black dark:hover:bg-gray-100 transition rounded-full"
 			type="submit"
+			data-testid={testId('AdminSettings', 'Settings', 'SaveButton')}
 		>
 			{$i18n.t('Save')}
 		</button>

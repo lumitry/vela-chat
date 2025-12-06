@@ -29,6 +29,7 @@
 	import About from '$lib/components/chat/Settings/About.svelte';
 	import Banner from '$lib/components/common/Banner.svelte';
 	import Markdown from '$lib/components/chat/Messages/Markdown.svelte';
+	import { testId } from '$lib/utils/testId';
 
 	const i18n = getContext('i18n');
 
@@ -195,6 +196,7 @@
 						on:click={() => {
 							showAddUserModal = !showAddUserModal;
 						}}
+						data-testid={testId('AdminSettings', 'Users', 'AddUserButton')}
 					>
 						<Plus className="size-3.5" />
 					</button>

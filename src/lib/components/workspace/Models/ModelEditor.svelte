@@ -16,6 +16,7 @@
 	import AccessControl from '../common/AccessControl.svelte';
 	import { stringify } from 'postcss';
 	import { toast } from 'svelte-sonner';
+	import { testId } from '$lib/utils/testId';
 
 	const i18n = getContext('i18n');
 
@@ -459,6 +460,7 @@
 					inputFiles = null;
 				}
 			}}
+			data-testid={testId('ModelEditor', 'ProfileImageInput')}
 		/>
 
 		{#if !edit || (edit && model)}
@@ -527,6 +529,7 @@
 									info.meta.profile_image_url = '/static/favicon.png';
 								}}
 								type="button"
+								data-testid={testId('ModelEditor', 'ResetImageButton')}
 							>
 								Reset Image</button
 							>
@@ -543,6 +546,7 @@
 									placeholder={$i18n.t('Model Name')}
 									bind:value={name}
 									required
+									data-testid={testId('ModelEditor', 'NameInput')}
 								/>
 							</div>
 						</div>
@@ -555,6 +559,7 @@
 									bind:value={id}
 									disabled={edit}
 									required
+									data-testid={testId('ModelEditor', 'IdInput')}
 								/>
 							</div>
 						</div>
@@ -573,6 +578,7 @@
 										addUsage(e.target.value);
 									}}
 									required
+									data-testid={testId('ModelEditor', 'BaseModelSelect')}
 								>
 									<option value={null} class=" text-gray-900"
 										>{$i18n.t('Select a base model')}</option
@@ -595,6 +601,7 @@
 								on:click={() => {
 									enableDescription = !enableDescription;
 								}}
+								data-testid={testId('ModelEditor', 'DescriptionToggleButton')}
 							>
 								{#if !enableDescription}
 									<span class="ml-2 self-center">{$i18n.t('Default')}</span>
@@ -609,6 +616,7 @@
 								className=" text-sm w-full bg-transparent outline-hidden resize-none overflow-y-hidden "
 								placeholder={$i18n.t('Add a short description about what this model does')}
 								bind:value={info.meta.description}
+								testId={testId('ModelEditor', 'DescriptionTextarea')}
 							/>
 						{/if}
 					</div>
@@ -626,9 +634,16 @@
 									if (!(info?.meta?.tags ?? null)) {
 										info.meta.tags = [{ name: tagName }];
 									} else {
-										info.meta.tags = [...info.meta.tags, { name: tagName }];
+										// Check if tag already exists (case-insensitive)
+										const tagExists = info.meta.tags.some(
+											(tag) => tag.name.toLowerCase() === tagName.toLowerCase()
+										);
+										if (!tagExists) {
+											info.meta.tags = [...info.meta.tags, { name: tagName }];
+										}
 									}
 								}}
+								testId={testId('ModelEditor', 'TagsSelector')}
 							/>
 						</div>
 					</div>
@@ -639,6 +654,7 @@
 								bind:accessControl
 								accessRoles={['read', 'write']}
 								allowPublic={$user?.permissions?.sharing?.public_models || $user?.role === 'admin'}
+								testId={testId('ModelEditor', 'AccessControl')}
 							/>
 						</div>
 					</div>
@@ -659,6 +675,7 @@
 										placeholder={`Write your model system prompt content here\ne.g.) You are Mario from Super Mario Bros, acting as an assistant.`}
 										rows={4}
 										bind:value={info.params.system}
+										testId={testId('ModelEditor', 'SystemPromptTextarea')}
 									/>
 								</div>
 							</div>
@@ -674,6 +691,7 @@
 									on:click={() => {
 										showAdvanced = !showAdvanced;
 									}}
+									data-testid={testId('ModelEditor', 'AdvancedParamsToggleButton')}
 								>
 									{#if showAdvanced}
 										<span class="ml-2 self-center">{$i18n.t('Hide')}</span>
@@ -691,6 +709,7 @@
 										on:change={(e) => {
 											info.params = { ...info.params, ...params };
 										}}
+										testId={testId('ModelEditor', 'AdvancedParams')}
 									/>
 								</div>
 							{/if}
@@ -716,7 +735,9 @@
 											info.meta.suggestion_prompts = null;
 										}
 									}}
+									data-testid={testId('ModelEditor', 'SuggestionPromptsToggleButton')}
 								>
+									<!-- TODO: add test ID support for prompt suggestions stuff -->
 									{#if (info?.meta?.suggestion_prompts ?? null) === null}
 										<span class="ml-2 self-center">{$i18n.t('Default')}</span>
 									{:else}
@@ -797,14 +818,17 @@
 					<hr class=" border-gray-100 dark:border-gray-850 my-1.5" />
 
 					<div class="my-2">
+						<!-- TODO: add test ID support for knowledge stuff -->
 						<Knowledge bind:selectedKnowledge={knowledge} collections={$knowledgeCollections} />
 					</div>
 
 					<div class="my-2">
+						<!-- TODO: add test ID support for tools stuff -->
 						<ToolsSelector bind:selectedToolIds={toolIds} tools={$tools} />
 					</div>
 
 					<div class="my-2">
+						<!-- TODO: add test ID support for filters stuff -->
 						<FiltersSelector
 							bind:selectedFilterIds={filterIds}
 							filters={$functions.filter((func) => func.type === 'filter')}
@@ -812,6 +836,7 @@
 					</div>
 
 					<div class="my-2">
+						<!-- TODO: add test ID support for actions stuff -->
 						<ActionsSelector
 							bind:selectedActionIds={actionIds}
 							actions={$functions.filter((func) => func.type === 'action')}
@@ -834,6 +859,7 @@
 								on:click={() => {
 									showModelDetails = !showModelDetails;
 								}}
+								data-testid={testId('ModelEditor', 'ModelDetailsToggleButton')}
 							>
 								{#if showModelDetails}
 									<span class="ml-2 self-center">{$i18n.t('Hide')}</span>
@@ -864,6 +890,7 @@
 										type="button"
 										class="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition flex items-center gap-1"
 										on:click={fetchFromOpenRouter}
+										data-testid={testId('ModelEditor', 'FetchFromOpenRouterButton')}
 									>
 										<svg
 											xmlns="http://www.w3.org/2000/svg"
@@ -893,6 +920,7 @@
 											min="0"
 											placeholder="0.00"
 											bind:value={modelDetails.price_per_1m_input_tokens}
+											data-testid={testId('ModelEditor', 'PricePer1MInputTokensInput')}
 										/>
 									</div>
 
@@ -907,6 +935,7 @@
 											min="0"
 											placeholder="0.00"
 											bind:value={modelDetails.price_per_1m_output_tokens}
+											data-testid={testId('ModelEditor', 'PricePer1MOutputTokensInput')}
 										/>
 									</div>
 								</div>
@@ -920,6 +949,7 @@
 											min="0"
 											placeholder="e.g. 128000"
 											bind:value={modelDetails.max_context_length}
+											data-testid={testId('ModelEditor', 'MaxContextLengthInput')}
 										/>
 										<div class="text-xs text-gray-500 mt-1">
 											{$i18n.t('Informational only - does not limit response length')}
@@ -937,6 +967,7 @@
 											min="0"
 											placeholder="0.00"
 											bind:value={modelDetails.price_per_1k_images}
+											data-testid={testId('ModelEditor', 'PricePer1KImagesInput')}
 										/>
 									</div>
 								</div>
@@ -946,6 +977,7 @@
 									<select
 										class="text-sm w-full bg-transparent outline-hidden p-2 border border-gray-200 dark:border-gray-700 rounded-lg"
 										bind:value={modelDetails.reasoning_behavior}
+										data-testid={testId('ModelEditor', 'ReasoningBehaviorSelect')}
 									>
 										<option value="none">None (default behavior)</option>
 										<option value="change_model">Change model</option>
@@ -963,6 +995,7 @@
 										<select
 											class="text-sm w-full bg-transparent outline-hidden p-2 border border-gray-200 dark:border-gray-700 rounded-lg"
 											bind:value={modelDetails.reasoning_target_model}
+											data-testid={testId('ModelEditor', 'ReasoningTargetModelSelect')}
 										>
 											<option value={null}>Select a model</option>
 											{#each $models.filter((m) => m.id !== (model?.id || id)) as targetModel}
@@ -982,6 +1015,7 @@
 											min="1"
 											placeholder="e.g. 10000"
 											bind:value={modelDetails.reasoning_max_tokens}
+											data-testid={testId('ModelEditor', 'ReasoningMaxTokensInput')}
 										/>
 										<div class="text-xs text-gray-500 mt-1">
 											{$i18n.t('Maximum tokens to use for reasoning steps')}
@@ -1002,6 +1036,7 @@
 								on:click={() => {
 									showPreview = !showPreview;
 								}}
+								data-testid={testId('ModelEditor', 'JSONPreviewToggleButton')}
 							>
 								{#if showPreview}
 									<span class="ml-2 self-center">{$i18n.t('Hide')}</span>
@@ -1019,6 +1054,7 @@
 									value={JSON.stringify(info, null, 2)}
 									disabled
 									readonly
+									data-testid={testId('ModelEditor', 'JSONPreviewTextarea')}
 								/>
 							</div>
 						{/if}
@@ -1031,6 +1067,7 @@
 								: 'bg-black hover:bg-gray-900 text-white dark:bg-white dark:hover:bg-gray-100 dark:text-black'} flex w-full justify-center"
 							type="submit"
 							disabled={loading}
+							data-testid={testId('ModelEditor', 'SubmitButton')}
 						>
 							<div class=" self-center font-medium">
 								{#if edit}

@@ -40,6 +40,7 @@
 	import Check from '$lib/components/icons/Check.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
 	import Document from '$lib/components/icons/Document.svelte';
+	import { testId } from '$lib/utils/testId';
 
 	export let className = '';
 
@@ -291,6 +292,7 @@
 			}}
 			on:focus={(e) => {}}
 			draggable="false"
+			data-testid={testId('Sidebar', 'ChatItem', id)}
 		>
 			<div class=" flex self-center flex-1 w-full">
 				<div dir="auto" class="text-left self-center overflow-hidden w-full h-[20px]">

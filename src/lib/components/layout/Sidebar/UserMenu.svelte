@@ -9,6 +9,7 @@
 	import { fade, slide } from 'svelte/transition';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import { userSignOut } from '$lib/apis/auths';
+	import { testId } from '$lib/utils/testId';
 
 	const i18n = getContext('i18n');
 
@@ -38,6 +39,7 @@
 			transition={(e) => fade(e, { duration: 100 })}
 		>
 			<button
+				data-testid={testId('UserMenu', 'Settings')}
 				class="flex rounded-md py-2 px-3 w-full hover:bg-gray-50 dark:hover:bg-gray-800 transition"
 				on:click={async () => {
 					await showSettings.set(true);
@@ -73,6 +75,7 @@
 			</button>
 
 			<button
+				data-testid={testId('UserMenu', 'ArchivedChats')}
 				class="flex rounded-md py-2 px-3 w-full hover:bg-gray-50 dark:hover:bg-gray-800 transition"
 				on:click={() => {
 					dispatch('show', 'archived-chat');
@@ -90,11 +93,11 @@
 			</button>
 
 			{#if role === 'admin'}
-				<!-- TODO: make these buttons, not anchor tags! unless that'd cause issues -->
-				<a
+				<button
+					data-testid={testId('UserMenu', 'Playground')}
 					class="flex rounded-md py-2 px-3 w-full hover:bg-gray-50 dark:hover:bg-gray-800 transition"
-					href="/playground"
-					on:click={() => {
+					on:click={async () => {
+						await goto('/playground');
 						show = false;
 
 						if ($mobile) {
@@ -119,12 +122,13 @@
 						</svg>
 					</div>
 					<div class=" self-center truncate">{$i18n.t('Playground')}</div>
-				</a>
+				</button>
 
-				<a
+				<button
+					data-testid={testId('UserMenu', 'AdminPanel')}
 					class="flex rounded-md py-2 px-3 w-full hover:bg-gray-50 dark:hover:bg-gray-800 transition"
-					href="/admin"
-					on:click={() => {
+					on:click={async () => {
+						await goto('/admin');
 						show = false;
 
 						if ($mobile) {
@@ -149,12 +153,13 @@
 						</svg>
 					</div>
 					<div class=" self-center truncate">{$i18n.t('Admin Panel')}</div>
-				</a>
+				</button>
 			{/if}
 
 			<hr class=" border-gray-100 dark:border-gray-850 my-1 p-0" />
 
 			<button
+				data-testid={testId('UserMenu', 'SignOut')}
 				class="flex rounded-md py-2 px-3 w-full hover:bg-gray-50 dark:hover:bg-gray-800 transition"
 				on:click={async () => {
 					await userSignOut();
@@ -210,7 +215,7 @@
 							<span class="">
 								{$i18n.t('Active Users')}:
 							</span>
-							<span class=" font-semibold">
+							<span class=" font-semibold" data-testid={testId('UserMenu', 'ActiveUsers')}>
 								{$activeUserIds?.length}
 							</span>
 						</div>

@@ -1,0 +1,363 @@
+import type { Locator, Page } from '@playwright/test';
+import { expect } from '@playwright/test';
+import { testId } from '$lib/utils/testId';
+import { AdminSettingsPage } from './AdminSettingsPage';
+import { DEFAULT_MODEL_IMAGE } from '../../data/constants';
+
+/**
+ * Represents the Admin Settings - Settings - Models page.
+ *
+ * URL: /admin/settings#models
+ */
+export class AdminSettingsModelsTab extends AdminSettingsPage {
+	// helper functions to get test id and locator for the current page
+	private getPageTestId = (...args: string[]): string => {
+		return testId('AdminSettings', 'Models', ...args);
+	};
+	private getPageLocator = (...args: string[]): Locator => {
+		return this.page.getByTestId(this.getPageTestId(...args));
+	};
+
+	//---------------//
+	// Page Elements //
+	//---------------//
+
+	private modelCount = this.getPageLocator('ModelCount');
+	/** Opens the Ollama model manager. Useless for us since we're using Mini-Mediator which does not support the endpoints this uses. */
+	private manageModelsButton = this.getPageLocator('ManageModelsButton');
+	private settingsButton = this.getPageLocator('SettingsButton');
+	private searchInput = this.getPageLocator('SearchInput');
+	private importPresetsInput = this.getPageLocator('ImportPresetsInput');
+	private exportPresetsButton = this.getPageLocator('ExportPresetsButton');
+	private importPresetsButton = this.getPageLocator('ImportPresetsButton');
+
+	// -o-o-o- below are model-dependent locators! -o-o-o- //
+	// -o- note that the model.id includes the prefix! -o- //
+	private getModelItem = (modelId: string) => this.getPageLocator('ModelItem', modelId);
+	private getModelItemButton = (modelId: string) => this.getPageLocator('ModelItemButton', modelId);
+	private getModelItemImage = (modelId: string) => this.getPageLocator('ModelItemImage', modelId);
+	private getModelItemName = (modelId: string) => this.getPageLocator('ModelItemName', modelId);
+	private getModelItemDescription = (modelId: string) =>
+		this.getPageLocator('ModelItemDescription', modelId);
+	private getModelItemHideButton = (modelId: string) =>
+		this.getPageLocator('ModelItemHideButton', modelId);
+	private getModelItemEditButton = (modelId: string) =>
+		this.getPageLocator('ModelItemEditButton', modelId);
+	private getModelItemMenuButton = (modelId: string) =>
+		this.getPageLocator('ModelItemMenuButton', modelId);
+	private getModelItemToggleSwitch = (modelId: string) =>
+		this.getPageLocator('ModelItemToggleSwitch', modelId);
+
+	constructor(page: Page) {
+		super(page);
+	}
+
+	async assertModelCount(count: number): Promise<void> {
+		await expect(this.modelCount).toHaveText(count.toString());
+	}
+
+	/**
+	 * Opens the settings modal.
+	 *
+	 * Page Object: ConfigureModelsModal
+	 * TODO implement that modal! and write tests for reordering models, and setting defaults, and maybe also the reset button?
+	 */
+	async clickSettingsButton(): Promise<void> {
+		await this.settingsButton.click();
+	}
+
+	/**
+	 * Searches for a model by name. This input currently does not filter by ID, so we need to search by name.
+	 *
+	 * @param modelName The name of the model to search for.
+	 */
+	async searchForModel(modelName: string): Promise<void> {
+		await this.searchInput.clear();
+		await this.searchInput.fill(modelName);
+	}
+
+	/**
+	 * Opens the model editor for the given model.
+	 *
+	 * Opens Page Object: {@link ModelEditorPage}
+	 * (URL does not change for this page!)
+	 *
+	 * @param modelId The ID of the model to edit, including the prefix!
+	 */
+	async clickModelItemEditButton(modelId: string): Promise<void> {
+		// clicking getModelItemButton would also work here, but this is clicking the edit button specifically
+		await this.getModelItemEditButton(modelId).click();
+	}
+
+	async assertModelItemWithNameExists(modelId: string, modelName: string): Promise<void> {
+		await expect(this.getModelItemName(modelId)).toHaveText(modelName);
+	}
+
+	async assertModelItemWithDescriptionExists(
+		modelId: string,
+		modelDescription: string
+	): Promise<void> {
+		await expect(this.getModelItemDescription(modelId)).toHaveText(modelDescription);
+	}
+
+	/**
+	 * Asserts that the model's image src attribute matches the expected URL or pattern.
+	 *
+	 * @param modelId - The ID of the model, including the prefix!
+	 * @param expectedImageUrl - The expected image URL. Can be:
+	 *   - An exact URL string (e.g., '/static/favicon.png')
+	 *   - A regex pattern (e.g., /\/api\/v1\/files\/.*\/content/)
+	 *   - A function that returns a boolean (for custom validation)
+	 */
+	async assertModelItemWithImageExists(
+		modelId: string,
+		expectedImageUrl: string | RegExp | ((url: string) => boolean)
+	): Promise<void> {
+		const imageLocator = this.getModelItemImage(modelId);
+
+		if (typeof expectedImageUrl === 'string') {
+			// Exact URL match
+			await expect(imageLocator).toHaveAttribute('src', expectedImageUrl);
+		} else if (expectedImageUrl instanceof RegExp) {
+			// Regex pattern match
+			await expect(imageLocator).toHaveAttribute('src', expectedImageUrl);
+		} else {
+			// Custom function validation
+			const actualSrc = await imageLocator.getAttribute('src');
+			expect(actualSrc).not.toBeNull();
+			expect(expectedImageUrl(actualSrc!)).toBe(true);
+		}
+	}
+
+	/**
+	 * Asserts that the model's image is NOT the default favicon.
+	 *
+	 * @param modelId - The ID of the model, including the prefix!
+	 * @param defaultImageUrl - The default image URL to check against (defaults to '/static/favicon.png')
+	 */
+	async assertModelItemImageIsNotDefault(
+		modelId: string,
+		defaultImageUrl: string = '/static/favicon.png'
+	): Promise<void> {
+		const imageLocator = this.getModelItemImage(modelId);
+		await expect(imageLocator).not.toHaveAttribute('src', defaultImageUrl);
+	}
+
+	/**
+	 * Gets the image src URL for a model.
+	 *
+	 * @param modelId - The ID of the model, including the prefix!
+	 * @returns The image src URL, or null if not found
+	 */
+	async getModelItemImageUrl(modelId: string): Promise<string | null> {
+		const imageLocator = this.getModelItemImage(modelId);
+		return await imageLocator.getAttribute('src');
+	}
+
+	/**
+	 * Waits for the model's image to be saved (URL changes from data: or default to file URL).
+	 * This should be called after saving a model with a new image to wait for the backend to process it.
+	 *
+	 * @param modelId - The ID of the model, including the prefix!
+	 * @param defaultImageUrl - The default image URL to exclude (defaults to frontend's favicon, e.g. '/static/favicon.png')
+	 * @param timeout - Maximum time to wait in milliseconds (default: 10000ms)
+	 * @returns The saved image file URL
+	 */
+	async waitForModelImageToBeSaved(
+		modelId: string,
+		defaultImageUrl: string = DEFAULT_MODEL_IMAGE,
+		timeout: number = 10000
+	): Promise<string> {
+		const startTime = Date.now();
+		while (Date.now() - startTime < timeout) {
+			const imageUrl = await this.getModelItemImageUrl(modelId);
+			if (
+				imageUrl &&
+				!imageUrl.startsWith('data:') &&
+				imageUrl !== defaultImageUrl &&
+				imageUrl.includes('/api/v1/files/')
+			) {
+				// Image has been saved - it's now a file URL
+				return imageUrl;
+			}
+			await this.page.waitForTimeout(200);
+		}
+		const currentUrl = await this.getModelItemImageUrl(modelId);
+		// console.log(
+		// 	'Waited ' +
+		// 		(Date.now() - startTime) +
+		// 		'ms for model image to be saved. Current URL="' +
+		// 		currentUrl +
+		// 		'"'
+		// );
+		throw new Error(`Model image was not saved within ${timeout}ms. Current URL: ${currentUrl}`);
+	}
+
+	/**
+	 * Asserts that the model's image URL matches the uploaded file pattern.
+	 * This checks that the image is a file URL (e.g., /api/v1/files/{id}/content) and not the default.
+	 *
+	 * @param modelId - The ID of the model, including the prefix!
+	 * @param defaultImageUrl - The default image URL to exclude (defaults to '/static/favicon.png')
+	 */
+	async assertModelItemImageIsUploaded(
+		modelId: string,
+		defaultImageUrl: string = '/static/favicon.png'
+	): Promise<void> {
+		const imageLocator = this.getModelItemImage(modelId);
+		const actualSrc = await imageLocator.getAttribute('src');
+
+		expect(actualSrc).not.toBeNull();
+		expect(actualSrc).not.toBe(defaultImageUrl);
+		// Check that it's a file URL (either /api/v1/files/... or data:... or absolute URL)
+		expect(actualSrc).toMatch(/\/api\/v1\/files\/.*\/content|data:image|https?:\/\//);
+	}
+
+	/**
+	 * Asserts that the model's image content matches the expected image file.
+	 * This fetches the actual image from the URL and compares it byte-by-byte to the expected image.
+	 *
+	 * @param modelId - The ID of the model, including the prefix!
+	 * @param expectedImageBuffer - The expected image content as a Buffer
+	 * @param defaultImageUrl - The default image URL (defaults to '/static/favicon.png'). If the image is the default, this will fail.
+	 */
+	async assertModelItemImageContentMatches(
+		modelId: string,
+		expectedImageBuffer: Buffer,
+		defaultImageUrl: string = '/static/favicon.png'
+	): Promise<void> {
+		const imageLocator = this.getModelItemImage(modelId);
+		const actualSrc = await imageLocator.getAttribute('src');
+
+		expect(actualSrc).not.toBeNull();
+		expect(actualSrc).not.toBe(defaultImageUrl);
+
+		// Fetch the actual image content
+		let actualImageBuffer: Buffer;
+
+		if (actualSrc!.startsWith('data:')) {
+			// Handle data URLs (base64 encoded)
+			const base64Data = actualSrc!.split(',')[1];
+			actualImageBuffer = Buffer.from(base64Data, 'base64');
+		} else {
+			// Handle file URLs (relative or absolute)
+			// Convert relative URLs to absolute using URL constructor
+			const baseUrl = this.page.url();
+			const imageUrl = actualSrc!.startsWith('http')
+				? actualSrc!
+				: new URL(actualSrc!, baseUrl).toString();
+
+			// Fetch the image
+			const response = await this.page.request.get(imageUrl);
+			expect(response.ok()).toBe(true);
+			actualImageBuffer = await response.body();
+		}
+
+		// Compare the image buffers
+		expect(
+			actualImageBuffer.equals(expectedImageBuffer),
+			`Image content mismatch for model ${modelId}`
+		).toBe(true);
+	}
+
+	/**
+	 * Clicks the hide button for the given model.
+	 * The button only exists in the DOM when Shift is held, so we must hold Shift first,
+	 * wait for the button to appear, then click it.
+	 *
+	 * @param modelId - The ID of the model, including the prefix!
+	 */
+	async clickModelItemHideButton(modelId: string): Promise<void> {
+		// Hold Shift first - the button only appears when Shift is held
+		await this.page.keyboard.down('Shift');
+		try {
+			// Wait for the button to appear and then click it
+			const hideButton = this.getModelItemHideButton(modelId);
+			await hideButton.waitFor({ state: 'visible' });
+			await hideButton.click();
+		} finally {
+			// Always release Shift, even if clicking fails
+			await this.page.keyboard.up('Shift');
+		}
+	}
+
+	/**
+	 * Sets the hide state for the given model.
+	 * Waits for the API call to complete and the state to change after clicking.
+	 *
+	 * @param modelId - The ID of the model, including the prefix!
+	 * @param hideState - The hide state to set.
+	 */
+	async setModelItemHideState(modelId: string, hideState: boolean): Promise<void> {
+		const currentHideState = await this.getModelItemHideState(modelId);
+
+		if (hideState !== currentHideState) {
+			await this.clickModelItemHideButton(modelId);
+		}
+	}
+
+	/**
+	 * Asserts that the model's hide state matches the expected value.
+	 * Uses Playwright's built-in retry logic to wait for the state to match.
+	 *
+	 * @param modelId - The ID of the model, including the prefix!
+	 * @param hideState - The expected hide state.
+	 */
+	async assertModelItemHideState(modelId: string, hideState: boolean): Promise<void> {
+		// TODO this feels a little too coupled to tailwind classes. maybe we should add a data attribute on the frontend and check for that instead?
+		const modelItem = this.getModelItem(modelId);
+		// Use expect with toHaveClass which has built-in retry logic - no manual timeouts needed!
+		// The class 'opacity-50' is applied when the model is hidden
+		if (hideState) {
+			await expect(modelItem).toContainClass('opacity-50');
+		} else {
+			await expect(modelItem).not.toContainClass('opacity-50');
+		}
+	}
+
+	async getModelItemHideState(modelId: string): Promise<boolean> {
+		const element = this.getModelItem(modelId);
+		return await element.evaluate((el) => {
+			return el.classList.contains('opacity-50');
+		});
+	}
+
+	/**
+	 * Gets the disabled state for the given model.
+	 *
+	 * @param modelId - The ID of the model, including the prefix!
+	 * @returns True if the model is **disabled**, false if it is enabled.
+	 */
+	async getModelItemDisabledState(modelId: string): Promise<boolean> {
+		const element = this.getModelItemToggleSwitch(modelId);
+		return await element.evaluate((el) => {
+			return el.getAttribute('data-state') === 'unchecked'; // unchecked = disabled -> return true because isDisabled
+		});
+	}
+
+	/**
+	 * Sets the disabled state for the given model.
+	 *
+	 * @param modelId - The ID of the model, including the prefix!
+	 * @param disabledState - The disabled state to set.
+	 */
+	async setModelItemDisabledState(modelId: string, disabledState: boolean): Promise<void> {
+		const currentDisabledState = await this.getModelItemDisabledState(modelId);
+
+		if (disabledState !== currentDisabledState) {
+			const element = this.getModelItemToggleSwitch(modelId);
+			await element.click();
+		}
+	}
+
+	/**
+	 * Asserts that the model's disabled state matches the expected value.
+	 *
+	 * @param modelId - The ID of the model, including the prefix!
+	 * @param disabledState - The expected disabled state.
+	 */
+	async assertModelItemDisabledState(modelId: string, disabledState: boolean): Promise<void> {
+		expect(await this.getModelItemDisabledState(modelId)).toBe(disabledState);
+	}
+	// TODO: add more methods - maybe preset import/export?
+}

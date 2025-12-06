@@ -6,6 +6,7 @@
 	import Tooltip from '../common/Tooltip.svelte';
 
 	import { updateUserSettings } from '$lib/apis/users';
+	import { testId } from '$lib/utils/testId';
 	const i18n = getContext('i18n');
 
 	export let selectedModels = [''];
@@ -119,6 +120,11 @@
 
 {#if showSetDefault}
 	<div class=" absolute text-left mt-[1px] ml-1 text-[0.7rem] text-gray-500 font-primary">
-		<button on:click={saveDefaultModel}> {$i18n.t('Set as default')}</button>
+		<button
+			on:click={saveDefaultModel}
+			data-testid={testId('Chat', 'ModelSelector', 'SetDefaultButton')}
+		>
+			{$i18n.t('Set as default')}</button
+		>
 	</div>
 {/if}

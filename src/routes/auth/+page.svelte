@@ -15,8 +15,10 @@
 
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import OnBoarding from '$lib/components/OnBoarding.svelte';
+	import { testId } from '$lib/utils/testId';
 
 	const i18n = getContext('i18n');
+	const TEST_ID_SLUG = testId('AuthPage');
 
 	let loaded = false;
 
@@ -251,6 +253,7 @@
 												autocomplete="name"
 												placeholder={$i18n.t('Enter Your Full Name')}
 												required
+												data-testid={testId(TEST_ID_SLUG, 'NameInput')}
 											/>
 										</div>
 									{/if}
@@ -279,6 +282,7 @@
 												name="email"
 												placeholder={$i18n.t('Enter Your Email')}
 												required
+												data-testid={testId(TEST_ID_SLUG, 'EmailInput')}
 											/>
 										</div>
 									{/if}
@@ -294,6 +298,7 @@
 											autocomplete="current-password"
 											name="current-password"
 											required
+											data-testid={testId(TEST_ID_SLUG, 'PasswordInput')}
 										/>
 									</div>
 								</div>
@@ -311,6 +316,7 @@
 										<button
 											class="bg-gray-700/5 hover:bg-gray-700/10 dark:bg-gray-100/5 dark:hover:bg-gray-100/10 dark:text-gray-300 dark:hover:text-white transition w-full rounded-full font-medium text-sm py-2.5"
 											type="submit"
+											data-testid={testId(TEST_ID_SLUG, 'SubmitButton')}
 										>
 											{mode === 'signin'
 												? $i18n.t('Sign in')
@@ -335,6 +341,7 @@
 															mode = 'signin';
 														}
 													}}
+													data-testid={testId(TEST_ID_SLUG, 'SwitchModeButton')}
 												>
 													{mode === 'signin' ? $i18n.t('Sign up') : $i18n.t('Sign in')}
 												</button>

@@ -1,0 +1,675 @@
+# VelaChat E2E Tests
+
+This directory contains the end-to-end tests for VelaChat.
+
+## Running the tests
+
+To run the tests, use the following command:
+
+```bash
+npm run test:e2e
+```
+
+or:
+
+```bash
+npx playwright test
+```
+
+## Writing tests
+
+We use Playwright for our E2E tests. The tests themselves are in the `tests/e2e` directory, and the page objects are in the `tests/pages` directory. Page objects are used to represent the various pages and components in the application, and are used to interact with the application. (We use the page object model pattern for this.)
+
+## Setup and Configuration
+
+See [SETUP_GUIDE.md](./SETUP_GUIDE.md) for comprehensive information on:
+
+- Database initialization strategies
+- Playwright setup patterns (globalSetup, fixtures, projects)
+- CI/CD configuration
+- Developer reproducibility
+
+**Quick Start:**
+
+```bash
+# Setup test environment (database + initial data)
+./scripts/setup-test-env.sh
+
+# Run tests
+npx playwright test
+
+# Run tests in UI mode (recommended for development)
+npx playwright test --ui
+```
+
+## TODOs
+
+- [x] STYLE GUIDE FOR TESTS/PAGE OBJECTS!
+- [x] DIRECTORY STRUCTURE EXPLANATION
+- [x] TEST/CLASS NAMING CONVENTIONS
+- [ ] actually write a bunch of tests!
+- [ ] add to mini-mediator (streaming support, etc.) (could also mock the API in Playwright maybe, but I'd prefer to use real backend API connections!)
+- [x] Write a script to automate the initial database setup (create pre-existing user `dev@example.com`, add model connections, etc.)
+  - See SETUP_GUIDE.md for implementation strategies
+- [ ] Figure out how the tests will run on other people's machines (e.g. CI/CD, etc.)
+- [x] how will the precedence of test cases work? i.e. how will we specify the order they run in, if necessary?
+  - There is no such thing as test precedence in Playwright! It is an anti-pattern by design, apparently.
+  - Use `beforeEach` for per-test setup
+  - Use Playwright projects with dependencies if you need UI-based setup to run before other tests
+
+## Things That Will Not Be Tested
+
+- SQlite
+- LDAP
+- Vector DBs other than Chroma and Qdrant
+- Most of the actual external stuff (e.g. using Brave Search or Google PSE)
+- OpenTelemetry integration
+- OAuth
+- Redis (and multi-node / cluster / whatever else the base project has along those lines)
+- Storage (S3, Azure Blob Storage, etc.)
+- Changing UVICORN_WORKERS
+- The channels feature
+
+## Tests To Write
+
+### 🔥 SMOKE TESTS (Implement ASAP)
+
+- [ ] Setup Test
+  - [-] Import Test Users
+  - [-] Create Test User via form (as opposed to CSV import)
+  - [x] Add OpenAI connection
+  - [x] Add Ollama connection
+  - [x] Set default user role to admin
+  - [x] Enable new signups
+  - [x] Set default embedding model to Mini-Mediator
+  - [x] Set internal and external task models to a Mini-Mediator task model (which would recognize all the various test cases and have deterministic outputs for each of them, e.g. it would know when we're testing a knowledge base and it would return the correct title and tags)
+- [x] Login Test
+  - [x] Login with valid credentials
+  - [x] Login fails with invalid credentials
+  - [x] Login fails with invalid email format
+- [x] Registration Test
+  - [x] Register new user when signups are enabled
+  - [x] Registration fails when signups are disabled
+  - [x] Registration fails with invalid email format
+  - [x] Registration fails with duplicate email
+  - [x] Verify default role assignment (pending vs user vs admin)
+- [x] Basic Chat Test (send message, receive response)
+  - [x] Create new chat
+  - [x] Send message and verify response
+  - [x] Verify message appears in chat history (+ after reloads, etc.)
+  - [x] Verify response is stopped when the stop response button is clicked
+  - [x] Verify you can't send a bunch of whitespace with no other content
+  - [x] Verify whitespace is trimmed before submission
+- [x] Model CRUD Test - Parameterized for OpenAI & Ollama
+  - [x] Modify a model by changing its...
+    - [x] name
+    - [x] image
+    - [x] description
+    - [x] tags
+  - [x] Hide a model
+  - [x] Disable a model
+  - [ ] Verify visibility settings are respected
+    - [ ] TODO actually visibility settings should be their own separate test suite since there'd be a lot of custom stuff needed to test (multi-user setup)
+    - [ ] so that's all the 'visibility settings' tests that should be written, all in one, rather than separate like i've got them in this README right now
+- [ ] User Management Test (Admin)
+  - [ ] Edit user details (name, email, role) (role is done by clicking the role pill in the user list, not in the edit user modal)
+  - [ ] Change user password
+  - [ ] Delete user
+  - [ ] View user chats
+
+### 🔴 HIGH PRIORITY (Important, Lots of Edge Cases)
+
+- [ ] Workspace Model CRUD Test - Parameterized for OpenAI & Ollama
+  - [ ] Create a new model
+  - [ ] Edit a model
+    - [ ] verify each field is editable and saved correctly
+  - [ ] Delete a model
+  - [ ] Clone a model
+  - [ ] Hide a model
+  - [ ] Disable a model
+  - [ ] Verify visibility settings are respected
+- [ ] Model Advanced Params Test - Parameterized for OpenAI & Ollama; also for Workspace and normal models
+  - [ ] Modify a model's advanced params
+    - [ ] system prompt
+    - [ ] temperature
+    - [ ] top_p
+    - [ ] frequency_penalty
+    - [ ] presence_penalty
+    - [ ] max_tokens
+    - [ ] n
+    - [ ] stop
+    - [ ] etc.
+  - [ ] Verify advanced params are saved correctly and applied to model (by chatting with Mini-Mediator)
+- [ ] User Advanced Params Test - Parameterized for OpenAI & Ollama (since chat completions get handled by different code paths for OpenAI vs Ollama I think)
+  - [ ] Modify a user's advanced params
+  - [ ] Verify advanced params are saved correctly and applied to user (by chatting with Mini-Mediator)
+- [ ] User System Prompt Test
+  - [ ] Modify a user's system prompt
+  - [ ] Verify system prompt is saved correctly and applied to user (by chatting with Mini-Mediator)
+- [ ] Chat Advanced Params Test - Parameterized for OpenAI & Ollama (same reason as above)
+  - [ ] Modify a chat's advanced params
+  - [ ] Verify advanced params are saved correctly and applied to chat (by chatting with Mini-Mediator)
+  - [ ] Change to a different chat then back to the original chat and verify advanced params are still applied
+- [ ] Chat System Prompt Test
+  - [ ] Modify a chat's system prompt
+  - [ ] Verify system prompt is saved correctly and applied to chat (by chatting with Mini-Mediator)
+  - [ ] Change to a different chat then back to the original chat and verify system prompt is still applied
+- [ ] Multi-Model Response Test ('split view' functionality)
+  - [ ] Tons of edge cases to worry about here!
+  - [ ] MOA merge response test (as standard, mini-mediator's task models would need to recognize this and return a deterministic merge response)
+- [ ] Tasks Test Suite (see note way above about Mini-Mediator task model determinism)
+  - [ ] Title Generation Test
+  - [ ] Tags Generation Test
+  - [ ] Image Prompt Generation Test (this might be handled by the image generation test above)
+  - [ ] Query Generation Test (retrieval and web search queries)
+  - [-] ~~Autocomplete Generation Test~~ (will be handled by the rich text editor test)
+  - [ ] Emoji Generation Test (can we do this with Playwright?)
+  - [ ] Function Calling Test
+  - [ ] Test that all of these work with both the default prompt and a custom prompt, and both internal and external task models
+- [ ] Chat Operations Test Suite (lots of edge cases)
+  - [ ] Rename Chat Test (via sidebar and command palette)
+  - [ ] Delete Chat Test (via sidebar button and command palette)
+  - [ ] Chat Archive Test (via sidebar button and command palette)
+  - [ ] Chat Export Test (JSON, PDF, plain text) (all should be deterministic) (via sidebar button and command palette)
+  - [ ] Chat Import Test (via sidebar button and command palette)
+  - [ ] Share Chat Test (via sidebar button and command palette)
+  - [ ] Clone Chat Test (via sidebar button and command palette)
+    - [ ] Verify how it affects metrics
+    - [ ] Verify the messages are copied correctly (i.e. correct timestamps, correct order, correct sibling relationships, etc.)
+    - [ ] Deleting the original should not delete images/files/web search citations attached to the clone
+    - [ ] Sharing the original, then making a clone, should not make the clone be shared
+  - [ ] Move Chat to Folder Test (via sidebar button, drag-and-drop, and command palette)
+- [ ] Folders Test (comprehensive)
+  - [ ] Create a folder
+  - [ ] Edit folder name
+  - [ ] Delete a folder (all chats in the folder should be deleted)
+  - [ ] Create nested folders (parent/child relationships)
+  - [ ] Expand/collapse folders
+  - [ ] Move folder to different parent
+  - [ ] Verify folder persistence (expand/collapse state persist after page refresh)
+  - [ ] Verify chats appear in correct folders
+  - [ ] Drag and drop chats into folders
+  - [ ] Remove chat from folder
+- [ ] Pinned Chats Test
+  - [ ] Pin a chat
+  - [ ] Unpin a chat
+  - [ ] Verify pinned chats appear in pinned section
+  - [ ] Verify pinned chats persist across sessions
+  - [ ] Drag and drop chat to pin it
+  - [ ] Verify pinned chats are sorted correctly
+- [ ] Chat Sorting Test
+  - [ ] Sort by created date
+  - [ ] Sort by title
+  - [ ] Sort by updated date
+  - [ ] Verify sort persists across sessions (unless local storage is cleared)
+  - [ ] Verify sort works within folders
+- [ ] Chat Full-Text Search Test (verify that it works and that the results are correct - this is why it's important that everything is deterministic! the simplest option is to just make a chat specifically for this test with a message that contains a word that appears nowhere else in the database, but I'd also prefer it if we had more results than just one chat... ideally multiple _pages_ of results!)
+  - [ ] Fuzzy matching, diacritics/accent marks, case sensitivity, etc.
+  - [ ] Searching for the title of a chat should also work
+  - [ ] (should also work in the command palette)
+- [ ] Chat Info Modal Test (correct model names, message counts, cost tracking, branch/leaf count, attachment count, etc.)
+  - [ ] make sure this works for split view chats too (shouldn't double-count messages or forget to count models in the non-selected branches)
+- [ ] Navbar Chat Info Test (correct chat name and folder, even in edge cases of moving it before title generation or before the first generation is completed)
+  - Idea: create a task model mediator that takes a while. So that way we can test the chat info box both with slow task generation AND with normal task generation but a slow assistant response. Like, two different ways of moving the chat before the task comes back. Make sure the edge cases are handled correctly by the chat info box!
+- [ ] Chat Message Links Test - copying a message link (then navigating away) then navigating to that link should take you to the correct message
+  - [ ] Edge cases: shared chat, archived chat, deleted chat, split view chat
+- [ ] Shared Chat Viewing Test
+  - [ ] View a shared chat (read-only mode)
+  - [ ] Verify shared chat URL works
+  - [ ] Verify shared chat doesn't allow editing
+  - [ ] Verify shared chat shows correct content
+  - [ ] Test navigating to shared chat via direct URL
+  - [ ] Test navigating to shared chat with message id query param in URL
+- [ ] Command Palette Test
+  - [ ] Test all commands not tested elsewhere (for example, most user settings > interface commands would be tested elsewhere since we already are going to test those settings)
+  - [ ] Test changing the shortcut
+  - [ ] Test commands that only appear when a chat is open (i.e. that they don't appear when no chat is open, and that they apply correctly, and how they work when viewing a shared chat, or an archived chat, etc.)
+- [ ] Workspace Prompts Test
+  - [ ] Create a new workspace prompt
+  - [ ] See if it appears in the prompts in the chat
+  - [ ] Edit a workspace prompt, see if it updates
+  - [ ] Delete a workspace prompt, see if it disappears
+  - [ ] Verify visibility settings are respected
+- [ ] Model prompt suggestions test - Parameterized for workspace and normal models
+  - [ ] Create a new prompt suggestion, see if it appears
+  - [ ] Edit a prompt suggestion, see if it updates
+  - [ ] Delete a prompt suggestion, see if it disappears
+  - [ ] Verify visibility settings are respected
+- [ ] User Settings Test Suite (note: this includes a lot of stuff, much of which will be handled by other tests)
+  - [ ] Interface Settings Test
+    - [ ] Landing Page Mode
+    - [ ] Chat Bubble
+    - [ ] Widescreen Mode
+    - [ ] ... et cetera ...
+    - HANDLED BY OTHER TESTS:
+      - Command Palette Shortcut
+      - rich text input
+      - large text as file
+  - [ ] Changing user profile image
+  - [ ] Changing user name
+  - I think the audio settings would get handled by other tests, but we should definitely make sure they DO get tested somewhere!
+- [ ] Admin Settings Comprehensive Test
+  - [ ] Test all admin settings tabs (General, Connections, Models, Evaluations, Tools, Documents, Web, Code Execution, Interface, Audio, Images, Pipelines, Database)
+  - [ ] Verify settings save correctly
+  - [ ] Verify settings persist across sessions
+  - [ ] Test settings validation
+- [ ] Sidebar Functionality Test
+  - [ ] Toggle sidebar visibility
+  - [ ] Verify sidebar state persists
+  - [ ] Test sidebar navigation
+  - [ ] Test sidebar on mobile vs desktop (does playwright support this?)
+- [ ] User Roles and Permissions Test
+  - [ ] Test admin role permissions
+  - [ ] Test user role permissions
+  - [ ] Test pending role restrictions
+  - [ ] Verify role-based UI visibility
+  - [ ] Test default permissions for new users
+- [ ] Default Permissions Test
+  - [ ] Set default permissions for new users
+  - [ ] Verify default permissions are applied to new users
+  - [ ] Test workspace default permissions
+  - [ ] Test sharing default permissions
+  - [ ] Test chat default permissions
+  - [ ] Test features default permissions
+- [ ] IndexedDB-Cached Messages Testing
+  - [ ] Test that cached messages are loaded correctly and that the chat info is correct
+  - [ ] Verify that correctly-cached messages are not fetched from the backend
+  - [ ] Verify that browsers without IndexedDB support work correctly (i.e. no caching, but can still create a chat, modify it, navigate between chats, refresh the page, etc.)
+    - [ ] web search, file attachments, MOA merges, assistant-generated images, user-attached images
+  - [ ] Test the clear cache feature in user settings > chats
+
+### 🟡 MEDIUM PRIORITY (Important but Less Critical or Simpler)
+
+- [ ] Tools Test - Parameterized for OpenAI & Ollama
+  - [ ] Create a new tool
+  - [ ] Edit a tool
+  - [ ] Delete a tool
+  - [ ] Clone a tool
+  - [ ] Disable a tool
+  - [ ] Attach to model and see if it works (Mini-Mediator probably)
+- [ ] Direct Connections Test - Users should be able to connect to their own OpenAI compatible API endpoints
+  - [ ] also direct tool server connections
+- [ ] Temporary Chats Test
+  - [ ] Create a temporary chat
+  - [ ] Verify temporary chat doesn't persist after navigation
+  - [ ] Verify temporary chat toggle works
+  - [ ] Verify temporary chat enforced mode?
+  - [ ] Test temporary chat via command palette
+- [ ] Chat List Pagination/Scrolling Test
+  - [ ] Test infinite scroll/pagination
+  - [ ] Verify chat list loads correctly with many chats
+- [ ] Feature Toggles Test
+  - [ ] Enable/disable Community Sharing
+  - [ ] Enable/disable Message Rating
+  - [ ] Enable/disable Channels
+  - [ ] Enable/disable User Webhooks
+  - [ ] Verify feature toggles affect UI visibility
+  - [ ] Verify feature toggles affect functionality
+- [ ] Theme Test
+  - [ ] Light/dark/browser theme should work
+  - [ ] Changing via command palette should work
+  - [ ] Custom theme should work
+  - [ ] Stored in local storage I think? So make sure it gets cleared when local storage is cleared.
+- [ ] Rich Text Chat Input Test
+  - [ ] Test that autocomplete works and that Mini-Mediator recognizes it properly (probably should always try to autocomplete the same text, so if the user types "9+10=", the autocomplete should always return "THIS IS A TEST OF MINI-MEDIATOR'S AUTOCOMPLETE SYSTEM.")
+  - [ ] Test pasting HTML
+  - [ ] Test pasting markdown? is this meant to be handled by the rich text editor?
+  - [ ] Test hotkeys for bold, italic, and code.
+  - [ ] Test pasting large text as file
+- [ ] Plain Text Chat Input Test
+  - [ ] Test pasting HTML
+  - [ ] Test pasting markdown
+  - [ ] Test hotkeys for bold, italic, and code.
+  - [ ] Test pasting large text as file
+- [ ] Groups Test
+  - [ ] Create a new group
+  - [ ] Edit a group (name, description, permissions, users)
+  - [ ] Delete a group
+  - [ ] Add users to group
+  - [ ] Remove users from group
+  - [ ] Test group permissions (workspace, sharing, chat, features)
+  - [ ] Verify group-based access control
+- [ ] Metrics Test
+- [ ] Arena Models Test
+- [ ] Evaluation/Leaderboard/Feedback Test (we really need to unify these names lol)
+- [ ] Tool Servers Test
+- [ ] Chat Overview Test
+- [ ] Chat Artifacts Test
+- [ ] Chat Valves Test (Functions and Tools)
+- [ ] ENABLE_REALTIME_CHAT_SAVE Test
+  - [ ] Not sure how to do this. Refresh the page mid-stream? Or query db directly, somehow?
+  - [ ] A mediator that sends a few SSE chunks, then sleeps for ten seconds, then sends the rest of its chunks. Use the sleep time to do some sort of check.
+
+### 🟢 LOW PRIORITY (Beta/Experimental, Rarely Used, Unimportant, or Very Difficult to Implement)
+
+These tests are for features that are experimental, rarely used, or would be very difficult to implement with Mini-Mediator (e.g., embeddings, web search, image generation).
+
+- [ ] UI Banners Test (`/admin/settings#interface`)
+- [ ] Default Prompt Suggestions Test (`/admin/settings#interface`)
+- [ ] Knowledge Base Test
+  - [ ] Create a new knowledge base
+  - [ ] Edit a knowledge base
+  - [ ] Delete a knowledge base
+  - [ ] Upload files to knowledge base and see if they show up - parameterized for multiple file types!!
+    - Note: Embedding model should probably be set to Mini-Mediator. Meaning we need to make a Mini-Mediator embedding model too...
+  - [ ] Batch upload files? Upload directory? How does this work w/ Playwright?
+  - [ ] Attach to model and see if it works (Mini-Mediator probably)
+  - [ ] Attach entire knowledge base to chat and see if it works
+  - [ ] Attach individual files to chat and see if it works
+  - [ ] Manually add text to knowledge base and see if it works
+  - [ ] Verify visibility settings are respected
+- [ ] Web Search Test
+  - [ ] Both normal and overridden embedding models
+  - [ ] Both with and without bypassing embedding and retrieval
+  - [ ] Does disabling it properly disable the feature? Even in the command palette and navigating directly to the new chat page with query params?
+  - Probably mock SearxNG since it lets you specify whatever URL you want for that engine. More mini-mediator scope creep...
+  - [ ] Multiple web loader engines?
+- [ ] Hybrid Search Test (using Mini-Mediator)
+- [ ] Image Generation Test (using Mini-Mediator I guess... the scope creep is insane lol)
+- [ ] Code Execution Test (Mini-Mediator would obv need a new 'model' for this that can hand back deterministic code blocks)
+  - What's the difference between code execution and code interpreter? both support pyodide and jupyter fwiw
+- [ ] Document Extraction Test - Parameterized for multiple document extraction engines ("Default", Tika, and Docling)
+  - [ ] Test extracting text from a PDF
+  - [ ] other file types
+  - [ ] PDF extract images? how to test this? not sure how the feature works
+  - [ ] both character and tiktoken chunking
+  - [ ] max file size should work
+  - [ ] max upload count should work
+  - [ ] embedding batch size should work
+  - [ ] onedrive and google drive integration should work? not a priority for now, would be very hard to test
+- [ ] TTS Test (`/admin/settings#audio`) (how does this get tested by Playwright? do we mock the TTS API? or use it on deterministic text and verify the audio is correct? can playwright do that?)
+- [ ] STT Test (`/admin/settings#audio`) (how does this get tested by Playwright? pre-made audio clips?)
+- [ ] In-Chat Search Test
+  - [ ] This one sounds very difficult to automate lol. and there are known bugs with this feature anyway, esp. for split view chats.
+- [ ] Memory Test? IDK if this feature even works, or how it works.
+- [ ] Playground Test
+  - [ ] Access playground (admin only)
+  - [ ] Test chat completion mode
+  - [ ] Test text completion mode (notes)
+  - [ ] Verify playground cancel functionality
+  - [ ] Test playground with different models
+- [ ] Filters Test - not sure what to do here, i don't use functions that much
+- [ ] Actions Test - not sure what to do here, i don't use functions that much
+  - [ ] Import Test Users
+  - [ ] Create Test User via form (as opposed to CSV import)
+  - [ ] Add OpenAI connection
+  - [ ] Add Ollama connection
+  - [ ] Set default user role to admin
+  - [ ] Enable new signups
+  - [ ] Set default embedding model to Mini-Mediator
+  - [ ] Set internal and external task models to a Mini-Mediator task model (which would recognize all the various test cases and have deterministic outputs for each of them, e.g. it would know when we're testing a knowledge base and it would return the correct title and tags)
+- [ ] Model CRUD Test - Parameterized for OpenAI & Ollama
+  - [ ] Modify a model by changing its...
+    - [ ] name
+    - [ ] image
+    - [ ] description
+    - [ ] tags
+  - [ ] Hide a model
+  - [ ] Disable a model
+  - [ ] Verify visibility settings are respected
+- [ ] Workspace Model CRUD Test - Parameterized for OpenAI & Ollama
+  - [ ] Create a new model
+  - [ ] Edit a model
+    - [ ] verify each field is editable and saved correctly
+  - [ ] Delete a model
+  - [ ] Clone a model
+  - [ ] Hide a model
+  - [ ] Disable a model
+  - [ ] Verify visibility settings are respected
+- [ ] Tools Test - Parameterized for OpenAI & Ollama
+  - [ ] Create a new tool
+  - [ ] Edit a tool
+  - [ ] Delete a tool
+  - [ ] Clone a tool
+  - [ ] Disable a tool
+  - [ ] Attach to model and see if it works (Mini-Mediator probably)
+- [ ] Filters Test - not sure what to do here, i don't use functions that much
+- [ ] Actions Test - not sure what to do here, i don't use functions that much
+- [ ] Knowledge Base Test
+  - [ ] Create a new knowledge base
+  - [ ] Edit a knowledge base
+  - [ ] Delete a knowledge base
+  - [ ] Upload files to knowledge base and see if they show up - parameterized for multiple file types!!
+    - Note: Embedding model should probably be set to Mini-Mediator. Meaning we need to make a Mini-Mediator embedding model too...
+  - [ ] Batch upload files? Upload directory? How does this work w/ Playwright?
+  - [ ] Attach to model and see if it works (Mini-Mediator probably)
+  - [ ] Attach entire knowledge base to chat and see if it works
+  - [ ] Attach individual files to chat and see if it works
+  - [ ] Manually add text to knowledge base and see if it works
+  - [ ] Verify visibility settings are respected
+- [ ] Model Advanced Params Test - Parameterized for OpenAI & Ollama; also for Workspace and normal models
+  - [ ] Modify a model's advanced params
+    - [ ] system prompt
+    - [ ] temperature
+    - [ ] top_p
+    - [ ] frequency_penalty
+    - [ ] presence_penalty
+    - [ ] max_tokens
+    - [ ] n
+    - [ ] stop
+    - [ ] etc.
+  - [ ] Verify advanced params are saved correctly and applied to model (by chatting with Mini-Mediator)
+- [ ] User Advanced Params Test - Parameterized for OpenAI & Ollama (since chat completions get handled by different code paths for OpenAI vs Ollama I think)
+  - [ ] Modify a user's advanced params
+  - [ ] Verify advanced params are saved correctly and applied to user (by chatting with Mini-Mediator)
+- [ ] User System Prompt Test
+  - [ ] Modify a user's system prompt
+  - [ ] Verify system prompt is saved correctly and applied to user (by chatting with Mini-Mediator)
+- [ ] Chat Advanced Params Test - Parameterized for OpenAI & Ollama (same reason as above)
+  - [ ] Modify a chat's advanced params
+  - [ ] Verify advanced params are saved correctly and applied to chat (by chatting with Mini-Mediator)
+  - [ ] Change to a different chat then back to the original chat and verify advanced params are still applied
+- [ ] Chat System Prompt Test
+  - [ ] Modify a chat's system prompt
+  - [ ] Verify system prompt is saved correctly and applied to chat (by chatting with Mini-Mediator)
+  - [ ] Change to a different chat then back to the original chat and verify system prompt is still applied
+- [ ] Workspace Prompts Test
+  - [ ] Create a new workspace prompt
+  - [ ] See if it appears in the prompts in the chat
+  - [ ] Edit a workspace prompt, see if it updates
+  - [ ] Delete a workspace prompt, see if it disappears
+  - [ ] Verify visibility settings are respected
+- [ ] Model prompt suggestions test - Parameterized for workspace and normal models
+  - [ ] Create a new prompt suggestion, see if it appears
+  - [ ] Edit a prompt suggestion, see if it updates
+  - [ ] Delete a prompt suggestion, see if it disappears
+  - [ ] Verify visibility settings are respected
+- [ ] Metrics Test
+- [ ] Arena Models Test
+- [ ] Evaluation/Leaderboard/Feedback Test (we really need to unify these names lol)
+- [ ] User Settings Test Suite (note: this includes a lot of stuff, much of which will be handled by other tests)
+  - [ ] Interface Settings Test
+    - [ ] Landing Page Mode
+    - [ ] Chat Bubble
+    - [ ] Widescreen Mode
+    - [ ] ... et cetera ...
+    - HANDLED BY OTHER TESTS:
+      - Command Palette Shortcut
+      - rich text input
+      - large text as file
+  - [ ] Changing user profile image
+  - [ ] Changing user name
+  - I think the audio settings would get handled by other tests, but we should definitely make sure they DO get tested somewhere!
+- [ ] Tool Servers Test
+- [ ] Web Search Test
+  - [ ] Both normal and overridden embedding models
+  - [ ] Both with and without bypassing embedding and retrieval
+  - [ ] Does disabling it properly disable the feature? Even in the command palette and navigating directly to the new chat page with query params?
+  - Probably mock SearxNG since it lets you specify whatever URL you want for that engine. More mini-mediator scope creep...
+  - [ ] Multiple web loader engines?
+- [ ] Hybrid Search Test (using Mini-Mediator)
+- [ ] Image Generation Test (using Mini-Mediator I guess... the scope creep is insane lol)
+- [ ] Code Execution Test (Mini-Mediator would obv need a new 'model' for this that can hand back deterministic code blocks)
+  - What's the difference between code execution and code interpreter? both support pyodide and jupyter fwiw
+- Tasks Test Suite (see note way above about Mini-Mediator task model determinism)
+  - [ ] Title Generation Test
+  - [ ] Tags Generation Test
+  - [ ] Image Prompt Generation Test (this might be handled by the image generation test above)
+  - [ ] Query Generation Test (retrieval and web search queries)
+  - [-] ~~Autocomplete Generation Test~~ (will be handled by the rich text editor test)
+  - [ ] Emoji Generation Test (can we do this with Playwright?)
+  - [ ] Function Calling Test
+  - [ ] Test that all of these work with both the default prompt and a custom prompt, and both internal and external task models
+- [ ] UI Banners Test (`/admin/settings#interface`)
+- [ ] Default Prompt Suggestions Test (`/admin/settings#interface`)
+- [ ] TTS Test (`/admin/settings#audio`) (how does this get tested by Playwright? do we mock the TTS API? or use it on deterministic text and verify the audio is correct? can playwright do that?)
+- [ ] STT Test (`/admin/settings#audio`) (how does this get tested by Playwright? pre-made audio clips?)
+- [ ] Multi-Model Response Test ('split view' functionality)
+  - [ ] Tons of edge cases to worry about here!
+  - [ ] MOA merge response test (as standard, mini-mediator's task models would need to recognize this and return a deterministic merge response)
+- [ ] Rich Text Chat Input Test
+  - [ ] Test that autocomplete works and that Mini-Mediator recognizes it properly (probably should always try to autocomplete the same text, so if the user types "9+10=", the autocomplete should always return "THIS IS A TEST OF MINI-MEDIATOR'S AUTOCOMPLETE SYSTEM.")
+  - [ ] Test pasting HTML
+  - [ ] Test pasting markdown? is this meant to be handled by the rich text editor?
+  - [ ] Test hotkeys for bold, italic, and code.
+  - [ ] Test pasting large text as file
+- [ ] Plain Text Chat Input Test
+  - [ ] Test pasting HTML
+  - [ ] Test pasting markdown
+  - [ ] Test hotkeys for bold, italic, and code.
+  - [ ] Test pasting large text as file
+- [ ] Document Extraction Test - Parameterized for multiple document extraction engines (Tika, Docling, Document Intelligence, Mistral OCR?)
+  - [ ] Test extracting text from a PDF
+  - [ ] other file types
+  - [ ] PDF extract images? how to test this? not sure how the feature works
+  - [ ] both character and tiktoken chunking
+  - [ ] max file size should work
+  - [ ] max upload count should work
+  - [ ] embedding batch size should work
+  - [ ] onedrive and google drive integration should work? not a priority for now, would be very hard to test
+- [ ] Direct Connections Test - Users should be able to connect to their own OpenAI compatible API endpoints
+  - [ ] also direct tool server connections
+- [ ] Chat Archive Test (via sidebar button and command palette)
+- [ ] Chat Export Test (JSON, PDF, plain text) (all should be deterministic) (via sidebar button and command palette)
+- [ ] Chat Import Test (via sidebar button and command palette)
+- [ ] Share Chat Test (via sidebar button and command palette)
+- [ ] Clone Chat Test (via sidebar button and command palette)
+  - [ ] Verify how it affects metrics
+  - [ ] Verify the messages are copied correctly (i.e. correct timestamps, correct order, correct sibling relationships, etc.)
+  - [ ] Deleting the original should not delete images/files/web search citations attached to the clone
+  - [ ] Sharing the original, then making a clone, should not make the clone be shared
+- [ ] Rename Chat Test (via sidebar and command palette)
+- [ ] Move Chat to Folder Test (via sidebar button, drag-and-drop, and command palette)
+- [ ] Delete Chat Test (via sidebar button and command palette)
+- [ ] Command Palette Test
+  - [ ] Test all commands not tested elsewhere (for example, most user settings > interface commands would be tested elsewhere since we already are going to test those settings)
+  - [ ] Test changing the shortcut
+  - [ ] Test commands that only appear when a chat is open (i.e. that they don't appear when no chat is open, and that they apply correctly, and how they work when viewing a shared chat, or an archived chat, etc.)
+- [ ] Memory Test? IDK if this feature even works, or how it works.
+- [ ] Chat Overview Test
+- [ ] Chat Artifacts Test
+- [ ] Chat Valves Test (Functions and Tools)
+- [ ] Chat Info Modal Test (correct model names, message counts, cost tracking, branch/leaf count, attachment count, etc.)
+  - [ ] make sure this works for split view chats too (shouldn't double-count messages or forget to count models in the non-selected branches)
+- [ ] Navbar Chat Info Test (correct chat name and folder, even in edge cases of moving it before title generation or before the first generation is completed)
+- [ ] Chat Full-Text Search Test (verify that it works and that the results are correct - this is why it's important that everything is deterministic! the simplest option is to just make a chat specifically for this test with a message that contains a word that appears nowhere else in the database, but I'd also prefer it if we had more results than just one chat... ideally multiple _pages_ of results!)
+  - [ ] Fuzzy matching, diacritics/accent marks, case sensitivity, etc.
+  - [ ] Searching for the title of a chat should also work
+  - [ ] (should also work in the command palette)
+- [ ] In-Chat Search Test
+  - [ ] This one sounds very difficult to automate lol. and there are known bugs with this feature anyway, esp. for split view chats.
+- [ ] Chat Message Links Test - copying a message link (then navigating away) then navigating to that link should take you to the correct message
+  - [ ] Edge cases: shared chat, archived chat, deleted chat, split view chat
+- [ ] IndexedDB-Cached Messages Testing
+  - [ ] Test that cached messages are loaded correctly and that the chat info is correct
+  - [ ] Verify that correctly-cached messages are not fetched from the backend
+  - [ ] Verify that browsers without IndexedDB support work correctly (i.e. no caching, but can still create a chat, modify it, navigate between chats, refresh the page, etc.)
+    - [ ] web search, file attachments, MOA merges, assistant-generated images, user-attached images
+  - [ ] Test the clear cache feature in user settings > chats
+- [ ] Registration Test
+  - [ ] Register new user when signups are enabled
+  - [ ] Register first user (should become admin)
+  - [ ] Registration fails when signups are disabled
+  - [ ] Registration fails with invalid email format
+  - [ ] Registration fails with duplicate email
+  - [ ] Registration fails with password too long (>72 bytes)
+  - [ ] Verify default role assignment (pending vs user vs admin)
+- [ ] Groups Test
+  - [ ] Create a new group
+  - [ ] Edit a group (name, description, permissions, users)
+  - [ ] Delete a group
+  - [ ] Add users to group
+  - [ ] Remove users from group
+  - [ ] Test group permissions (workspace, sharing, chat, features)
+  - [ ] Verify group-based access control
+- [ ] Folders Test (comprehensive)
+  - [ ] Create a folder
+  - [ ] Edit folder name
+  - [ ] Delete a folder (all chats in the folder should be deleted)
+  - [ ] Create nested folders (parent/child relationships)
+  - [ ] Expand/collapse folders
+  - [ ] Move folder to different parent
+  - [ ] Verify folder persistence (expand/collapse state persist after page refresh)
+  - [ ] Verify chats appear in correct folders
+  - [ ] Drag and drop chats into folders
+  - [ ] Remove chat from folder
+- [ ] Pinned Chats Test
+  - [ ] Pin a chat
+  - [ ] Unpin a chat
+  - [ ] Verify pinned chats appear in pinned section
+  - [ ] Verify pinned chats persist across sessions
+  - [ ] Drag and drop chat to pin it
+  - [ ] Verify pinned chats are sorted correctly
+- [ ] Temporary Chats Test
+  - [ ] Create a temporary chat
+  - [ ] Verify temporary chat doesn't persist after navigation
+  - [ ] Verify temporary chat toggle works
+  - [ ] Verify temporary chat enforced mode?
+  - [ ] Test temporary chat via command palette
+- [ ] Playground Test
+  - [ ] Access playground (admin only)
+  - [ ] Test chat completion mode
+  - [ ] Test text completion mode (notes)
+  - [ ] Verify playground cancel functionality
+  - [ ] Test playground with different models
+- [ ] Chat Sorting Test
+  - [ ] Sort by created date
+  - [ ] Sort by title
+  - [ ] Sort by updated date
+  - [ ] Verify sort persists across sessions (unless local storage is cleared)
+  - [ ] Verify sort works within folders
+- [ ] Theme Test
+  - [ ] Light/dark/browser theme should work
+  - [ ] Changing via command palette should work
+  - [ ] Custom theme should work
+  - [ ] Stored in local storage I think? So make sure it gets cleared when local storage is cleared.
+- [ ] Chat List Pagination/Scrolling Test
+  - [ ] Test infinite scroll/pagination
+  - [ ] Verify chat list loads correctly with many chats
+- [ ] Shared Chat Viewing Test
+  - [ ] View a shared chat (read-only mode)
+  - [ ] Verify shared chat URL works
+  - [ ] Verify shared chat doesn't allow editing
+  - [ ] Verify shared chat shows correct content
+  - [ ] Test navigating to shared chat via direct URL
+  - [ ] Test navigating to shared chat with message id query param in URL
+- [ ] User Roles and Permissions Test
+  - [ ] Test admin role permissions
+  - [ ] Test user role permissions
+  - [ ] Test pending role restrictions
+  - [ ] Verify role-based UI visibility
+  - [ ] Test default permissions for new users
+- [ ] Default Permissions Test
+  - [ ] Set default permissions for new users
+  - [ ] Verify default permissions are applied to new users
+  - [ ] Test workspace default permissions
+  - [ ] Test sharing default permissions
+  - [ ] Test chat default permissions
+  - [ ] Test features default permissions
+- [ ] Feature Toggles Test
+  - [ ] Enable/disable Community Sharing
+  - [ ] Enable/disable Message Rating
+  - [ ] Enable/disable Channels
+  - [ ] Enable/disable User Webhooks
+  - [ ] Verify feature toggles affect UI visibility
+  - [ ] Verify feature toggles affect functionality
+- [ ] Sidebar Functionality Test
+  - [ ] Toggle sidebar visibility
+  - [ ] Verify sidebar state persists
+  - [ ] Test sidebar navigation
+  - [ ] Test sidebar on mobile vs desktop (does playwright support this?)
+- [ ] User Management Test (Admin)
+  - [ ] Edit user details (name, email, role) (role is done by clicking the role pill in the user list, not in the edit user modal)
+  - [ ] Change user password
+  - [ ] Delete user
+  - [ ] View user chats

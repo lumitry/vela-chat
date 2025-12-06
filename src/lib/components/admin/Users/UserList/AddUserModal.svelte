@@ -4,8 +4,8 @@
 	import { onMount, getContext } from 'svelte';
 	import { addUser } from '$lib/apis/auths';
 
-
 	import Modal from '$lib/components/common/Modal.svelte';
+	import { testId } from '$lib/utils/testId';
 
 	const i18n = getContext('i18n');
 	const dispatch = createEventDispatcher();
@@ -118,7 +118,7 @@
 	};
 </script>
 
-<Modal size="sm" bind:show>
+<Modal size="sm" bind:show modalTestId={testId('AdminSettings', 'Users', 'AddUserModal')}>
 	<div>
 		<div class=" flex justify-between dark:text-gray-300 px-5 pt-4 pb-2">
 			<div class=" text-lg font-medium self-center">{$i18n.t('Add User')}</div>
@@ -159,7 +159,9 @@
 							type="button"
 							on:click={() => {
 								tab = '';
-							}}>{$i18n.t('Form')}</button
+							}}
+							data-testid={testId('AdminSettings', 'Users', 'AddUserModal', 'FormTabButton')}
+							>{$i18n.t('Form')}</button
 						>
 
 						<button
@@ -169,7 +171,9 @@
 							type="button"
 							on:click={() => {
 								tab = 'import';
-							}}>{$i18n.t('CSV Import')}</button
+							}}
+							data-testid={testId('AdminSettings', 'Users', 'AddUserModal', 'CSVImportTabButton')}
+							>{$i18n.t('CSV Import')}</button
 						>
 					</div>
 
@@ -245,6 +249,7 @@
 										bind:files={inputFiles}
 										type="file"
 										accept=".csv"
+										data-testid={testId('AdminSettings', 'Users', 'AddUserModal', 'UploadCSVInput')}
 									/>
 
 									<button
@@ -266,10 +271,7 @@
 									ⓘ {$i18n.t(
 										'Ensure your CSV file includes 4 columns in this order: Name, Email, Password, Role.'
 									)}
-									<a
-										class="underline dark:text-gray-200"
-										href="/static/user-import.csv"
-									>
+									<a class="underline dark:text-gray-200" href="/static/user-import.csv">
 										{$i18n.t('Click here to download user import template file.')}
 									</a>
 								</div>
@@ -284,6 +286,7 @@
 								: ''}"
 							type="submit"
 							disabled={loading}
+							data-testid={testId('AdminSettings', 'Users', 'AddUserModal', 'SaveButton')}
 						>
 							{$i18n.t('Save')}
 

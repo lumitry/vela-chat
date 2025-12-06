@@ -33,6 +33,7 @@
 	import EllipsisHorizontal from '$lib/components/icons/EllipsisHorizontal.svelte';
 	import EyeSlash from '$lib/components/icons/EyeSlash.svelte';
 	import Eye from '$lib/components/icons/Eye.svelte';
+	import { testId } from '$lib/utils/testId';
 
 	let shiftKey = false;
 
@@ -229,7 +230,9 @@
 				<div class="flex items-center md:self-center text-xl font-medium px-0.5">
 					{$i18n.t('Models')}
 					<div class="flex self-center w-[1px] h-6 mx-2.5 bg-gray-50 dark:bg-gray-850" />
-					<span class="text-lg font-medium text-gray-500 dark:text-gray-300"
+					<span
+						class="text-lg font-medium text-gray-500 dark:text-gray-300"
+						data-testid={testId('AdminSettings', 'Models', 'ModelCount')}
 						>{filteredModels.length}</span
 					>
 				</div>
@@ -242,6 +245,7 @@
 							on:click={() => {
 								showManageModal = true;
 							}}
+							data-testid={testId('AdminSettings', 'Models', 'ManageModelsButton')}
 						>
 							<ArrowDownTray />
 						</button>
@@ -254,6 +258,7 @@
 							on:click={() => {
 								showConfigModal = true;
 							}}
+							data-testid={testId('AdminSettings', 'Models', 'SettingsButton')}
 						>
 							<Cog6 />
 						</button>
@@ -270,6 +275,7 @@
 						class=" w-full text-sm py-1 rounded-r-xl outline-hidden bg-transparent"
 						bind:value={searchValue}
 						placeholder={$i18n.t('Search Models')}
+						data-testid={testId('AdminSettings', 'Models', 'SearchInput')}
 					/>
 				</div>
 			</div>
@@ -285,13 +291,16 @@
 							? 'opacity-50 dark:opacity-50'
 							: ''}"
 						id="model-item-{model.id}"
+						data-testid={testId('AdminSettings', 'Models', 'ModelItem', model.id)}
 					>
+						<!-- note: the model.id includes the prefix! -->
 						<button
 							class=" flex flex-1 text-left space-x-3.5 cursor-pointer w-full"
 							type="button"
 							on:click={() => {
 								selectedModelId = model.id;
 							}}
+							data-testid={testId('AdminSettings', 'Models', 'ModelItemButton', model.id)}
 						>
 							<div class=" self-center w-8">
 								<div
@@ -303,6 +312,7 @@
 										src={imageSrc}
 										alt="modelfile profile"
 										class=" rounded-full w-full h-auto object-cover"
+										data-testid={testId('AdminSettings', 'Models', 'ModelItemImage', model.id)}
 									/>
 								</div>
 							</div>
@@ -319,10 +329,23 @@
 									className=" w-fit"
 									placement="top-start"
 								>
-									<div class="  font-semibold line-clamp-1">{model.name}</div>
+									<div
+										class="  font-semibold line-clamp-1"
+										data-testid={testId('AdminSettings', 'Models', 'ModelItemName', model.id)}
+									>
+										{model.name}
+									</div>
 								</Tooltip>
 								<div class=" text-xs overflow-hidden text-ellipsis line-clamp-1 text-gray-500">
-									<span class=" line-clamp-1">
+									<span
+										class=" line-clamp-1"
+										data-testid={testId(
+											'AdminSettings',
+											'Models',
+											'ModelItemDescription',
+											model.id
+										)}
+									>
 										{!!model?.meta?.description
 											? model?.meta?.description
 											: model?.ollama?.digest
@@ -341,6 +364,7 @@
 										on:click={() => {
 											hideModelHandler(model);
 										}}
+										data-testid={testId('AdminSettings', 'Models', 'ModelItemHideButton', model.id)}
 									>
 										{#if model?.meta?.hidden}
 											<EyeSlash />
@@ -356,6 +380,7 @@
 									on:click={() => {
 										selectedModelId = model.id;
 									}}
+									data-testid={testId('AdminSettings', 'Models', 'ModelItemEditButton', model.id)}
 								>
 									<svg
 										xmlns="http://www.w3.org/2000/svg"
@@ -387,6 +412,7 @@
 									<button
 										class="self-center w-fit text-sm p-1.5 dark:text-gray-300 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-xl"
 										type="button"
+										data-testid={testId('AdminSettings', 'Models', 'ModelItemMenuButton', model.id)}
 									>
 										<EllipsisHorizontal className="size-5" />
 									</button>
@@ -401,6 +427,7 @@
 											on:change={async () => {
 												toggleModelHandler(model);
 											}}
+											testId={testId('AdminSettings', 'Models', 'ModelItemToggleSwitch', model.id)}
 										/>
 									</Tooltip>
 								</div>
@@ -461,6 +488,7 @@
 
 							reader.readAsText(importFiles[0]);
 						}}
+						data-testid={testId('AdminSettings', 'Models', 'ImportPresetsInput')}
 					/>
 
 					<button
@@ -468,6 +496,7 @@
 						on:click={() => {
 							modelsImportInputElement.click();
 						}}
+						data-testid={testId('AdminSettings', 'Models', 'ExportPresetsButton')}
 					>
 						<div class=" self-center mr-2 font-medium line-clamp-1">
 							{$i18n.t('Import Presets')}
@@ -494,6 +523,7 @@
 						on:click={async () => {
 							downloadModels(models);
 						}}
+						data-testid={testId('AdminSettings', 'Models', 'ImportPresetsButton')}
 					>
 						<div class=" self-center mr-2 font-medium line-clamp-1">
 							{$i18n.t('Export Presets')}

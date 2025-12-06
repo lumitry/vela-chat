@@ -260,32 +260,52 @@
 		webSearchEnabled = false;
 		imageGenerationEnabled = false;
 
-		if (chatIdProp && (await loadChat())) {
-			await tick();
-			loading = false;
+		try {
+			const loadChatResult = chatIdProp ? await loadChat() : null;
+			if (chatIdProp && loadChatResult) {
+				await tick();
+				loading = false;
 
-			const saved = localStorage.getItem(`chat-input-${chatIdProp}`);
-			if (saved) {
-				try {
-					const input = JSON.parse(saved);
-					prompt = input.prompt;
-					files = input.files;
-					selectedToolIds = input.selectedToolIds;
-					webSearchEnabled = input.webSearchEnabled;
-					imageGenerationEnabled = input.imageGenerationEnabled;
-				} catch {}
-			}
+				const saved = localStorage.getItem(`chat-input-${chatIdProp}`);
+				if (saved) {
+					try {
+						const input = JSON.parse(saved);
+						prompt = input.prompt;
+						files = input.files;
+						selectedToolIds = input.selectedToolIds;
+						webSearchEnabled = input.webSearchEnabled;
+						imageGenerationEnabled = input.imageGenerationEnabled;
+					} catch {}
+				}
 
-			document.getElementById('chat-input')?.focus();
-			// Scroll: if linking to a message, scroll to it; else scroll to bottom
-			const targetMessageId = $page.url.searchParams.get('message');
-			if (targetMessageId && history.messages[targetMessageId]) {
-				await showMessage({ id: targetMessageId });
+				document.getElementById('chat-input')?.focus();
+				// Scroll: if linking to a message, scroll to it; else scroll to bottom
+				const targetMessageId = $page.url.searchParams.get('message');
+				if (targetMessageId && history.messages[targetMessageId]) {
+					await showMessage({ id: targetMessageId });
+				} else {
+					setTimeout(() => scrollToBottom(), 0);
+				}
 			} else {
-				setTimeout(() => scrollToBottom(), 0);
+				// Only navigate if chatIdProp is missing or loadChat explicitly returned null (404)
+				// Don't navigate on transient errors
+				if (chatIdProp) {
+					// chatIdProp exists but loadChat returned null - this means navigation already happened in loadChat
+					// (it was a 404), so we don't need to navigate again
+					loading = false;
+				} else {
+					await goto('/');
+				}
 			}
-		} else {
-			await goto('/');
+		} catch (error: any) {
+			// Catch transient errors and don't navigate - just stop loading
+			// This prevents navigation on network timeouts during tests
+			if (error?.message === 'TRANSIENT_ERROR') {
+				loading = false;
+			} else {
+				// Re-throw other errors
+				throw error;
+			}
 		}
 	}
 
@@ -640,19 +660,29 @@
 		window.addEventListener('message', onMessageHandler);
 		$socket?.on('chat-events', chatEventHandler);
 
+		// Always subscribe to chatId changes to handle cases where it becomes empty
+		chatIdUnsubscriber = chatId.subscribe(async (value) => {
+			if (!value) {
+				const actualPathname = window.location.pathname;
+				if (actualPathname.includes('/c/') && chatIdProp) {
+					// We're on a chat page but chatId store is empty - restore it from chatIdProp
+					chatId.set(chatIdProp);
+					return;
+				}
+				// We're on home page and chatId is empty - initialize new chat
+				if ($page.url.pathname === '/') {
+					await tick(); // Wait for DOM updates
+					await initNewChat();
+				}
+			}
+		});
+
 		if (!$chatId) {
 			// Initialize new chat on mount if we're on home page
 			if ($page.url.pathname === '/') {
 				await tick();
 				await initNewChat();
 			}
-
-			chatIdUnsubscriber = chatId.subscribe(async (value) => {
-				if (!value) {
-					await tick(); // Wait for DOM updates
-					await initNewChat();
-				}
-			});
 		} else {
 			if ($temporaryChatEnabled) {
 				await goto('/');
@@ -896,6 +926,15 @@
 	//////////////////////////
 
 	const initNewChat = async () => {
+		// NEVER change URL if we're actually on a chat page, regardless of chatIdProp
+		// chatIdProp can be stale/empty if SvelteKit's $page store hasn't updated yet
+		// Check the ACTUAL browser URL, not SvelteKit's pathname (which can be stale)
+		const actualPathname = window.location.pathname;
+		if (actualPathname.includes('/c/')) {
+			// Do NOT change the URL - we're on a chat page
+			return;
+		}
+
 		// Wait for models to be loaded before proceeding
 		if ($models.length === 0) {
 			// Wait up to 5 seconds for models to load
@@ -967,8 +1006,13 @@
 		await showOverview.set(false);
 		await showArtifacts.set(false);
 
-		if ($page.url.pathname.includes('/c/')) {
-			window.history.replaceState(history.state, '', `/`);
+		// Double-check we're not on a chat page before clearing chatId
+		// This prevents clearing chatId when initNewChat is called incorrectly
+		// (actualPathname was already checked at the top, but check again in case URL changed)
+		const currentPathname = window.location.pathname;
+		if (currentPathname.includes('/c/')) {
+			// We're on a chat page - don't clear chatId or change URL
+			return;
 		}
 
 		autoScroll = true;
@@ -1119,10 +1163,28 @@
 			// Skip API call for metadata since we have the full chat
 		} else {
 			// Not in cache, fetch from API
-			chatMeta = await getChatMetaById(localStorage.token, $chatId).catch(async (error) => {
-				await goto('/');
-				return null;
-			});
+			try {
+				chatMeta = await getChatMetaById(localStorage.token, $chatId);
+			} catch (error: any) {
+				// Only navigate to home if it's a 404 (chat doesn't exist)
+				// Don't navigate for network errors, timeouts, or other transient issues
+				// This prevents navigation on transient network issues during tests
+				const errorDetail = error?.detail || error?.message || String(error || '');
+				const isNotFound =
+					errorDetail?.includes?.('404') ||
+					errorDetail?.includes?.('not found') ||
+					errorDetail?.includes?.('Not Found') ||
+					error?.status === 404;
+
+				if (isNotFound) {
+					// Chat doesn't exist, signal to loadAndLink to navigate
+					await goto('/');
+					return null;
+				}
+				// For transient errors (network issues, timeouts, etc.), throw a specific error
+				// that loadAndLink can catch and handle without navigating
+				throw new Error('TRANSIENT_ERROR');
+			}
 		}
 
 		if (chatMeta) {
@@ -1654,11 +1716,14 @@
 
 				await tick();
 
+				console.error('[loadChat] Returning true - chat loaded successfully');
 				return true;
 			} else {
+				console.error('[loadChat] Returning null - chatContent is falsy');
 				return null;
 			}
 		} else {
+			console.error('[loadChat] Returning null - chatMeta is falsy');
 			return null;
 		}
 	};

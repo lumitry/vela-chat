@@ -6,6 +6,7 @@
 	import Modal from '$lib/components/common/Modal.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
 	import { formatDate } from '$lib/utils';
+	import { testId } from '$lib/utils/testId';
 
 	type ChatInfoSnapshot = {
 		totalMessages: number;
@@ -68,7 +69,12 @@
 	}
 </script>
 
-<Modal bind:show size="sm" className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl">
+<Modal
+	bind:show
+	size="sm"
+	className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl"
+	modalTestId={testId('Chat', 'InfoModal')}
+>
 	{#if stats}
 		<div class="p-5 md:p-6 space-y-6">
 			<div class="flex items-start justify-between gap-3">
@@ -76,7 +82,10 @@
 					<p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
 						{$i18n.t('Chat Info')}
 					</p>
-					<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-50 line-clamp-2">
+					<h2
+						class="text-lg font-semibold text-gray-900 dark:text-gray-50 line-clamp-2"
+						data-testid={testId('Chat', 'InfoModal', 'Title')}
+					>
 						{chatTitle || $i18n.t('Untitled Chat')}
 					</h2>
 					<p class="text-sm text-gray-500 dark:text-gray-400">
@@ -89,6 +98,7 @@
 						show = false;
 					}}
 					aria-label={$i18n.t('Close')}
+					data-testid={testId('Chat', 'InfoModal', 'CloseButton')}
 				>
 					<XMark className="size-5" strokeWidth="2" />
 				</button>
@@ -101,7 +111,10 @@
 					<p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
 						{$i18n.t('Total messages')}
 					</p>
-					<p class="text-2xl font-semibold text-gray-900 dark:text-gray-50">
+					<p
+						class="text-2xl font-semibold text-gray-900 dark:text-gray-50"
+						data-testid={testId('Chat', 'InfoModal', 'TotalMessages')}
+					>
 						{formatNumber(stats.totalMessages)}
 					</p>
 				</div>
@@ -113,7 +126,10 @@
 						{$i18n.t('Current branch')}
 					</p>
 					<div class="flex items-baseline gap-2">
-						<p class="text-2xl font-semibold text-gray-900 dark:text-gray-50">
+						<p
+							class="text-2xl font-semibold text-gray-900 dark:text-gray-50"
+							data-testid={testId('Chat', 'InfoModal', 'CurrentBranchMessages')}
+						>
 							{formatNumber(stats.currentBranchMessages)}
 						</p>
 						<span class="text-xs font-medium text-gray-500 dark:text-gray-400">
@@ -131,7 +147,10 @@
 					<p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
 						{$i18n.t('Branches')}
 					</p>
-					<p class="text-2xl font-semibold text-gray-900 dark:text-gray-50">
+					<p
+						class="text-2xl font-semibold text-gray-900 dark:text-gray-50"
+						data-testid={testId('Chat', 'InfoModal', 'BranchCount')}
+					>
 						{formatNumber(stats.branchCount)}
 					</p>
 					<p class="text-xs text-gray-500 dark:text-gray-400">
@@ -145,7 +164,10 @@
 					<p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
 						{$i18n.t('Attachments')}
 					</p>
-					<p class="text-2xl font-semibold text-gray-900 dark:text-gray-50">
+					<p
+						class="text-2xl font-semibold text-gray-900 dark:text-gray-50"
+						data-testid={testId('Chat', 'InfoModal', 'AttachmentCount')}
+					>
 						{formatNumber(stats.attachmentCount)}
 					</p>
 					<p class="text-xs text-gray-500 dark:text-gray-400">
@@ -161,7 +183,10 @@
 					<p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
 						{$i18n.t('Total cost')}
 					</p>
-					<p class="text-2xl font-semibold text-gray-900 dark:text-gray-50">
+					<p
+						class="text-2xl font-semibold text-gray-900 dark:text-gray-50"
+						data-testid={testId('Chat', 'InfoModal', 'TotalCost')}
+					>
 						{formatCurrency(stats.totalCost)}
 					</p>
 				</div>
@@ -172,7 +197,10 @@
 					<p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
 						{$i18n.t('Total input tokens')}
 					</p>
-					<p class="text-2xl font-semibold text-gray-900 dark:text-gray-50">
+					<p
+						class="text-2xl font-semibold text-gray-900 dark:text-gray-50"
+						data-testid={testId('Chat', 'InfoModal', 'TotalInputTokens')}
+					>
 						{formatNumber(stats.totalInputTokens)}
 					</p>
 				</div>
@@ -183,7 +211,10 @@
 					<p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
 						{$i18n.t('Total output tokens')}
 					</p>
-					<p class="text-2xl font-semibold text-gray-900 dark:text-gray-50">
+					<p
+						class="text-2xl font-semibold text-gray-900 dark:text-gray-50"
+						data-testid={testId('Chat', 'InfoModal', 'TotalOutputTokens')}
+					>
 						{formatNumber(stats.totalOutputTokens)}
 					</p>
 				</div>
@@ -194,7 +225,10 @@
 					<p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
 						{$i18n.t('Reasoning tokens')}
 					</p>
-					<p class="text-2xl font-semibold text-gray-900 dark:text-gray-50">
+					<p
+						class="text-2xl font-semibold text-gray-900 dark:text-gray-50"
+						data-testid={testId('Chat', 'InfoModal', 'TotalReasoningTokens')}
+					>
 						{formatNumber(stats.totalReasoningTokens)}
 					</p>
 				</div>
@@ -206,7 +240,10 @@
 						{$i18n.t('Unique models')}
 					</p>
 					<div class="flex items-center gap-2">
-						<span class="text-xs font-medium text-gray-600 dark:text-gray-300">
+						<span
+							class="text-xs font-medium text-gray-600 dark:text-gray-300"
+							data-testid={testId('Chat', 'InfoModal', 'UniqueModelsCount')}
+						>
 							{formatNumber(stats.uniqueModels.length)}
 							{$i18n.t('total')}
 						</span>
@@ -216,6 +253,7 @@
 								on:click={() => {
 									showAllModels = !showAllModels;
 								}}
+								data-testid={testId('Chat', 'InfoModal', 'ShowAllModelsButton')}
 							>
 								{showAllModels ? $i18n.t('Show less') : $i18n.t('Show all')}
 							</button>
@@ -240,27 +278,41 @@
 										class="size-8 rounded-full object-cover border border-gray-200 dark:border-gray-700"
 										loading="lazy"
 										decoding="async"
+										data-testid={testId('Chat', 'InfoModal', 'UniqueModelImage', model.id)}
 									/>
 								{:else}
 									<div
 										class="size-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-xs font-semibold text-gray-600 dark:text-gray-200"
+										data-testid={testId(
+											'Chat',
+											'InfoModal',
+											'UniqueModelImagePlaceholder',
+											model.id
+										)}
 									>
 										{(model.label || model.id || '?').slice(0, 1).toUpperCase()}
 									</div>
 								{/if}
 								<div class="flex items-center gap-3 flex-1 min-w-0">
 									<div class="flex flex-col leading-tight min-w-0">
-										<span class="text-sm font-medium text-gray-900 dark:text-gray-100 line-clamp-1">
+										<span
+											class="text-sm font-medium text-gray-900 dark:text-gray-100 line-clamp-1"
+											data-testid={testId('Chat', 'InfoModal', 'UniqueModelLabel', model.id)}
+										>
 											{model.label}
 										</span>
 										{#if model.id && model.id !== model.label}
-											<span class="text-xs text-gray-500 dark:text-gray-400 line-clamp-1">
+											<span
+												class="text-xs text-gray-500 dark:text-gray-400 line-clamp-1"
+												data-testid={testId('Chat', 'InfoModal', 'UniqueModelId', model.id)}
+											>
 												{model.id}
 											</span>
 										{/if}
 									</div>
 									<span
 										class="text-xs font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap ml-auto text-right"
+										data-testid={testId('Chat', 'InfoModal', 'UniqueModelMessageCount', model.id)}
 									>
 										{formatNumber(model.messageCount)}
 										{$i18n.t('messages')}
@@ -287,7 +339,10 @@
 					<p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
 						{$i18n.t('Created')}
 					</p>
-					<p class="font-medium text-gray-900 dark:text-gray-100">
+					<p
+						class="font-medium text-gray-900 dark:text-gray-100"
+						data-testid={testId('Chat', 'InfoModal', 'CreatedAt')}
+					>
 						{formatDateSafe(stats.createdAt)}
 					</p>
 				</div>
@@ -295,7 +350,10 @@
 					<p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
 						{$i18n.t('Last updated')}
 					</p>
-					<p class="font-medium text-gray-900 dark:text-gray-100">
+					<p
+						class="font-medium text-gray-900 dark:text-gray-100"
+						data-testid={testId('Chat', 'InfoModal', 'UpdatedAt')}
+					>
 						{formatDateSafe(stats.updatedAt)}
 					</p>
 				</div>
