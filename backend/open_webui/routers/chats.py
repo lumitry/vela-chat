@@ -453,6 +453,18 @@ async def get_shared_chat_by_id(share_id: str, user=Depends(get_verified_user)):
         chat = Chats.get_chat_by_id(share_id)
 
     if chat:
+        # Check if this chat uses normalized storage (has messages in chat_message table)
+        from open_webui.models.chat_messages import ChatMessage
+        from open_webui.models.chat_converter import normalized_to_legacy_format
+        
+        with get_db() as db:
+            has_normalized = db.query(ChatMessage).filter_by(chat_id=chat.id).first() is not None
+        
+        if has_normalized:
+            # Convert from normalized tables to legacy format
+            legacy_chat = normalized_to_legacy_format(chat.id)
+            chat.chat = legacy_chat
+        
         return ChatResponse(**chat.model_dump())
 
     else:
