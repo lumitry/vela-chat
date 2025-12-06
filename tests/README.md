@@ -114,8 +114,8 @@ npx playwright test --ui
 - [ ] User Management Test (Admin)
   - [x] Edit user details (name, email, role) (role is done by clicking the role pill in the user list, not in the edit user modal)
   - [x] Change user password
-  - [ ] Delete user
-  - [ ] View user chats
+  - [x] Delete user
+  - [x] View user chats
 
 ### 🔴 HIGH PRIORITY (Important, Lots of Edge Cases)
 

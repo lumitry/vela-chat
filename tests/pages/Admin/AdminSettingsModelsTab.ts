@@ -359,5 +359,24 @@ export class AdminSettingsModelsTab extends AdminSettingsPage {
 	async assertModelItemDisabledState(modelId: string, disabledState: boolean): Promise<void> {
 		expect(await this.getModelItemDisabledState(modelId)).toBe(disabledState);
 	}
+
+	/**
+	 * Gets the IDs of all model items on the page.
+	 *
+	 * @returns The IDs of all model items on the page.
+	 */
+	async getModelItemIds(): Promise<string[]> {
+		const modelItems = await this.page.locator('[id^="model-item"]').all();
+		const modelItemIds = await Promise.all(
+			modelItems.map(async (modelItem) => {
+				const id = await modelItem.getAttribute('id');
+				if (id) {
+					return id.split('-')[1];
+				}
+				return null;
+			})
+		);
+		return modelItemIds.filter((id): id is string => id !== null);
+	}
 	// TODO: add more methods - maybe preset import/export?
 }

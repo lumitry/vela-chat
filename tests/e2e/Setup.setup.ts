@@ -13,6 +13,8 @@ import {
 	MINI_MEDIATOR_TASK_OPENAI
 } from '../data/miniMediatorModels';
 import { AdminSettingsInterfaceTab } from '../pages/Admin/AdminSettingsInterface';
+import { AdminSettingsModelsTab } from '../pages/Admin/AdminSettingsModelsTab';
+import { ModelEditorPage } from '../pages/Admin/ModelEditorPage';
 
 /**
  * Setup test that runs before all other tests.
@@ -72,6 +74,22 @@ test('setup test environment via onboarding', async ({ page }) => {
 	await adminSettingsConnectionsTab.setEnableDirectConnectionsSwitch(true);
 	await adminSettingsConnectionsTab.save();
 	await adminSettingsConnectionsTab.toast.assertToastIsVisible('success');
+
+	console.log('📝 Setting up mini-mediator models to public access...');
+	// TODO does this work? haven't tested it yet
+	await adminSettingsConnectionsTab.clickModelsTabButton();
+	const adminSettingsModelsTab = new AdminSettingsModelsTab(page);
+	const modelItems = await adminSettingsModelsTab.getModelItemIds();
+	for (const modelItem of modelItems) {
+		// only bother with mini-mediator models for now
+		if (modelItem.includes('mini-mediator')) {
+			await adminSettingsModelsTab.clickModelItemEditButton(modelItem);
+			const modelEditor = new ModelEditorPage(page);
+			await modelEditor.setVisibility('public');
+			await modelEditor.saveAndReturn();
+			await modelEditor.toast.assertToastIsVisible('success');
+		}
+	}
 
 	// - Set default embedding model to Mini-Mediator
 	console.log('📝 Setting default embedding model to Mini-Mediator...');

@@ -212,7 +212,7 @@ export class AdminUsersPage extends AdminPage {
 	 *
 	 * Only exists if the target user is not an admin.
 	 *
-	 * TODO: create the modal component object for this!
+	 * Opens the {@link UserChatsModal} modal.
 	 */
 	async clickUserRowChatsButton(index: number): Promise<void> {
 		await this.getUserRowChatsButton(index).click();

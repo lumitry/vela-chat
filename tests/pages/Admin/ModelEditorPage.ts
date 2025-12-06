@@ -28,6 +28,11 @@ export class ModelEditorPage extends BasePage {
 	private systemPromptTextarea = this.getPageLocator('SystemPromptTextarea');
 	private advancedParamsToggleButton = this.getPageLocator('AdvancedParamsToggleButton');
 
+	// TODO access control should be its own component probably? i think it's used elsewhere?
+	// but for now...
+	private visibilitySelect = this.getPageLocator('AccessControl', 'VisibilitySelect');
+	private groupsSelect = this.getPageLocator('AccessControl', 'GroupsSelect');
+
 	/** The Advanced Parameters section, not a specific input/element.
 	 * TODO: create a AdvancedParams common component object and add it as a property/field to this class! similar to how UserMenu is attached to BasePage!
 	 * we already have testIds for advanced params!
@@ -355,5 +360,14 @@ export class ModelEditorPage extends BasePage {
 		for (const tagName of tags) {
 			await this.addTag(tagName);
 		}
+	}
+
+	/**
+	 * Sets the model's visibility, e.g. to public or private.
+	 *
+	 * @param visibility - The visibility to set.
+	 */
+	async setVisibility(visibility: 'public' | 'private'): Promise<void> {
+		await this.visibilitySelect.selectOption(visibility);
 	}
 }

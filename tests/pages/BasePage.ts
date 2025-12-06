@@ -138,11 +138,15 @@ export abstract class BasePage {
 		await expect(this.accountPendingOverlay).not.toBeVisible();
 	}
 
+	async isSidebarOpen(): Promise<boolean> {
+		return (await this.sidebar.getAttribute('data-state')) === 'true';
+	}
+
 	/**
 	 * Click the sidebar toggle button.
 	 */
 	async toggleOpenSidebar(): Promise<void> {
-		if (await this.sidebar.isVisible()) {
+		if (await this.isSidebarOpen()) {
 			await this.sidebarToggleButtonWhenOpen.click();
 		} else {
 			await this.sidebarToggleButtonWhenClosed.click();
@@ -153,7 +157,7 @@ export abstract class BasePage {
 	 * Open the sidebar if it is closed.
 	 */
 	async openSidebarIfClosed(): Promise<void> {
-		if (await this.sidebar.isVisible()) {
+		if (await this.isSidebarOpen()) {
 			return;
 		}
 		await this.toggleOpenSidebar();

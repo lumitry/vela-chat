@@ -1,12 +1,17 @@
 import { randomUUID } from 'crypto';
 import { DEFAULT_PASSWORD, SHARED_USERS, generateUsersCSV, type TestUser } from '../data/users';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { AdminSettingsGeneralTab } from '../pages/Admin/AdminSettingsGeneralTab';
 import { AdminUsersPage, type UserInfo } from '../pages/Admin/AdminUsersPage';
 import { AddUserModal } from '../pages/Admin/modals/AddUserModal';
 import { EditUserModal, type EditUserModaEditableField } from '../pages/Admin/modals/EditUserModal';
 import { AuthMode, AuthPage } from '../pages/AuthPage';
 import { HomePage } from '../pages/HomePage';
+import { MINI_MEDIATOR_SCENARIO_BASIC_CHAT } from '../data/miniMediatorScenarios';
+import { ChatPage } from '../pages/ChatPage';
+import { UserChatsModal } from '../pages/Admin/modals/UserChatsModal';
+import { SharedChatPage } from '../pages/SharedChatPage';
+import type { SentMessage } from '../pages/BaseChatPage';
 
 type UserRole = 'admin' | 'user' | 'pending';
 
@@ -248,6 +253,115 @@ test.describe('User Management Test', { tag: '@smoke' }, () => {
 		});
 	});
 
-	// TODO: Verify admin can view another user's chats
-	// This requires creating chats for a test user first
+	test("Verify admin can view another user's chats", async ({ page }) => {
+		const scenario = MINI_MEDIATOR_SCENARIO_BASIC_CHAT;
+		const inputMessage = scenario.getInput();
+		const model = scenario.model;
+		const expectedResponse = scenario.getOutput();
+		const numChats = 3;
+		const messages: SentMessage[] = [];
+		let sharedChatPage: Page | null = null; // Store the new page for use in later steps
+
+		const testUser = createUniqueTestUser('view chats', 'user'); // MUST be user role to view their chats!
+		const homePage = await signInAsAdmin(page);
+		const adminUsersPage = await goToAdminUsersPage(page, homePage);
+		await test.step('Create test user', async () => {
+			await createTestUser(page, adminUsersPage, testUser);
+		});
+
+		const createChatsForUser = async (user: TestUser) => {
+			const newContext = await page.context().browser()!.newContext();
+			const newPage = await newContext.newPage();
+
+			try {
+				await newPage.goto('/auth');
+				const loginPage = new AuthPage(newPage);
+				await loginPage.switchPageModeIfNeeded(AuthMode.SignIn);
+				await loginPage.signIn({
+					email: user.email,
+					password: user.password,
+					name: user.name,
+					role: user.role
+				});
+				await expect(newPage).toHaveURL('/');
+
+				const homePage = new HomePage(newPage);
+				await homePage.toast.assertToastIsVisible('success');
+
+				for (let i = 0; i < numChats; i++) {
+					await homePage.modelSelector.open();
+					await homePage.modelSelector.selectModel(model);
+
+					messages.push(await homePage.submitMessageAndCaptureIds(inputMessage));
+
+					const chatPage = new ChatPage(newPage);
+					await chatPage.assertAssistantMessageExists(
+						messages[messages.length - 1].responseMessageIds[0]
+					);
+					await chatPage.assertAssistantMessageText(
+						messages[messages.length - 1].responseMessageIds[0],
+						expectedResponse
+					);
+					await chatPage.openSidebarIfClosed();
+					await chatPage.clickNewChatButton();
+				}
+			} catch (error) {
+				console.error('Error creating chats for user:', error);
+			} finally {
+				await newContext.close();
+			}
+		};
+
+		await test.step('Create chats for user', async () => {
+			await createChatsForUser(testUser);
+		});
+
+		await test.step('View user chats', async () => {
+			const foundUser = await findUserByEmail(adminUsersPage, testUser.email);
+			await adminUsersPage.clickUserRowChatsButton(foundUser.idx);
+			const userChatsModal = new UserChatsModal(page);
+			await userChatsModal.waitForVisible();
+			const numberOfChats = await userChatsModal.getNumberOfChats();
+			expect(numberOfChats, 'Number of chats should be 3').toBe(numChats);
+
+			// Wait for the new page to open (chat title opens in new tab with target="_blank")
+			const [newPage] = await Promise.all([
+				page.context().waitForEvent('page'),
+				userChatsModal.clickChatTitle(1) // click the second chat
+			]);
+
+			// Wait for the new page to load
+			await newPage.waitForLoadState('networkidle');
+
+			// Store the new page for use in later steps
+			sharedChatPage = newPage;
+
+			const sharedChatPageObj = new SharedChatPage(newPage);
+			await sharedChatPageObj.assertUserMessageExists(messages[1].userMessageId);
+			await sharedChatPageObj.assertUserMessageText(messages[1].userMessageId, inputMessage);
+			await sharedChatPageObj.assertAssistantMessageExists(messages[1].responseMessageIds[0]);
+			await sharedChatPageObj.assertAssistantMessageText(
+				messages[1].responseMessageIds[0],
+				expectedResponse
+			);
+		});
+
+		// make sure cloning works just fine too
+		await test.step('Clone chat', async () => {
+			if (!sharedChatPage) {
+				throw new Error('Shared chat page was not opened in previous step');
+			}
+			const sharedChatPageObj = new SharedChatPage(sharedChatPage);
+			await sharedChatPageObj.clickCloneChatButton();
+			// Clone button navigates in the same page, so use the same page
+			const chatPage = new ChatPage(sharedChatPage);
+			await chatPage.assertUserMessageExists(messages[1].userMessageId);
+			await chatPage.assertUserMessageText(messages[1].userMessageId, inputMessage);
+			await chatPage.assertAssistantMessageExists(messages[1].responseMessageIds[0]);
+			await chatPage.assertAssistantMessageText(
+				messages[1].responseMessageIds[0],
+				expectedResponse
+			);
+		});
+	});
 });
