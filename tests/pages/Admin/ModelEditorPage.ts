@@ -144,7 +144,6 @@ export class ModelEditorPage extends BasePage {
 	 * });
 	 *  */
 	async setModelImage(file: { name: string; mimeType: string; buffer: Buffer }): Promise<void> {
-		// TODO this is untested atm. no clue if it works
 		await this.profileImageInput.setInputFiles([
 			{
 				name: file.name,
@@ -167,6 +166,14 @@ export class ModelEditorPage extends BasePage {
 	 */
 	async setName(name: string): Promise<void> {
 		await this.nameInput.fill(name);
+	}
+
+	/**
+	 * Sets the model's ID.
+	 * @param id - The ID to set.
+	 */
+	async setId(id: string): Promise<void> {
+		await this.idInput.fill(id);
 	}
 
 	/**
@@ -249,6 +256,22 @@ export class ModelEditorPage extends BasePage {
 
 	async assertIsCreateWorkspaceModel(): Promise<void> {
 		expect(await this.getIsCreateWorkspaceModel()).toBe(true);
+	}
+
+	/**
+	 * Sets the base model for the workspace model.
+	 * @param baseModel - The base model to set.
+	 */
+	async setBaseModel(baseModel: string): Promise<void> {
+		// Wait for the select to be visible and enabled
+		await this.baseModelSelect.waitFor({ state: 'visible', timeout: 5000 });
+
+		// Wait for the option to be available in the select dropdown
+		// The options are populated from the $models store which may not be loaded immediately
+		const optionLocator = this.baseModelSelect.locator(`option[value="${baseModel}"]`);
+		await optionLocator.waitFor({ state: 'attached', timeout: 10000 });
+
+		await this.baseModelSelect.selectOption(baseModel);
 	}
 
 	// ---------------- //
@@ -369,5 +392,23 @@ export class ModelEditorPage extends BasePage {
 	 */
 	async setVisibility(visibility: 'public' | 'private'): Promise<void> {
 		await this.visibilitySelect.selectOption(visibility);
+	}
+
+	/**
+	 * Asserts that the model ID input has the expected value.
+	 *
+	 * @param expectedModelId - The expected model ID.
+	 */
+	async assertModelId(expectedModelId: string): Promise<void> {
+		await expect(this.idInput).toHaveValue(expectedModelId);
+	}
+
+	/**
+	 * Asserts that the model name input has the expected value.
+	 *
+	 * @param expectedModelName - The expected model name.
+	 */
+	async assertModelName(expectedModelName: string): Promise<void> {
+		await expect(this.nameInput).toHaveValue(expectedModelName);
 	}
 }

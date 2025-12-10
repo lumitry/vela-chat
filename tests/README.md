@@ -108,10 +108,10 @@ npx playwright test --ui
     - [x] tags
   - [x] Hide a model
   - [x] Disable a model
-  - [ ] Verify visibility settings are respected
-    - [ ] TODO actually visibility settings should be their own separate test suite since there'd be a lot of custom stuff needed to test (multi-user setup)
-    - [ ] so that's all the 'visibility settings' tests that should be written, all in one, rather than separate like i've got them in this README right now
-- [ ] User Management Test (Admin)
+- [ ] Verify visibility settings are respected
+  - [ ] TODO actually visibility settings should be their own separate test suite since there'd be a lot of custom stuff needed to test (multi-user setup)
+  - [ ] so that's all the 'visibility settings' tests that should be written, all in one, rather than separate like i've got them in this README right now
+- [x] User Management Test (Admin)
   - [x] Edit user details (name, email, role) (role is done by clicking the role pill in the user list, not in the edit user modal)
   - [x] Change user password
   - [x] Delete user
@@ -119,15 +119,14 @@ npx playwright test --ui
 
 ### 🔴 HIGH PRIORITY (Important, Lots of Edge Cases)
 
-- [ ] Workspace Model CRUD Test - Parameterized for OpenAI & Ollama
-  - [ ] Create a new model
-  - [ ] Edit a model
-    - [ ] verify each field is editable and saved correctly
-  - [ ] Delete a model
-  - [ ] Clone a model
-  - [ ] Hide a model
-  - [ ] Disable a model
-  - [ ] Verify visibility settings are respected
+- [x] Workspace Model CRUD Test - Parameterized for OpenAI & Ollama
+  - [x] Create a new model
+  - [x] Edit a model
+    - [x] verify each field is editable and saved correctly
+  - [x] Delete a model
+  - [x] Clone a model
+  - [x] Disable a model
+  - [-] Verify visibility settings are respected (TODO: will be handled by other test)
 - [ ] Model Advanced Params Test - Parameterized for OpenAI & Ollama; also for Workspace and normal models
   - [ ] Modify a model's advanced params
     - [ ] system prompt

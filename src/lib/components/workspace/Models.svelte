@@ -243,6 +243,7 @@
 			<div
 				class=" flex flex-col cursor-pointer w-full px-3 py-2 dark:hover:bg-white/5 hover:bg-black/5 rounded-xl transition"
 				id="model-item-{model.id}"
+				data-testid={testId('Workspace', 'Models', 'ModelItem', model.id)}
 			>
 				<div class="flex gap-4 mt-0.5 mb-0.5">
 					<div class=" w-[44px]">
@@ -255,6 +256,7 @@
 								src={imageSrc}
 								alt="modelfile profile"
 								class=" rounded-full w-full h-auto object-cover"
+								data-testid={testId('Workspace', 'Models', 'ModelItemImage', model.id)}
 							/>
 						</div>
 					</div>
@@ -262,6 +264,7 @@
 					<a
 						class=" flex flex-1 cursor-pointer w-full"
 						href={`/?models=${encodeURIComponent(model.id)}`}
+						data-testid={testId('Workspace', 'Models', 'ModelItemButton', model.id)}
 					>
 						<div class=" flex-1 self-center {model.is_active ? '' : 'text-gray-500'}">
 							<Tooltip
@@ -269,11 +272,19 @@
 								className=" w-fit"
 								placement="top-start"
 							>
-								<div class=" font-semibold line-clamp-1">{model.name}</div>
+								<div
+									class=" font-semibold line-clamp-1"
+									data-testid={testId('Workspace', 'Models', 'ModelItemName', model.id)}
+								>
+									{model.name}
+								</div>
 							</Tooltip>
 
 							<div class="flex gap-1 text-xs overflow-hidden">
-								<div class="line-clamp-1">
+								<div
+									class="line-clamp-1"
+									data-testid={testId('Workspace', 'Models', 'ModelItemDescription', model.id)}
+								>
 									{#if (model?.meta?.description ?? '').trim()}
 										{model?.meta?.description}
 									{:else}
@@ -321,6 +332,7 @@
 									class="self-center w-fit text-sm px-2 py-2 dark:text-gray-300 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-xl"
 									type="button"
 									href={`/workspace/models/edit?id=${encodeURIComponent(model.id)}`}
+									data-testid={testId('Workspace', 'Models', 'ModelItemEditButton', model.id)}
 								>
 									<svg
 										xmlns="http://www.w3.org/2000/svg"
@@ -363,6 +375,7 @@
 								<button
 									class="self-center w-fit text-sm p-1.5 dark:text-gray-300 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-xl"
 									type="button"
+									data-testid={testId('Workspace', 'Models', 'ModelItemMenuButton', model.id)}
 								>
 									<EllipsisHorizontal className="size-5" />
 								</button>
@@ -371,6 +384,7 @@
 							<div class="ml-1">
 								<Tooltip content={model.is_active ? $i18n.t('Enabled') : $i18n.t('Disabled')}>
 									<Switch
+										testId={testId('Workspace', 'Models', 'ModelItemToggleSwitch', model.id)}
 										bind:state={model.is_active}
 										on:change={async (e) => {
 											// Prevent multiple simultaneous toggles of the same model
@@ -466,6 +480,7 @@
 					on:click={() => {
 						modelsImportInputElement.click();
 					}}
+					data-testid={testId('Workspace', 'Models', 'ImportModelsButton')}
 				>
 					<div class=" self-center mr-2 font-medium line-clamp-1">{$i18n.t('Import Models')}</div>
 
@@ -491,6 +506,7 @@
 						on:click={async () => {
 							downloadModels(models);
 						}}
+						data-testid={testId('Workspace', 'Models', 'ExportModelsButton')}
 					>
 						<div class=" self-center mr-2 font-medium line-clamp-1">
 							{$i18n.t('Export Models')}
