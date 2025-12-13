@@ -1,7 +1,7 @@
 import type { Model } from '$lib/stores';
 
 export interface ReasoningBehavior {
-	type: 'change_model' | 'set_effort' | 'set_max_tokens' | 'toggle_think_prompt';
+	type: 'change_model' | 'set_effort' | 'set_max_tokens' | 'toggle_think_prompt' | 'enable_default';
 	target_model?: string;
 	max_tokens?: number;
 	reasoning_prompt?: string;
@@ -73,6 +73,11 @@ export function isReasoningCapable(model: Model, availableModels: Model[]): bool
 		if (modelDetails.reasoning_behavior === 'toggle_think_prompt') {
 			return true; // We'll assume this can work with any model if configured
 		}
+
+		// For enable_default: enable reasoning with provider's default config
+		if (modelDetails.reasoning_behavior === 'enable_default') {
+			return true; // Can work with any model if configured
+		}
 	}
 
 	// Check if the current model is a reasoning target for another model.
@@ -104,19 +109,20 @@ export function shouldIlluminateThinking(
 	if (currentReasoningState?.isThinkingMode) {
 		// Check if the current model is the reasoning model
 		const isCurrentModelTheReasoningModel = model.id === currentReasoningState.reasoningModel;
-		
+
 		if (isCurrentModelTheReasoningModel) {
 			// For cyclical setups, ensure we only illuminate if it's actually a CoT model
 			const currentModelDetails = getModelDetails(model);
-			const isCurrentModelCoT = currentModelDetails?.response_structure === 'Native Chain-of-Thought Reasoning' ||
-			                         currentModelDetails?.response_structure === 'Hybrid CoT Reasoning';
+			const isCurrentModelCoT =
+				currentModelDetails?.response_structure === 'Native Chain-of-Thought Reasoning' ||
+				currentModelDetails?.response_structure === 'Hybrid CoT Reasoning';
 			const isCurrentModelClassical = currentModelDetails?.response_structure === 'Classical';
-			
+
 			// If it's explicitly marked as Classical, don't illuminate (handles cyclical case)
 			// If it's CoT or undefined/null (default), illuminate (handles normal case)
 			return !isCurrentModelClassical;
 		}
-		
+
 		return false;
 	}
 
@@ -141,11 +147,11 @@ export function shouldIlluminateThinking(
 			// 2. There's an active effort value set (indicating reasoning is active)
 			const hasNativeCoT = modelDetails.response_structure === 'Native Chain-of-Thought Reasoning';
 			const hasActiveEffort = !!currentEffort;
-			
+
 			return hasNativeCoT || hasActiveEffort;
 		}
 
-		// For other behaviors, illuminate if model has non-classical response
+		// For set_max_tokens and toggle_think_prompt, illuminate if model has non-classical response
 		if (
 			modelDetails.reasoning_behavior === 'set_max_tokens' ||
 			modelDetails.reasoning_behavior === 'toggle_think_prompt'
@@ -154,6 +160,14 @@ export function shouldIlluminateThinking(
 				modelDetails.response_structure === 'Native Chain-of-Thought Reasoning' ||
 				modelDetails.response_structure === 'Hybrid CoT Reasoning'
 			);
+		}
+
+		// For enable_default, illuminate if thinking mode is active or model has non-classical response
+		if (modelDetails.reasoning_behavior === 'enable_default') {
+			const hasNativeCoT = modelDetails.response_structure === 'Native Chain-of-Thought Reasoning';
+			const isThinkingActive = currentReasoningState?.isThinkingMode ?? false;
+
+			return hasNativeCoT || isThinkingActive;
 		}
 	}
 
@@ -165,8 +179,10 @@ export function shouldIlluminateThinking(
 	// If the model is a reasoning target for another model, only illuminate if it's actually a CoT model
 	if (isReasoningTargetForAnotherModel(model, availableModels) && modelDetails) {
 		const responseStructure = modelDetails.response_structure as string;
-		return responseStructure === 'Native Chain-of-Thought Reasoning' ||
-		       responseStructure === 'Hybrid CoT Reasoning';
+		return (
+			responseStructure === 'Native Chain-of-Thought Reasoning' ||
+			responseStructure === 'Hybrid CoT Reasoning'
+		);
 	}
 
 	return false;
@@ -211,10 +227,7 @@ export function getReasoningTargetModel(
 	const modelDetails = getModelDetails(model);
 
 	// Case 1: The current model has a `reasoning_target_model` defined.
-	if (
-		modelDetails?.reasoning_behavior === 'change_model' &&
-		modelDetails.reasoning_target_model
-	) {
+	if (modelDetails?.reasoning_behavior === 'change_model' && modelDetails.reasoning_target_model) {
 		const targetModel = availableModels.find((m) => m.id === modelDetails.reasoning_target_model);
 		if (targetModel) {
 			return { base: model, target: targetModel };
@@ -224,7 +237,9 @@ export function getReasoningTargetModel(
 	// Case 2: The current model is the `reasoning_target_model` for another model.
 	const baseModel = availableModels.find((m) => {
 		const details = getModelDetails(m);
-		return details?.reasoning_behavior === 'change_model' && details.reasoning_target_model === model.id;
+		return (
+			details?.reasoning_behavior === 'change_model' && details.reasoning_target_model === model.id
+		);
 	});
 
 	if (baseModel) {
@@ -232,14 +247,18 @@ export function getReasoningTargetModel(
 		// But we need to determine which one is actually the reasoning model (CoT) and which is the base (classical)
 		const currentModelDetails = getModelDetails(model);
 		const baseModelDetails = getModelDetails(baseModel);
-		
+
 		// The reasoning model should be the one with CoT response structure
-		if (currentModelDetails?.response_structure === 'Native Chain-of-Thought Reasoning' ||
-		    currentModelDetails?.response_structure === 'Hybrid CoT Reasoning') {
+		if (
+			currentModelDetails?.response_structure === 'Native Chain-of-Thought Reasoning' ||
+			currentModelDetails?.response_structure === 'Hybrid CoT Reasoning'
+		) {
 			// Current model is the CoT model, so it should be the target (reasoning model)
 			return { base: baseModel, target: model };
-		} else if (baseModelDetails?.response_structure === 'Native Chain-of-Thought Reasoning' ||
-		          baseModelDetails?.response_structure === 'Hybrid CoT Reasoning') {
+		} else if (
+			baseModelDetails?.response_structure === 'Native Chain-of-Thought Reasoning' ||
+			baseModelDetails?.response_structure === 'Hybrid CoT Reasoning'
+		) {
 			// Base model is the CoT model, so it should be the target (reasoning model)
 			return { base: model, target: baseModel };
 		} else {
@@ -271,7 +290,10 @@ export function createReasoningState(baseModel: Model, targetModel: Model): Reas
 /**
  * Updates model configuration for reasoning mode
  */
-export function applyReasoningConfiguration(model: Model, reasoningState: ReasoningState): Partial<Model> {
+export function applyReasoningConfiguration(
+	model: Model,
+	reasoningState: ReasoningState
+): Partial<Model> {
 	const modelDetails = getModelDetails(model);
 	if (!modelDetails?.reasoning_behavior) {
 		return {};
@@ -279,7 +301,7 @@ export function applyReasoningConfiguration(model: Model, reasoningState: Reason
 
 	const updates: any = {};
 
-    // TODO: does this work? implement it in MessageInput.svelte
+	// TODO: does this work? implement it in MessageInput.svelte
 
 	// For max tokens, update the model configuration
 	if (modelDetails.reasoning_behavior === 'set_max_tokens' && modelDetails.reasoning_max_tokens) {
@@ -295,7 +317,11 @@ export function applyReasoningConfiguration(model: Model, reasoningState: Reason
 /**
  * Modifies the prompt for reasoning mode if needed
  */
-export function applyReasoningPrompt(originalPrompt: string, model: Model, isThinkingMode: boolean): string {
+export function applyReasoningPrompt(
+	originalPrompt: string,
+	model: Model,
+	isThinkingMode: boolean
+): string {
 	if (!isThinkingMode) {
 		return originalPrompt;
 	}
@@ -306,7 +332,7 @@ export function applyReasoningPrompt(originalPrompt: string, model: Model, isThi
 	}
 
 	if (modelDetails.reasoning_behavior === 'toggle_think_prompt') {
-        // TODO: does this work? implement it in MessageInput.svelte
+		// TODO: does this work? implement it in MessageInput.svelte
 		return `${originalPrompt}\n/think`;
 	}
 

@@ -237,6 +237,7 @@
 		// including currentModel so that this updates on model change
 		const effort = history?.reasoningEffort;
 		if (!effort) return 'Default';
+		if (effort === 'xhigh') return 'XHigh';
 		return effort.charAt(0).toUpperCase() + effort.slice(1);
 	})(currentModel); // Toggle reasoning mode or open effort menu
 
@@ -338,7 +339,7 @@
 	};
 
 	// Apply selected effort choice
-	const applyEffortChoice = (effort: 'minimal' | 'low' | 'medium' | 'high' | null) => {
+	const applyEffortChoice = (effort: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | null) => {
 		if (!currentModel) return;
 
 		// Ensure we enter thinking mode state pinned to this model
@@ -1810,6 +1811,30 @@
 																		{/if}
 																	</div>
 																	High
+																</DropdownMenu.Item>
+																<DropdownMenu.Item
+																	class="flex gap-2 items-center px-3 py-1.5 text-sm font-medium cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl {history?.reasoningEffort ===
+																	'xhigh'
+																		? 'bg-gray-50 dark:bg-gray-700/50'
+																		: ''}"
+																	on:click={() => applyEffortChoice('xhigh')}
+																>
+																	<div class="w-4 h-4 flex items-center justify-center">
+																		{#if history?.reasoningEffort === 'xhigh'}
+																			<svg
+																				class="w-3 h-3 text-grey-900"
+																				fill="currentColor"
+																				viewBox="0 0 20 20"
+																			>
+																				<path
+																					fill-rule="evenodd"
+																					d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+																					clip-rule="evenodd"
+																				/>
+																			</svg>
+																		{/if}
+																	</div>
+																	XHigh
 																</DropdownMenu.Item>
 															</DropdownMenu.Content>
 														</DropdownMenu.Root>

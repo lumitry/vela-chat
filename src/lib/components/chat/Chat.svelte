@@ -2729,6 +2729,37 @@
 						return finalParams;
 					}
 
+					// Apply enable_default behavior: enable reasoning with provider's default config
+					if (details?.reasoning_behavior === 'enable_default') {
+						const isThinkingMode = history?.reasoningState?.isThinkingMode ?? false;
+						const existingReasoning = { ...(baseParams?.reasoning ?? {}) };
+
+						if (isThinkingMode) {
+							existingReasoning.enabled = true;
+						} else {
+							// Remove enabled key if thinking mode is off
+							delete existingReasoning.enabled;
+						}
+
+						// Apply verbosity if model supports it
+						let finalParams = {
+							...baseParams,
+							...(Object.keys(existingReasoning).length > 0
+								? { reasoning: existingReasoning }
+								: {}),
+							format: $settings.requestFormat ?? undefined,
+							keep_alive: $settings.keepAlive ?? undefined,
+							stop: normalizedStop
+						};
+
+						// Add verbosity parameter if supported
+						if (model?.info?.meta?.capabilities?.verbosity && history?.verbosity) {
+							finalParams.verbosity = history.verbosity;
+						}
+
+						return finalParams;
+					}
+
 					// Default case: let backend handle parameter merging
 					let finalParams = {
 						...baseParams,
