@@ -12,6 +12,8 @@ Note: **Do not** use this fork with an Sqlite database! It will probably break t
 >
 > Some of the migrations in VelaChat have a risk of data loss or database changes that cannot be easily reversed. Always keep backups of your database and any important data before proceeding with installation or updates!
 
+**Data Loss Incident:** Due to a migration bug, in-chat images were stored in a non-persisted directory (not within the Docker volume) and were lost after container restarts. The migration in question has been fixed, but if you are affected by this issue, you can run the recovery script to recover your images. See [RECOVERY_INSTRUCTIONS.md](backend/scripts/RECOVERY_INSTRUCTIONS.md) for more details. This requires having a backup database dump from before the migration. You may be affected if you used VelaChat from the main branch via a Docker container between 2025-11-19 and 2025-12-12.
+
 ## Deployment Recommendations
 
 - Docker Compose

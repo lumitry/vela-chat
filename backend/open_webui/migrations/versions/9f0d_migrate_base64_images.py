@@ -17,7 +17,16 @@ import time
 import base64
 import hashlib
 import mimetypes
+import os
 from pathlib import Path
+
+# Import DATA_DIR from runtime to ensure consistency (especially in Docker)
+# This ensures we use the same path resolution as the runtime code
+try:
+    from open_webui.env import DATA_DIR as RUNTIME_DATA_DIR
+except ImportError:
+    # Fallback if import fails (shouldn't happen in normal operation)
+    RUNTIME_DATA_DIR = None
 
 
 revision = '9f0d_migrate_base64_images'
@@ -99,9 +108,26 @@ def migrate_image_to_file(conn, file_table, data_url: str, user_id: str, uploads
         filename = f"{file_hash}{ext}"
         file_path = uploads_dir / filename
         
-        # Write to filesystem
-        with open(file_path, 'wb') as f:
-            f.write(raw_bytes)
+        # Write to filesystem with explicit error handling
+        try:
+            # Ensure directory exists
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Write file with explicit error handling
+            with open(file_path, 'wb') as f:
+                written = f.write(raw_bytes)
+                f.flush()
+                os.fsync(f.fileno())  # Force write to disk
+            
+            if written != len(raw_bytes):
+                raise Exception(f"Only wrote {written} of {len(raw_bytes)} bytes")
+            
+            # Verify file was written
+            if not file_path.exists() or file_path.stat().st_size != len(raw_bytes):
+                raise Exception(f"Failed to write file {file_path}")
+        except Exception as e:
+            print(f"Error writing file {file_path}: {e}")
+            raise
         
         # Create file record
         file_id = str(uuid.uuid4())
@@ -159,8 +185,78 @@ def upgrade() -> None:
     )
 
     # Directory for storing migrated images
-    uploads_dir = Path(__file__).resolve().parents[2] / 'data' / 'uploads' / 'images'
+    # Priority order:
+    # 1. DATA_DIR environment variable (explicit override - highest priority)
+    # 2. Standard Docker volume mount path (/app/backend/data)
+    # 3. Runtime DATA_DIR (from open_webui.env)
+    # 4. Calculated from migration file location (last resort)
+    # This ensures we use the correct path that matches volume mounts in Docker
+    data_dir = None
+    data_dir_source = None
+    
+    # 1. Check environment variable first (explicit override)
+    env_data_dir = os.getenv('DATA_DIR')
+    if env_data_dir:
+        data_dir = Path(env_data_dir).resolve()
+        data_dir_source = "environment variable"
+    else:
+        # 2. Check standard Docker volume mount location
+        # This is where volumes are typically mounted: /app/backend/data
+        docker_data_dir = Path('/app/backend/data')
+        if docker_data_dir.exists() and docker_data_dir.is_dir():
+            # Verify it's writable
+            try:
+                test_file = docker_data_dir / '.migration_test_write'
+                test_file.touch()
+                test_file.unlink()
+                data_dir = docker_data_dir
+                data_dir_source = "Docker volume mount path"
+            except Exception:
+                pass  # Not writable, try next option
+    
+    # 3. Use runtime DATA_DIR if available and no better option found
+    if data_dir is None and RUNTIME_DATA_DIR is not None:
+        runtime_path = Path(RUNTIME_DATA_DIR).resolve()
+        # Only use runtime path if it's not the problematic open_webui/data subdirectory
+        # (which happens when FROM_INIT_PY is True)
+        if 'open_webui/data' not in str(runtime_path):
+            data_dir = runtime_path
+            data_dir_source = "runtime DATA_DIR"
+        else:
+            # Runtime path is wrong, try to fix it
+            # If runtime says /app/backend/open_webui/data, try /app/backend/data instead
+            if '/app/backend/open_webui/data' in str(runtime_path):
+                corrected_path = Path('/app/backend/data')
+                if corrected_path.exists():
+                    data_dir = corrected_path
+                    data_dir_source = "corrected from runtime path"
+    
+    # 4. Last resort: calculate from migration file location
+    if data_dir is None:
+        data_dir = Path(__file__).resolve().parents[2] / 'data'
+        data_dir_source = "calculated from file location"
+    
+    print(f"Migration: Using DATA_DIR from {data_dir_source}: {data_dir}")
+    
+    uploads_dir = data_dir / 'uploads' / 'images'
     uploads_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Verify the directory is writable
+    test_file = uploads_dir / '.migration_test'
+    try:
+        test_file.touch()
+        test_content = b"test"
+        test_file.write_bytes(test_content)
+        read_back = test_file.read_bytes()
+        if read_back != test_content:
+            raise Exception(f"Test file content mismatch")
+        test_file.unlink()
+        print(f"Migration: Verified uploads directory is writable: {uploads_dir}")
+    except Exception as e:
+        print(f"ERROR: Cannot write to uploads directory {uploads_dir}: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
 
     # Track hash -> file_id mapping for deduplication
     hash_to_file_id = {}
