@@ -954,6 +954,9 @@
 										<option value="toggle_think_prompt"
 											>Toggle /think and /no_think in prompt</option
 										>
+										<option value="enable_default"
+											>Enable reasoning with provider's default config</option
+										>
 									</select>
 								</div>
 
