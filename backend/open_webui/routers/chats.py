@@ -243,7 +243,10 @@ async def search_user_chats(
 
 
 @router.get("/folder/{folder_id}", response_model=list[ChatResponse])
-async def get_chats_by_folder_id(folder_id: str, user=Depends(get_verified_user)):
+async def get_chats_by_folder_id(folder_id: str, user=Depends(get_verified_user), export: bool = Query(False)):
+    from open_webui.models.chat_converter import normalized_to_legacy_format
+    from open_webui.models.chat_messages import ChatMessage
+    
     folder_ids = [folder_id]
     children_folders = Folders.get_children_folders_by_id_and_user_id(
         folder_id, user.id
@@ -251,10 +254,24 @@ async def get_chats_by_folder_id(folder_id: str, user=Depends(get_verified_user)
     if children_folders:
         folder_ids.extend([folder.id for folder in children_folders])
 
-    return [
-        ChatResponse(**chat.model_dump())
-        for chat in Chats.get_chats_by_folder_ids_and_user_id(folder_ids, user.id)
-    ]
+    chats = Chats.get_chats_by_folder_ids_and_user_id(folder_ids, user.id)
+    result = []
+    
+    for chat in chats:
+        # Check if this chat uses normalized storage (has messages in chat_message table)
+        with get_db() as db:
+            has_normalized = db.query(ChatMessage).filter_by(chat_id=chat.id).first() is not None
+        
+        if has_normalized:
+            # Convert from normalized tables to legacy format
+            # If export=True, embed files as base64 for portability
+            legacy_chat = normalized_to_legacy_format(chat.id, embed_files_as_base64=export)
+            # Merge with chat metadata
+            chat.chat = legacy_chat
+        
+        result.append(ChatResponse(**chat.model_dump()))
+    
+    return result
 
 
 ############################

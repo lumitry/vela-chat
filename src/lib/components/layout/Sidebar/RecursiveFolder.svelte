@@ -327,7 +327,7 @@
 	};
 
 	const exportHandler = async () => {
-		const chats = await getChatsByFolderId(localStorage.token, folderId).catch((error) => {
+		const chats = await getChatsByFolderId(localStorage.token, folderId, true).catch((error) => {
 			toast.error(`${error}`);
 			return null;
 		});
