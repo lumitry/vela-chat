@@ -13,6 +13,7 @@
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
+	import { testId } from '$lib/utils/testId';
 
 	const i18n = getContext('i18n');
 
@@ -63,7 +64,7 @@
 	}}
 />
 
-<Modal size="lg" bind:show>
+<Modal size="lg" bind:show modalTestId={testId('AdminSettings', 'Users', 'UserChatsModal')}>
 	<div class=" flex justify-between dark:text-gray-300 px-5 pt-4">
 		<div class=" text-lg font-medium self-center capitalize">
 			{$i18n.t("{{user}}'s Chats", { user: user.name })}
@@ -134,17 +135,37 @@
 										<tr
 											class="bg-transparent {idx !== chats.length - 1 &&
 												'border-b'} dark:bg-gray-900 dark:border-gray-850 text-xs"
+											data-testid={testId('AdminSettings', 'Users', 'UserChatsModal', 'ChatRow')}
 										>
 											<td class="px-3 py-1">
 												<a href="/s/{chat.id}" target="_blank">
-													<div class=" underline line-clamp-1 max-w-96">
+													<div
+														class=" underline line-clamp-1 max-w-96"
+														data-testid={testId(
+															'AdminSettings',
+															'Users',
+															'UserChatsModal',
+															'ChatTitle',
+															`${idx}`
+														)}
+													>
 														{chat.title}
 													</div>
 												</a>
 											</td>
 
 											<td class=" px-3 py-1 hidden md:flex h-[2.5rem] justify-end">
-												<div class="my-auto shrink-0">
+												<div
+													class="my-auto shrink-0"
+													data-testid={testId(
+														'AdminSettings',
+														'Users',
+														'UserChatsModal',
+														'ChatUpdatedAt',
+														`${idx}`
+													)}
+													data-value={chat.updated_at}
+												>
 													{dayjs(chat.updated_at * 1000).format('LLL')}
 												</div>
 											</td>
@@ -158,6 +179,13 @@
 																chatToDelete = chat.id;
 																showDeleteConfirmDialog = true;
 															}}
+															data-testid={testId(
+																'AdminSettings',
+																'Users',
+																'UserChatsModal',
+																'DeleteChatButton',
+																`${idx}`
+															)}
 														>
 															<svg
 																xmlns="http://www.w3.org/2000/svg"

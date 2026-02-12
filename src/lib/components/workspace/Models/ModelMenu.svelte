@@ -15,6 +15,7 @@
 	import ArrowUpCircle from '$lib/components/icons/ArrowUpCircle.svelte';
 
 	import { config } from '$lib/stores';
+	import { testId } from '$lib/utils/testId';
 
 	const i18n = getContext('i18n');
 
@@ -58,6 +59,7 @@
 					on:click={() => {
 						shareHandler();
 					}}
+					data-testid={testId('Workspace', 'Models', 'ModelItemShareButton', model.id)}
 				>
 					<Share />
 					<div class="flex items-center">{$i18n.t('Share')}</div>
@@ -69,6 +71,7 @@
 				on:click={() => {
 					cloneHandler();
 				}}
+				data-testid={testId('Workspace', 'Models', 'ModelItemCloneButton', model.id)}
 			>
 				<DocumentDuplicate />
 
@@ -80,6 +83,7 @@
 				on:click={() => {
 					exportHandler();
 				}}
+				data-testid={testId('Workspace', 'Models', 'ModelItemExportButton', model.id)}
 			>
 				<ArrowDownTray />
 
@@ -93,6 +97,7 @@
 				on:click={() => {
 					deleteHandler();
 				}}
+				data-testid={testId('Workspace', 'Models', 'ModelItemDeleteButton', model.id)}
 			>
 				<GarbageBin strokeWidth="2" />
 				<div class="flex items-center">{$i18n.t('Delete')}</div>

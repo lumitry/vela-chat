@@ -35,6 +35,7 @@
 	import ChatItem from './ChatItem.svelte';
 	import FolderMenu from './Folders/FolderMenu.svelte';
 	import DeleteConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
+	import { testId } from '$lib/utils/testId';
 
 	export let open = false;
 
@@ -326,7 +327,7 @@
 	};
 
 	const exportHandler = async () => {
-		const chats = await getChatsByFolderId(localStorage.token, folderId).catch((error) => {
+		const chats = await getChatsByFolderId(localStorage.token, folderId, true).catch((error) => {
 			toast.error(`${error}`);
 			return null;
 		});
@@ -432,6 +433,7 @@
 				on:dblclick={() => {
 					editHandler();
 				}}
+				data-testid={testId('Sidebar', 'FolderItem', folderId)}
 			>
 				<div class="text-gray-300 dark:text-gray-600">
 					{#if open}

@@ -18,6 +18,7 @@
 	export let url = '';
 	export let key = '';
 	export let config = {};
+	export let testId = '';
 
 	let showConfigModal = false;
 	let showDeleteConfirmDialog = false;
@@ -69,6 +70,7 @@
 					placeholder={$i18n.t('API Base URL')}
 					bind:value={url}
 					autocomplete="off"
+					data-testid={testId + 'BaseURLInput'}
 				/>
 
 				{#if pipeline}
@@ -99,6 +101,7 @@
 				inputClassName=" outline-hidden bg-transparent w-full"
 				placeholder={$i18n.t('API Key')}
 				bind:value={key}
+				testId={testId + 'APIKeyInput'}
 			/>
 		</div>
 	</Tooltip>
@@ -111,6 +114,7 @@
 					showConfigModal = true;
 				}}
 				type="button"
+				data-testid={testId + 'APIConfigureButton'}
 			>
 				<Cog6 />
 			</button>

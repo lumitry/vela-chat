@@ -7,6 +7,7 @@
 
 	import { settings } from '$lib/stores';
 	import { copyToClipboard } from '$lib/utils';
+	import { testId } from '$lib/utils/testId';
 
 	import MultiResponseMessages from './MultiResponseMessages.svelte';
 	import ResponseMessage from './ResponseMessage.svelte';
@@ -47,6 +48,7 @@
 
 <div
 	id="message-{messageId}"
+	data-testid={testId('Chat', 'Message', messageId)}
 	class="flex flex-col justify-between px-5 mb-3 w-full {($settings?.widescreenMode ?? null)
 		? 'max-w-full'
 		: 'max-w-5xl'} mx-auto rounded-lg group {searchMatch ? 'search-match' : ''} {isCurrentSearch

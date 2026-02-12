@@ -1,0 +1,41 @@
+{
+	"model": "mini-mediator:slow",
+	"created": 24681234,
+	"defaults": {
+		"profile": "token",
+		"chars_per_token": 1,
+		"chunk_batch_size": 10,
+		"finish_reason": "stop",
+		"target_tokens_per_second": 1,
+		"pause_profile": []
+	},
+	"scenarios": [
+		{
+			"name": "slow-stream-pause",
+			"match": { "type": "any" },
+			"response": {
+				"message": "This will take a while. Grab some popcorn and enjoy the show!",
+				"think": null,
+				"tool_calls": [],
+				"attachments": []
+			},
+			"usage": {
+				"prompt": 100,
+				"completion": 9999
+			},
+			"streaming": {
+				"profile": "token",
+				"pause_profile": [
+					{
+						"after_chunk": 1,
+						"seconds": 5
+					}
+				],
+				"finish_reason": "stop"
+			},
+			"metadata": {
+				"feature": "slow-stream"
+			}
+		}
+	]
+}

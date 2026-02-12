@@ -7,6 +7,7 @@
 	const i18n = getContext('i18n');
 
 	export let tags = [];
+	export let testId: string | null = null;
 </script>
 
 <div class="flex flex-row flex-wrap gap-1 line-clamp-1">
@@ -15,6 +16,7 @@
 		on:delete={(e) => {
 			dispatch('delete', e.detail);
 		}}
+		{testId}
 	/>
 
 	<TagInput
@@ -22,5 +24,6 @@
 		on:add={(e) => {
 			dispatch('add', e.detail);
 		}}
+		{testId}
 	/>
 </div>

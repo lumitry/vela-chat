@@ -18,6 +18,7 @@
 	export let url = '';
 	export let idx = 0;
 	export let config = {};
+	export let testId = '';
 
 	let showManageModal = false;
 	let showConfigModal = false;
@@ -71,6 +72,7 @@
 			class="w-full text-sm bg-transparent outline-hidden"
 			placeholder={$i18n.t('Enter URL (e.g. http://localhost:11434)')}
 			bind:value={url}
+			data-testid={testId + 'BaseURLInput'}
 		/>
 	</Tooltip>
 
@@ -82,6 +84,7 @@
 					showManageModal = true;
 				}}
 				type="button"
+				data-testid={testId + 'ManageButton'}
 			>
 				<ArrowDownTray />
 			</button>
@@ -94,6 +97,7 @@
 					showConfigModal = true;
 				}}
 				type="button"
+				data-testid={testId + 'ConfigureButton'}
 			>
 				<Cog6 />
 			</button>

@@ -1,0 +1,79 @@
+{
+	"model": "mini-mediator:task",
+	"created": 24681234,
+	"defaults": {
+		"profile": "token",
+		"chars_per_token": 4,
+		"chunk_batch_size": 10,
+		"finish_reason": "stop",
+		"#": "This is a task model, so we want to be able to handle a lot of tokens per second.",
+		"target_tokens_per_second": 1000,
+		"pause_profile": []
+	},
+	"scenarios": [
+		{
+			"name": "autocomplete-template-match",
+			"match": {
+				"type": "regex",
+				"role": "user",
+				"text": ".*Task:\\nYou are an autocompletion system.*(.*\\n)*<text>What's 9\\+TeN=\\?.*"
+			},
+			"response": {
+				"message": "{\"text\": \"twenty one 🤣\"}",
+				"think": null,
+				"#": "TODO: add a test case for task models with CoT!",
+				"tool_calls": [],
+				"attachments": []
+			},
+			"usage": {
+				"prompt": 200,
+				"completion": 50
+			},
+			"metadata": {
+				"feature": "task-gen-autocomplete"
+			}
+		},
+		{
+			"name": "title-generation-template-match",
+			"match": {
+				"type": "regex",
+				"role": "user",
+				"text": ".*Generate a concise, 3-5 word title with an emoji summarizing the chat history.*(.*\\n)*<chat_history>\\nUSER: What's 9\\+TeN=\\?.*"
+			},
+			"response": {
+				"message": "{\"title\": \"👌 Mini-Mediator Title Generation Success!\"}",
+				"think": null,
+				"tool_calls": [],
+				"attachments": []
+			},
+			"usage": {
+				"prompt": 200,
+				"completion": 50
+			},
+			"metadata": {
+				"feature": "task-gen-title"
+			}
+		},
+		{
+			"name": "tags-generation-template-match",
+			"match": {
+				"type": "regex",
+				"role": "user",
+				"text": ".*Generate 1-3 broad tags categorizing the main themes of the chat history, along with 1-3 more specific subtopic tags.*(.*\\n)*<chat_history>\\nUSER: What's 9\\+TeN=\\?.*"
+			},
+			"response": {
+				"message": "{\"tags\": [\"math\", \"addition\", \"9+10\", \"comedy\"]}",
+				"think": null,
+				"tool_calls": [],
+				"attachments": []
+			},
+			"usage": {
+				"prompt": 200,
+				"completion": 50
+			},
+			"metadata": {
+				"feature": "task-gen-tags"
+			}
+		}
+	]
+}

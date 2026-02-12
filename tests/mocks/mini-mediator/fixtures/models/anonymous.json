@@ -1,0 +1,21 @@
+{
+	"model": "mini-mediator:anonymous",
+	"created": 12345,
+	"defaults": {
+		"profile": "token",
+		"chars_per_token": 4,
+		"chunk_batch_size": 10,
+		"finish_reason": "stop",
+		"target_tokens_per_second": 1000,
+		"pause_profile": []
+	},
+	"scenarios": [
+		{
+			"name": "anonymous-default",
+			"match": { "type": "any" },
+			"response": { "message": "", "think": null },
+			"streaming": {},
+			"metadata": { "behavior": "mirror" }
+		}
+	]
+}

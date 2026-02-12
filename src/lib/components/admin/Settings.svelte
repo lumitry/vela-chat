@@ -22,8 +22,11 @@
 	import Evaluations from './Settings/Evaluations.svelte';
 	import CodeExecution from './Settings/CodeExecution.svelte';
 	import Tools from './Settings/Tools.svelte';
+	import { testId } from '$lib/utils/testId';
 
 	const i18n = getContext('i18n');
+
+	const TEST_ID_SLUG = testId('AdminSettings');
 
 	// Valid tab names
 	const validTabs = [
@@ -116,6 +119,7 @@
 				selectedTab = 'general';
 				updateHash('general', false);
 			}}
+			data-testid={testId(TEST_ID_SLUG, 'General', 'TabButton')}
 		>
 			<div class=" self-center mr-2">
 				<svg
@@ -143,6 +147,7 @@
 				selectedTab = 'connections';
 				updateHash('connections', false);
 			}}
+			data-testid={testId(TEST_ID_SLUG, 'TabButton', 'Connections')}
 		>
 			<div class=" self-center mr-2">
 				<svg
@@ -168,6 +173,7 @@
 				selectedTab = 'models';
 				updateHash('models', false);
 			}}
+			data-testid={testId(TEST_ID_SLUG, 'TabButton', 'Models')}
 		>
 			<div class=" self-center mr-2">
 				<svg
@@ -195,6 +201,7 @@
 				selectedTab = 'evaluations';
 				updateHash('evaluations', false);
 			}}
+			data-testid={testId(TEST_ID_SLUG, 'TabButton', 'Evaluations')}
 		>
 			<div class=" self-center mr-2">
 				<DocumentChartBar />
@@ -211,6 +218,7 @@
 				selectedTab = 'tools';
 				updateHash('tools', false);
 			}}
+			data-testid={testId(TEST_ID_SLUG, 'TabButton', 'Tools')}
 		>
 			<div class=" self-center mr-2">
 				<svg
@@ -238,6 +246,7 @@
 				selectedTab = 'documents';
 				updateHash('documents', false);
 			}}
+			data-testid={testId(TEST_ID_SLUG, 'TabButton', 'Documents')}
 		>
 			<div class=" self-center mr-2">
 				<svg
@@ -269,6 +278,7 @@
 				selectedTab = 'web';
 				updateHash('web', false);
 			}}
+			data-testid={testId(TEST_ID_SLUG, 'TabButton', 'WebSearch')}
 		>
 			<div class=" self-center mr-2">
 				<svg
@@ -294,6 +304,7 @@
 				selectedTab = 'code-execution';
 				updateHash('code-execution', false);
 			}}
+			data-testid={testId(TEST_ID_SLUG, 'TabButton', 'CodeExecution')}
 		>
 			<div class=" self-center mr-2">
 				<svg
@@ -321,6 +332,7 @@
 				selectedTab = 'interface';
 				updateHash('interface', false);
 			}}
+			data-testid={testId(TEST_ID_SLUG, 'TabButton', 'Interface')}
 		>
 			<div class=" self-center mr-2">
 				<svg
@@ -348,6 +360,7 @@
 				selectedTab = 'audio';
 				updateHash('audio', false);
 			}}
+			data-testid={testId(TEST_ID_SLUG, 'TabButton', 'Audio')}
 		>
 			<div class=" self-center mr-2">
 				<svg
@@ -376,6 +389,7 @@
 				selectedTab = 'images';
 				updateHash('images', false);
 			}}
+			data-testid={testId(TEST_ID_SLUG, 'TabButton', 'Images')}
 		>
 			<div class=" self-center mr-2">
 				<svg
@@ -403,6 +417,7 @@
 				selectedTab = 'pipelines';
 				updateHash('pipelines', false);
 			}}
+			data-testid={testId(TEST_ID_SLUG, 'TabButton', 'Pipelines')}
 		>
 			<div class=" self-center mr-2">
 				<svg
@@ -434,6 +449,7 @@
 				selectedTab = 'db';
 				updateHash('db', false);
 			}}
+			data-testid={testId(TEST_ID_SLUG, 'TabButton', 'Database')}
 		>
 			<div class=" self-center mr-2">
 				<svg

@@ -39,6 +39,7 @@
 	import { getFolders } from '$lib/apis/folders';
 	import { navigateToChat, navigateToFolder } from '$lib/stores/sidebar';
 	import { createMessagesList } from '$lib/utils';
+	import { testId } from '$lib/utils/testId';
 
 	const i18n: Writable<i18nType> = getContext('i18n');
 
@@ -166,6 +167,8 @@
 	// Reactive statement to load current chat details when chatId changes
 	$: if ($chatId && localStorage.token) {
 		loadCurrentChatDetails();
+	} else if (!$chatId) {
+		currentChatDetails = null;
 	}
 
 	// Reactive statement to update folder name when folders or chat details change
@@ -261,14 +264,16 @@
 			snapshot.currentBranchMessages = createMessagesList(history, history.currentId).length;
 		}
 
-		const availableModels = get(models) ?? [];
+		// Use $models directly to ensure we get the latest value from the store
+		const availableModels = $models ?? [];
+
 		const modelLookup = new Map<string, (typeof availableModels)[number]>();
 		for (const model of availableModels) {
 			if (!model) continue;
+			// Only use model.id as the key - don't use model.name because multiple models
+			// can have the same name (e.g., both ollama.mini-mediator:anonymous and mini-mediator:anonymous
+			// might have name "mini-mediator:anonymous"), which would cause collisions
 			modelLookup.set(model.id, model);
-			if (model.name) {
-				modelLookup.set(model.name, model);
-			}
 		}
 
 		const modelsUsed = new Map<
@@ -278,6 +283,7 @@
 				label: string;
 				icon?: string | null;
 				messageCount: number;
+				matchedModel: (typeof availableModels)[number] | null;
 			}
 		>();
 
@@ -286,18 +292,31 @@
 			const normalizedId = String(identifier).trim();
 			if (!normalizedId) return null;
 
+			// Only match exact IDs - no prefix-stripping or fuzzy matching
+			// If a model ID from a message isn't in the store, it's either disabled or doesn't exist
+			// In that case, we'll just use the ID as the label
 			const matchedModel = modelLookup.get(normalizedId);
+
+			// Use the model's name from the store if available, otherwise use the ID
+			// labelOverride takes precedence if provided
 			const resolvedLabel = labelOverride?.trim() || matchedModel?.name?.trim() || normalizedId;
 			const resolvedIcon = matchedModel?.info?.meta?.profile_image_url ?? null;
 
 			if (modelsUsed.has(normalizedId)) {
 				const existing = modelsUsed.get(normalizedId);
 				if (existing) {
-					if (existing.label === existing.id && resolvedLabel && resolvedLabel !== existing.label) {
+					// Always update the label if we have a better one (from store or override)
+					// This ensures model name changes are reflected even if the model was already registered
+					if (resolvedLabel && resolvedLabel !== existing.label) {
 						existing.label = resolvedLabel;
 					}
-					if (!existing.icon && resolvedIcon) {
+					// Also update icon if we have one
+					if (resolvedIcon && (!existing.icon || existing.icon !== resolvedIcon)) {
 						existing.icon = resolvedIcon;
+					}
+					// Update matched model if we found one (e.g., model was enabled)
+					if (matchedModel && !existing.matchedModel) {
+						existing.matchedModel = matchedModel;
 					}
 				}
 				return normalizedId;
@@ -305,9 +324,10 @@
 
 			modelsUsed.set(normalizedId, {
 				id: normalizedId,
-				label: resolvedLabel || normalizedId,
+				label: resolvedLabel,
 				icon: resolvedIcon,
-				messageCount: 0
+				messageCount: 0,
+				matchedModel: matchedModel ?? null
 			});
 
 			return normalizedId;
@@ -325,39 +345,6 @@
 			return null;
 		};
 
-		const addModelCandidate = (candidate: any) => {
-			if (candidate === undefined || candidate === null) return;
-			if (typeof candidate === 'string' || typeof candidate === 'number') {
-				registerModel(String(candidate));
-				return;
-			}
-			if (Array.isArray(candidate)) {
-				candidate.forEach((entry) => addModelCandidate(entry));
-				return;
-			}
-			if (typeof candidate === 'object') {
-				if (
-					'id' in candidate ||
-					'name' in candidate ||
-					'label' in candidate ||
-					'model' in candidate
-				) {
-					const candidateId = (candidate.id ??
-						candidate.model ??
-						candidate.name ??
-						candidate.label) as string | undefined;
-					const candidateLabel = (candidate.name ?? candidate.label ?? candidateId) as
-						| string
-						| undefined;
-					registerModel(candidateId ?? candidateLabel, candidateLabel);
-					return;
-				}
-				for (const value of Object.values(candidate)) {
-					addModelCandidate(value);
-				}
-			}
-		};
-
 		const extractUsageNumber = (value: unknown): number => {
 			if (typeof value === 'number' && Number.isFinite(value)) {
 				return value;
@@ -368,25 +355,26 @@
 		for (const message of messageList) {
 			if (!message) continue;
 
-			incrementModelUsage(
-				message.selected_model_id ??
-					message.model_id ??
-					message.model ??
-					message.modelName ??
-					(Array.isArray(message.models) ? message.models[0] : undefined) ??
-					message?.meta?.model ??
-					message?.meta?.model_id ??
-					(Array.isArray(message?.meta?.models) ? message.meta.models[0] : undefined)
-			) ?? incrementModelUsage('unknown-model', $i18n.t('Unknown Model'));
+			// Skip user messages - they don't have models
+			if (message.role === 'user') {
+				// Still count attachments and branches for user messages
+				if (Array.isArray(message.files)) {
+					snapshot.attachmentCount += message.files.length;
+				}
+				const children = Array.isArray(message.childrenIds)
+					? message.childrenIds.filter((childId) => childId && messagesMap[childId])
+					: [];
+				if (children.length === 0) {
+					snapshot.branchCount += 1;
+				}
+				continue;
+			}
 
-			addModelCandidate(message.model);
-			addModelCandidate(message.model_id);
-			addModelCandidate(message.modelName);
-			addModelCandidate(message.selected_model_id);
-			addModelCandidate(message?.meta?.model);
-			addModelCandidate(message?.meta?.model_id);
-			addModelCandidate(message?.models);
-			addModelCandidate(message?.meta?.models);
+			// Check model field (history uses 'model', cached data may use 'model_id')
+			const modelId =
+				message.model ?? message.model_id ?? message.selectedModelId ?? message.selected_model_id;
+			incrementModelUsage(modelId) ??
+				incrementModelUsage('unknown-model', $i18n.t('Unknown Model'));
 
 			if (Array.isArray(message.files)) {
 				snapshot.attachmentCount += message.files.length;
@@ -426,9 +414,19 @@
 			}
 		}
 
-		snapshot.uniqueModels = Array.from(modelsUsed.values()).sort((a, b) =>
-			a.label.localeCompare(b.label, undefined, { sensitivity: 'base' })
-		);
+		// Build the final list - include all models that were used, even if they're not in the store
+		// If a model isn't in the store (disabled or doesn't exist), it will show with the ID as the label and no icon
+		snapshot.uniqueModels = Array.from(modelsUsed.values())
+			.map((entry) => {
+				// Remove matchedModel from final output - only include the properties needed for uniqueModels
+				return {
+					id: entry.id,
+					label: entry.label,
+					icon: entry.icon,
+					messageCount: entry.messageCount
+				};
+			})
+			.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
 
 		return snapshot;
 	};
@@ -437,6 +435,12 @@
 		chatInfoSnapshot = buildChatInfoSnapshot();
 		showChatInfoModal = true;
 	};
+
+	// Rebuild the snapshot when models store updates and modal is open
+	// This ensures the modal always shows the latest model names
+	$: if (showChatInfoModal && $models) {
+		chatInfoSnapshot = buildChatInfoSnapshot();
+	}
 </script>
 
 <ShareChatModal bind:show={showShareChatModal} chatId={$chatId} />
@@ -462,6 +466,7 @@
 					<button
 						id="sidebar-toggle-button"
 						class="cursor-pointer px-2 py-2 flex rounded-xl hover:bg-gray-50 dark:hover:bg-gray-850 transition"
+						data-testid={testId('SidebarToggleButton')}
 						on:click={() => {
 							showSidebar.set(!$showSidebar);
 						}}
@@ -492,16 +497,20 @@
 									class="hidden md:flex flex-col items-center justify-center text-center px-2 pointer-events-auto cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-850 rounded-lg transition-colors absolute"
 									on:click={handleChatTitleClick}
 									aria-label="Navigate to chat location in sidebar"
+									data-testid={testId('Chat', 'Navbar', 'ChatTitle', 'Button')}
+									data-chatid={$chatId ?? ''}
 								>
 									{#if currentFolderName}
 										<div
 											class="text-xs text-gray-500 dark:text-gray-400 truncate whitespace-nowrap"
+											data-testid={testId('Chat', 'Navbar', 'ChatTitle', 'FolderName')}
 										>
 											{currentFolderName}
 										</div>
 									{/if}
 									<div
 										class="text-sm font-medium text-gray-700 dark:text-gray-200 truncate whitespace-nowrap"
+										data-testid={testId('Chat', 'Navbar', 'ChatTitle', 'Title')}
 									>
 										{currentChatDetails.title || $i18n.t('Untitled Chat')}
 									</div>
@@ -527,6 +536,7 @@
 							<button
 								class="flex cursor-pointer px-2 py-2 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-850 transition"
 								id="chat-context-menu-button"
+								data-testid={testId('Chat', 'Navbar', 'ChatContextMenuButton')}
 							>
 								<div class=" m-auto self-center">
 									<svg
@@ -554,6 +564,7 @@
 								class="flex cursor-pointer px-2 py-2 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-850 transition"
 								on:click={openChatInfo}
 								aria-label="Chat Info"
+								data-testid={testId('Chat', 'Navbar', 'ChatInfoButton')}
 							>
 								<div class=" m-auto self-center">
 									<Info className=" size-5" strokeWidth="1.5" />
@@ -569,6 +580,7 @@
 								await showControls.set(!$showControls);
 							}}
 							aria-label="Controls"
+							data-testid={testId('Chat', 'Navbar', 'ControlsButton')}
 						>
 							<div class=" m-auto self-center">
 								<AdjustmentsHorizontal className=" size-5" strokeWidth="0.5" />
@@ -606,6 +618,7 @@
 							<button
 								class="select-none flex rounded-xl p-1.5 w-full hover:bg-gray-50 dark:hover:bg-gray-850 transition"
 								aria-label="User Menu"
+								data-testid={testId('Navbar', 'UserMenu', 'Button')}
 							>
 								<div class=" self-center">
 									<img

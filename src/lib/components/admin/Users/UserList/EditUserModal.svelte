@@ -9,6 +9,7 @@
 	import Modal from '$lib/components/common/Modal.svelte';
 	import localizedFormat from 'dayjs/plugin/localizedFormat';
 	import { WEBUI_BASE_URL } from '$lib/constants';
+	import { testId } from '$lib/utils/testId';
 
 	const i18n = getContext('i18n');
 	const dispatch = createEventDispatcher();
@@ -43,8 +44,10 @@
 		}
 	});
 
-	$: userImageSrc = _user?.profile_image_url 
-		? (_user.profile_image_url.startsWith('/') ? `${WEBUI_BASE_URL}${_user.profile_image_url}` : _user.profile_image_url)
+	$: userImageSrc = _user?.profile_image_url
+		? _user.profile_image_url.startsWith('/')
+			? `${WEBUI_BASE_URL}${_user.profile_image_url}`
+			: _user.profile_image_url
 		: '';
 </script>
 
@@ -86,13 +89,23 @@
 								src={userImageSrc}
 								class=" max-w-[55px] object-cover rounded-full"
 								alt="User profile"
+								data-testid={testId('AdminSettings', 'Users', 'EditUserModal', 'UserImage')}
 							/>
 						</div>
 
 						<div>
-							<div class=" self-center capitalize font-semibold">{selectedUser.name}</div>
+							<div
+								class=" self-center capitalize font-semibold"
+								data-testid={testId('AdminSettings', 'Users', 'EditUserModal', 'Name')}
+							>
+								{selectedUser.name}
+							</div>
 
-							<div class="text-xs text-gray-500">
+							<div
+								class="text-xs text-gray-500"
+								data-testid={testId('AdminSettings', 'Users', 'EditUserModal', 'CreatedAt')}
+								data-value={selectedUser.created_at}
+							>
 								{$i18n.t('Created at')}
 								{dayjs(selectedUser.created_at * 1000).format('LL')}
 							</div>
@@ -113,6 +126,7 @@
 									autocomplete="off"
 									required
 									disabled={_user.id == sessionUser.id}
+									data-testid={testId('AdminSettings', 'Users', 'EditUserModal', 'EmailInput')}
 								/>
 							</div>
 						</div>
@@ -127,6 +141,7 @@
 									bind:value={_user.name}
 									autocomplete="off"
 									required
+									data-testid={testId('AdminSettings', 'Users', 'EditUserModal', 'NameInput')}
 								/>
 							</div>
 						</div>
@@ -140,6 +155,7 @@
 									type="password"
 									bind:value={_user.password}
 									autocomplete="new-password"
+									data-testid={testId('AdminSettings', 'Users', 'EditUserModal', 'PasswordInput')}
 								/>
 							</div>
 						</div>
@@ -149,6 +165,7 @@
 						<button
 							class=" px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-gray-100 transition rounded-lg"
 							type="submit"
+							data-testid={testId('AdminSettings', 'Users', 'EditUserModal', 'SaveButton')}
 						>
 							{$i18n.t('Save')}
 						</button>

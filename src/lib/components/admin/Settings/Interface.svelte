@@ -16,6 +16,8 @@
 	import Switch from '$lib/components/common/Switch.svelte';
 	import Textarea from '$lib/components/common/Textarea.svelte';
 
+	import { testId } from '$lib/utils/testId';
+
 	const dispatch = createEventDispatcher();
 
 	const i18n = getContext('i18n');
@@ -105,6 +107,7 @@
 							class="w-full rounded-lg py-2 px-4 text-sm bg-gray-50 dark:text-gray-300 dark:bg-gray-850 outline-hidden"
 							bind:value={taskConfig.TASK_MODEL}
 							placeholder={$i18n.t('Select a model')}
+							data-testid={testId('AdminSettings', 'Interface', 'LocalTaskModelSelect')}
 						>
 							<option value="" selected>{$i18n.t('Current Model')}</option>
 							{#each $models.filter((m) => m.owned_by === 'ollama') as model}
@@ -121,6 +124,7 @@
 							class="w-full rounded-lg py-2 px-4 text-sm bg-gray-50 dark:text-gray-300 dark:bg-gray-850 outline-hidden"
 							bind:value={taskConfig.TASK_MODEL_EXTERNAL}
 							placeholder={$i18n.t('Select a model')}
+							data-testid={testId('AdminSettings', 'Interface', 'ExternalTaskModelSelect')}
 						>
 							<option value="" selected>{$i18n.t('Current Model')}</option>
 							{#each $models as model}
@@ -137,7 +141,10 @@
 						{$i18n.t('Title Generation')}
 					</div>
 
-					<Switch bind:state={taskConfig.ENABLE_TITLE_GENERATION} />
+					<Switch
+						bind:state={taskConfig.ENABLE_TITLE_GENERATION}
+						testId={testId('AdminSettings', 'Interface', 'TitleGenSwitch')}
+					/>
 				</div>
 
 				{#if taskConfig.ENABLE_TITLE_GENERATION}
@@ -153,6 +160,7 @@
 								placeholder={$i18n.t(
 									'Leave empty to use the default prompt, or enter a custom prompt'
 								)}
+								testId={testId('AdminSettings', 'Interface', 'TitleGenPromptInput')}
 							/>
 						</Tooltip>
 					</div>
@@ -163,7 +171,10 @@
 						{$i18n.t('Tags Generation')}
 					</div>
 
-					<Switch bind:state={taskConfig.ENABLE_TAGS_GENERATION} />
+					<Switch
+						bind:state={taskConfig.ENABLE_TAGS_GENERATION}
+						testId={testId('AdminSettings', 'Interface', 'TagsGenSwitch')}
+					/>
 				</div>
 
 				{#if taskConfig.ENABLE_TAGS_GENERATION}
@@ -179,6 +190,7 @@
 								placeholder={$i18n.t(
 									'Leave empty to use the default prompt, or enter a custom prompt'
 								)}
+								testId={testId('AdminSettings', 'Interface', 'TagsGenPromptInput')}
 							/>
 						</Tooltip>
 					</div>
@@ -189,7 +201,10 @@
 						{$i18n.t('Retrieval Query Generation')}
 					</div>
 
-					<Switch bind:state={taskConfig.ENABLE_RETRIEVAL_QUERY_GENERATION} />
+					<Switch
+						bind:state={taskConfig.ENABLE_RETRIEVAL_QUERY_GENERATION}
+						testId={testId('AdminSettings', 'Interface', 'RagQueryGenSwitch')}
+					/>
 				</div>
 
 				<div class="mb-2.5 flex w-full items-center justify-between">
@@ -197,7 +212,10 @@
 						{$i18n.t('Web Search Query Generation')}
 					</div>
 
-					<Switch bind:state={taskConfig.ENABLE_SEARCH_QUERY_GENERATION} />
+					<Switch
+						bind:state={taskConfig.ENABLE_SEARCH_QUERY_GENERATION}
+						testId={testId('AdminSettings', 'Interface', 'SearchQueryGenSwitch')}
+					/>
 				</div>
 
 				<div class="mb-2.5">
@@ -212,6 +230,7 @@
 							placeholder={$i18n.t(
 								'Leave empty to use the default prompt, or enter a custom prompt'
 							)}
+							testId={testId('AdminSettings', 'Interface', 'QueryGenPromptInput')}
 						/>
 					</Tooltip>
 				</div>
@@ -222,7 +241,10 @@
 					</div>
 
 					<Tooltip content={$i18n.t('Enable autocomplete generation for chat messages')}>
-						<Switch bind:state={taskConfig.ENABLE_AUTOCOMPLETE_GENERATION} />
+						<Switch
+							bind:state={taskConfig.ENABLE_AUTOCOMPLETE_GENERATION}
+							testId={testId('AdminSettings', 'Interface', 'AutocompleteGenSwitch')}
+						/>
 					</Tooltip>
 				</div>
 
@@ -240,6 +262,11 @@
 								class="w-full outline-hidden bg-transparent"
 								bind:value={taskConfig.AUTOCOMPLETE_GENERATION_INPUT_MAX_LENGTH}
 								placeholder={$i18n.t('-1 for no limit, or a positive integer for a specific limit')}
+								data-testid={testId(
+									'AdminSettings',
+									'Interface',
+									'AutocompleteGenInputMaxLengthInput'
+								)}
 							/>
 						</Tooltip>
 					</div>
@@ -257,6 +284,7 @@
 							placeholder={$i18n.t(
 								'Leave empty to use the default prompt, or enter a custom prompt'
 							)}
+							testId={testId('AdminSettings', 'Interface', 'ImagePromptGenPromptInput')}
 						/>
 					</Tooltip>
 				</div>
@@ -273,6 +301,7 @@
 							placeholder={$i18n.t(
 								'Leave empty to use the default prompt, or enter a custom prompt'
 							)}
+							testId={testId('AdminSettings', 'Interface', 'ToolsFunctionCallingPromptInput')}
 						/>
 					</Tooltip>
 				</div>
@@ -351,7 +380,10 @@
 
 									<div class="relative top-1.5 -left-2">
 										<Tooltip content={$i18n.t('Dismissible')} className="flex h-fit items-center">
-											<Switch bind:state={banner.dismissible} />
+											<Switch
+												bind:state={banner.dismissible}
+												testId={testId('AdminSettings', 'Interface', 'BannerDismissibleSwitch')}
+											/>
 										</Tooltip>
 									</div>
 								</div>
@@ -475,6 +507,7 @@
 			<button
 				class="px-3.5 py-1.5 text-sm font-medium bg-black hover:bg-gray-900 text-white dark:bg-white dark:text-black dark:hover:bg-gray-100 transition rounded-full"
 				type="submit"
+				data-testid={testId('AdminSettings', 'Settings', 'SaveButton')}
 			>
 				{$i18n.t('Save')}
 			</button>

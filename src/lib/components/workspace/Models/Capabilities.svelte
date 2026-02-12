@@ -3,6 +3,7 @@
 	import Checkbox from '$lib/components/common/Checkbox.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import { marked } from 'marked';
+	import { testId } from '$lib/utils/testId';
 
 	const i18n = getContext('i18n');
 
@@ -35,6 +36,7 @@
 					on:change={(e) => {
 						capabilities[capability] = e.detail === 'checked';
 					}}
+					testId={testId('ModelEditor', 'Capabilities', capability, 'Checkbox')}
 				/>
 
 				<div class=" py-0.5 text-sm capitalize">

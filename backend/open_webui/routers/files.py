@@ -397,6 +397,9 @@ async def get_file_content_by_id(
                         headers["ETag"] = f'"{file.hash}"'
                     else:
                         headers["ETag"] = f'"{file.id}"'
+                    # Add Cross-Origin-Resource-Policy header to allow images to be embedded
+                    # This is required when COEP (Cross-Origin Embedder Policy) is enabled
+                    headers["Cross-Origin-Resource-Policy"] = "cross-origin"
 
                 if attachment:
                     headers["Content-Disposition"] = (

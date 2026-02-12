@@ -5,6 +5,7 @@
 	export let state = 'unchecked';
 	export let indeterminate = false;
 	export let disabled = false;
+	export let testId: string | null = null;
 
 	let _state = 'unchecked';
 
@@ -12,6 +13,7 @@
 </script>
 
 <button
+	data-testid={testId}
 	class=" outline -outline-offset-1 outline-[1.5px] outline-gray-200 dark:outline-gray-600 {state !==
 	'unchecked'
 		? 'bg-black outline-black '

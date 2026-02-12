@@ -2,12 +2,14 @@
 	import Switch from '$lib/components/common/Switch.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import { getContext, createEventDispatcher } from 'svelte';
+	import { testId as getTestId } from '$lib/utils/testId';
 
 	const dispatch = createEventDispatcher();
 
 	const i18n = getContext('i18n');
 
 	export let admin = false;
+	export let testId: string | null = null;
 
 	export let params = {
 		// Advanced
@@ -89,6 +91,7 @@
 									: null;
 					}}
 					type="button"
+					data-testid={testId ? getTestId(testId, 'StreamChatResponseToggleButton') : null}
 				>
 					{#if params.stream_response === true}
 						<span class="ml-2 self-center">{$i18n.t('On')}</span>
@@ -120,6 +123,7 @@
 						params.function_calling = (params?.function_calling ?? null) === null ? 'native' : null;
 					}}
 					type="button"
+					data-testid={testId ? getTestId(testId, 'FunctionCallingToggleButton') : null}
 				>
 					{#if params.function_calling === 'native'}
 						<span class="ml-2 self-center">{$i18n.t('Native')}</span>
@@ -150,6 +154,7 @@
 					on:click={() => {
 						params.seed = (params?.seed ?? null) === null ? 0 : null;
 					}}
+					data-testid={testId ? getTestId(testId, 'SeedToggleButton') : null}
 				>
 					{#if (params?.seed ?? null) === null}
 						<span class="ml-2 self-center"> {$i18n.t('Default')} </span>
@@ -170,6 +175,7 @@
 						bind:value={params.seed}
 						autocomplete="off"
 						min="0"
+						data-testid={testId ? getTestId(testId, 'SeedInput') : null}
 					/>
 				</div>
 			</div>
@@ -195,6 +201,7 @@
 					on:click={() => {
 						params.stop = (params?.stop ?? null) === null ? '' : null;
 					}}
+					data-testid={testId ? getTestId(testId, 'StopSequenceToggleButton') : null}
 				>
 					{#if (params?.stop ?? null) === null}
 						<span class="ml-2 self-center"> {$i18n.t('Default')} </span>
@@ -214,6 +221,7 @@
 						placeholder={$i18n.t('Enter stop sequence')}
 						bind:value={params.stop}
 						autocomplete="off"
+						data-testid={testId ? getTestId(testId, 'StopSequenceInput') : null}
 					/>
 				</div>
 			</div>
@@ -238,6 +246,7 @@
 					on:click={() => {
 						params.temperature = (params?.temperature ?? null) === null ? 0.8 : null;
 					}}
+					data-testid={testId ? getTestId(testId, 'TemperatureToggleButton') : null}
 				>
 					{#if (params?.temperature ?? null) === null}
 						<span class="ml-2 self-center"> {$i18n.t('Default')} </span>
@@ -269,6 +278,7 @@
 						min="0"
 						max="2"
 						step="any"
+						data-testid={testId ? getTestId(testId, 'TemperatureInput') : null}
 					/>
 				</div>
 			</div>
@@ -294,6 +304,7 @@
 						if (!params.reasoning) params.reasoning = {};
 						params.reasoning.effort = (params?.reasoning.effort ?? null) === null ? 'medium' : null;
 					}}
+					data-testid={testId ? getTestId(testId, 'ReasoningEffortToggleButton') : null}
 				>
 					{#if (params?.reasoning?.effort ?? null) === null}
 						<span class="ml-2 self-center"> {$i18n.t('Default')} </span>
@@ -340,6 +351,7 @@
 						params.reasoning.max_tokens =
 							(params?.reasoning?.max_tokens ?? null) === null ? 2000 : null;
 					}}
+					data-testid={testId ? getTestId(testId, 'MaxTokensForReasoningToggleButton') : null}
 				>
 					{#if (params?.reasoning?.max_tokens ?? null) === null}
 						<span class="ml-2 self-center"> {$i18n.t('Default')} </span>
@@ -386,6 +398,7 @@
 					on:click={() => {
 						params.logit_bias = (params?.logit_bias ?? null) === null ? '' : null;
 					}}
+					data-testid={testId ? getTestId(testId, 'LogitBiasToggleButton') : null}
 				>
 					{#if (params?.logit_bias ?? null) === null}
 						<span class="ml-2 self-center"> {$i18n.t('Default')} </span>
@@ -429,6 +442,7 @@
 					on:click={() => {
 						params.mirostat = (params?.mirostat ?? null) === null ? 0 : null;
 					}}
+					data-testid={testId ? getTestId(testId, 'MirostatToggleButton') : null}
 				>
 					{#if (params?.mirostat ?? null) === null}
 						<span class="ml-2 self-center">{$i18n.t('Default')}</span>
@@ -450,6 +464,7 @@
 						step="1"
 						bind:value={params.mirostat}
 						class="w-full h-2 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+						data-testid={testId ? getTestId(testId, 'FrequencyPenaltyRangeInput') : null}
 					/>
 				</div>
 				<div>
@@ -484,6 +499,7 @@
 					on:click={() => {
 						params.mirostat_eta = (params?.mirostat_eta ?? null) === null ? 0.1 : null;
 					}}
+					data-testid={testId ? getTestId(testId, 'MirostatEtaToggleButton') : null}
 				>
 					{#if (params?.mirostat_eta ?? null) === null}
 						<span class="ml-2 self-center">{$i18n.t('Default')}</span>
@@ -505,6 +521,7 @@
 						step="0.05"
 						bind:value={params.mirostat_eta}
 						class="w-full h-2 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+						data-testid={testId ? getTestId(testId, 'MirostatEtaRangeInput') : null}
 					/>
 				</div>
 				<div>
@@ -515,6 +532,7 @@
 						min="0"
 						max="1"
 						step="any"
+						data-testid={testId ? getTestId(testId, 'MirostatEtaInput') : null}
 					/>
 				</div>
 			</div>
@@ -540,6 +558,7 @@
 					on:click={() => {
 						params.mirostat_tau = (params?.mirostat_tau ?? null) === null ? 5.0 : null;
 					}}
+					data-testid={testId ? getTestId(testId, 'MirostatTauToggleButton') : null}
 				>
 					{#if (params?.mirostat_tau ?? null) === null}
 						<span class="ml-2 self-center">{$i18n.t('Default')}</span>
@@ -561,6 +580,7 @@
 						step="0.5"
 						bind:value={params.mirostat_tau}
 						class="w-full h-2 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+						data-testid={testId ? getTestId(testId, 'MirostatTauRangeInput') : null}
 					/>
 				</div>
 				<div>
@@ -571,6 +591,7 @@
 						min="0"
 						max="10"
 						step="any"
+						data-testid={testId ? getTestId(testId, 'MirostatTauInput') : null}
 					/>
 				</div>
 			</div>
@@ -595,6 +616,7 @@
 					on:click={() => {
 						params.top_k = (params?.top_k ?? null) === null ? 40 : null;
 					}}
+					data-testid={testId ? getTestId(testId, 'TopKToggleButton') : null}
 				>
 					{#if (params?.top_k ?? null) === null}
 						<span class="ml-2 self-center">{$i18n.t('Default')}</span>
@@ -616,6 +638,7 @@
 						step="0.5"
 						bind:value={params.top_k}
 						class="w-full h-2 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+						data-testid={testId ? getTestId(testId, 'TopKRangeInput') : null}
 					/>
 				</div>
 				<div>
@@ -626,6 +649,7 @@
 						min="0"
 						max="100"
 						step="any"
+						data-testid={testId ? getTestId(testId, 'TopKInput') : null}
 					/>
 				</div>
 			</div>
@@ -651,6 +675,7 @@
 					on:click={() => {
 						params.top_p = (params?.top_p ?? null) === null ? 0.9 : null;
 					}}
+					data-testid={testId ? getTestId(testId, 'TopPToggleButton') : null}
 				>
 					{#if (params?.top_p ?? null) === null}
 						<span class="ml-2 self-center">{$i18n.t('Default')}</span>
@@ -672,6 +697,7 @@
 						step="0.05"
 						bind:value={params.top_p}
 						class="w-full h-2 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+						data-testid={testId ? getTestId(testId, 'TopPRangeInput') : null}
 					/>
 				</div>
 				<div>
@@ -682,6 +708,7 @@
 						min="0"
 						max="1"
 						step="any"
+						data-testid={testId ? getTestId(testId, 'TopPInput') : null}
 					/>
 				</div>
 			</div>
@@ -706,6 +733,7 @@
 					on:click={() => {
 						params.min_p = (params?.min_p ?? null) === null ? 0.0 : null;
 					}}
+					data-testid={testId ? getTestId(testId, 'MinPToggleButton') : null}
 				>
 					{#if (params?.min_p ?? null) === null}
 						<span class="ml-2 self-center">{$i18n.t('Default')}</span>
@@ -727,6 +755,7 @@
 						step="0.05"
 						bind:value={params.min_p}
 						class="w-full h-2 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+						data-testid={testId ? getTestId(testId, 'MinPRangeInput') : null}
 					/>
 				</div>
 				<div>
@@ -737,6 +766,7 @@
 						min="0"
 						max="1"
 						step="any"
+						data-testid={testId ? getTestId(testId, 'MinPInput') : null}
 					/>
 				</div>
 			</div>
@@ -762,6 +792,7 @@
 					on:click={() => {
 						params.frequency_penalty = (params?.frequency_penalty ?? null) === null ? 1.1 : null;
 					}}
+					data-testid={testId ? getTestId(testId, 'FrequencyPenaltyToggleButton') : null}
 				>
 					{#if (params?.frequency_penalty ?? null) === null}
 						<span class="ml-2 self-center">{$i18n.t('Default')}</span>
@@ -783,6 +814,7 @@
 						step="0.05"
 						bind:value={params.frequency_penalty}
 						class="w-full h-2 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+						data-testid={testId ? getTestId(testId, 'RepeatLastNRangeInput') : null}
 					/>
 				</div>
 				<div>
@@ -793,6 +825,7 @@
 						min="-2"
 						max="2"
 						step="any"
+						data-testid={testId ? getTestId(testId, 'FrequencyPenaltyInput') : null}
 					/>
 				</div>
 			</div>
@@ -818,6 +851,7 @@
 					on:click={() => {
 						params.presence_penalty = (params?.presence_penalty ?? null) === null ? 0.0 : null;
 					}}
+					data-testid={testId ? getTestId(testId, 'PresencePenaltyToggleButton') : null}
 				>
 					{#if (params?.presence_penalty ?? null) === null}
 						<span class="ml-2 self-center">{$i18n.t('Default')}</span>
@@ -839,6 +873,7 @@
 						step="0.05"
 						bind:value={params.presence_penalty}
 						class="w-full h-2 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+						data-testid={testId ? getTestId(testId, 'PresencePenaltyRangeInput') : null}
 					/>
 				</div>
 				<div>
@@ -849,6 +884,7 @@
 						min="-2"
 						max="2"
 						step="any"
+						data-testid={testId ? getTestId(testId, 'PresencePenaltyInput') : null}
 					/>
 				</div>
 			</div>
@@ -872,6 +908,7 @@
 					on:click={() => {
 						params.repeat_last_n = (params?.repeat_last_n ?? null) === null ? 64 : null;
 					}}
+					data-testid={testId ? getTestId(testId, 'RepeatLastNToggleButton') : null}
 				>
 					{#if (params?.repeat_last_n ?? null) === null}
 						<span class="ml-2 self-center">{$i18n.t('Default')}</span>
@@ -903,6 +940,7 @@
 						min="-1"
 						max="128"
 						step="1"
+						data-testid={testId ? getTestId(testId, 'RepeatLastNInput') : null}
 					/>
 				</div>
 			</div>
@@ -928,6 +966,7 @@
 					on:click={() => {
 						params.tfs_z = (params?.tfs_z ?? null) === null ? 1 : null;
 					}}
+					data-testid={testId ? getTestId(testId, 'TfsZToggleButton') : null}
 				>
 					{#if (params?.tfs_z ?? null) === null}
 						<span class="ml-2 self-center">{$i18n.t('Default')}</span>
@@ -949,6 +988,7 @@
 						step="0.05"
 						bind:value={params.tfs_z}
 						class="w-full h-2 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+						data-testid={testId ? getTestId(testId, 'TfsZRangeInput') : null}
 					/>
 				</div>
 				<div>
@@ -959,6 +999,7 @@
 						min="0"
 						max="2"
 						step="any"
+						data-testid={testId ? getTestId(testId, 'TfsZInput') : null}
 					/>
 				</div>
 			</div>
@@ -984,6 +1025,7 @@
 					on:click={() => {
 						params.num_keep = (params?.num_keep ?? null) === null ? 24 : null;
 					}}
+					data-testid={testId ? getTestId(testId, 'NumKeepToggleButton') : null}
 				>
 					{#if (params?.num_keep ?? null) === null}
 						<span class="ml-2 self-center">{$i18n.t('Default')}</span>
@@ -1005,6 +1047,7 @@
 						step="1"
 						bind:value={params.num_keep}
 						class="w-full h-2 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+						data-testid={testId ? getTestId(testId, 'NumKeepRangeInput') : null}
 					/>
 				</div>
 				<div class="">
@@ -1014,6 +1057,7 @@
 						class=" bg-transparent text-center w-14"
 						min="-1"
 						step="1"
+						data-testid={testId ? getTestId(testId, 'NumKeepInput') : null}
 					/>
 				</div>
 			</div>
@@ -1039,6 +1083,7 @@
 					on:click={() => {
 						params.max_tokens = (params?.max_tokens ?? null) === null ? 128 : null;
 					}}
+					data-testid={testId ? getTestId(testId, 'MaxTokensToggleButton') : null}
 				>
 					{#if (params?.max_tokens ?? null) === null}
 						<span class="ml-2 self-center">{$i18n.t('Default')}</span>
@@ -1060,6 +1105,7 @@
 						step="1"
 						bind:value={params.max_tokens}
 						class="w-full h-2 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+						data-testid={testId ? getTestId(testId, 'MaxTokensRangeInput') : null}
 					/>
 				</div>
 				<div>
@@ -1069,6 +1115,7 @@
 						class=" bg-transparent text-center w-14"
 						min="-2"
 						step="1"
+						data-testid={testId ? getTestId(testId, 'MaxTokensInput') : null}
 					/>
 				</div>
 			</div>
@@ -1094,6 +1141,7 @@
 					on:click={() => {
 						params.repeat_penalty = (params?.repeat_penalty ?? null) === null ? 1.1 : null;
 					}}
+					data-testid={testId ? getTestId(testId, 'RepeatPenaltyToggleButton') : null}
 				>
 					{#if (params?.repeat_penalty ?? null) === null}
 						<span class="ml-2 self-center">{$i18n.t('Default')}</span>
@@ -1115,6 +1163,7 @@
 						step="0.05"
 						bind:value={params.repeat_penalty}
 						class="w-full h-2 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+						data-testid={testId ? getTestId(testId, 'RepeatPenaltyRangeInput') : null}
 					/>
 				</div>
 				<div>
@@ -1125,6 +1174,7 @@
 						min="-2"
 						max="2"
 						step="any"
+						data-testid={testId ? getTestId(testId, 'RepeatPenaltyInput') : null}
 					/>
 				</div>
 			</div>
@@ -1149,6 +1199,7 @@
 					on:click={() => {
 						params.num_ctx = (params?.num_ctx ?? null) === null ? 2048 : null;
 					}}
+					data-testid={testId ? getTestId(testId, 'ContextLengthToggleButton') : null}
 				>
 					{#if (params?.num_ctx ?? null) === null}
 						<span class="ml-2 self-center">{$i18n.t('Default')}</span>
@@ -1179,6 +1230,7 @@
 						class=" bg-transparent text-center w-14"
 						min="-1"
 						step="1"
+						data-testid={testId ? getTestId(testId, 'ContextLengthInput') : null}
 					/>
 				</div>
 			</div>
@@ -1204,6 +1256,7 @@
 					on:click={() => {
 						params.num_batch = (params?.num_batch ?? null) === null ? 512 : null;
 					}}
+					data-testid={testId ? getTestId(testId, 'BatchSizeToggleButton') : null}
 				>
 					{#if (params?.num_batch ?? null) === null}
 						<span class="ml-2 self-center">{$i18n.t('Default')}</span>
@@ -1259,6 +1312,7 @@
 						on:click={() => {
 							params.use_mmap = (params?.use_mmap ?? null) === null ? true : null;
 						}}
+						data-testid={testId ? getTestId(testId, 'UseMmapToggleButton') : null}
 					>
 						{#if (params?.use_mmap ?? null) === null}
 							<span class="ml-2 self-center">{$i18n.t('Default')}</span>
@@ -1300,6 +1354,7 @@
 						on:click={() => {
 							params.use_mlock = (params?.use_mlock ?? null) === null ? true : null;
 						}}
+						data-testid={testId ? getTestId(testId, 'UseMlockToggleButton') : null}
 					>
 						{#if (params?.use_mlock ?? null) === null}
 							<span class="ml-2 self-center">{$i18n.t('Default')}</span>
@@ -1342,6 +1397,7 @@
 						on:click={() => {
 							params.num_thread = (params?.num_thread ?? null) === null ? 2 : null;
 						}}
+						data-testid={testId ? getTestId(testId, 'NumThreadToggleButton') : null}
 					>
 						{#if (params?.num_thread ?? null) === null}
 							<span class="ml-2 self-center">{$i18n.t('Default')}</span>
@@ -1363,6 +1419,7 @@
 							step="1"
 							bind:value={params.num_thread}
 							class="w-full h-2 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+							data-testid={testId ? getTestId(testId, 'NumThreadRangeInput') : null}
 						/>
 					</div>
 					<div class="">
@@ -1373,6 +1430,7 @@
 							min="1"
 							max="256"
 							step="1"
+							data-testid={testId ? getTestId(testId, 'NumThreadInput') : null}
 						/>
 					</div>
 				</div>
@@ -1398,6 +1456,7 @@
 						on:click={() => {
 							params.num_gpu = (params?.num_gpu ?? null) === null ? 0 : null;
 						}}
+						data-testid={testId ? getTestId(testId, 'NumGPUToggleButton') : null}
 					>
 						{#if (params?.num_gpu ?? null) === null}
 							<span class="ml-2 self-center">{$i18n.t('Default')}</span>
@@ -1419,6 +1478,7 @@
 							step="1"
 							bind:value={params.num_gpu}
 							class="w-full h-2 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+							data-testid={testId ? getTestId(testId, 'NumGPURangeInput') : null}
 						/>
 					</div>
 					<div class="">
@@ -1429,6 +1489,7 @@
 							min="0"
 							max="256"
 							step="1"
+							data-testid={testId ? getTestId(testId, 'NumGPUInput') : null}
 						/>
 					</div>
 				</div>
@@ -1462,6 +1523,7 @@
 							placeholder={$i18n.t('Write your model template content here')}
 							rows="4"
 							bind:value={params.template}
+							data-testid={testId ? getTestId(testId, 'TemplateInput') : null}
 						/>
 					</div>
 				</div>
@@ -1488,6 +1550,7 @@
 							if (!params.provider) params.provider = {};
 							params.provider.order = (params?.provider?.order ?? null) === null ? '' : null;
 						}}
+						data-testid={testId ? getTestId(testId, 'ProviderOrderToggleButton') : null}
 					>
 						{#if (params?.provider?.order ?? null) === null}
 							<span class="ml-2 self-center">{$i18n.t('Default')}</span>
@@ -1507,6 +1570,7 @@
 							placeholder={$i18n.t('Enter provider order (comma-separated)')}
 							bind:value={params.provider.order}
 							autocomplete="off"
+							data-testid={testId ? getTestId(testId, 'ProviderOrderInput') : null}
 						/>
 					</div>
 				</div>
@@ -1534,6 +1598,7 @@
 							params.provider.allow_fallbacks =
 								(params?.provider?.allow_fallbacks ?? null) === null ? true : null;
 						}}
+						data-testid={testId ? getTestId(testId, 'AllowFallbacksToggleButton') : null}
 					>
 						{#if (params?.provider?.allow_fallbacks ?? null) === null}
 							<span class="ml-2 self-center">{$i18n.t('Default')}</span>
@@ -1578,6 +1643,7 @@
 							params.provider.require_parameters =
 								(params?.provider?.require_parameters ?? null) === null ? false : null;
 						}}
+						data-testid={testId ? getTestId(testId, 'RequireParametersToggleButton') : null}
 					>
 						{#if (params?.provider?.require_parameters ?? null) === null}
 							<span class="ml-2 self-center">{$i18n.t('Default')}</span>
@@ -1622,6 +1688,7 @@
 							params.provider.data_collection =
 								(params?.provider?.data_collection ?? null) === null ? 'allow' : null;
 						}}
+						data-testid={testId ? getTestId(testId, 'DataCollectionToggleButton') : null}
 					>
 						{#if (params?.provider?.data_collection ?? null) === null}
 							<span class="ml-2 self-center">{$i18n.t('Default')}</span>
@@ -1638,6 +1705,7 @@
 						<select
 							class="w-full rounded-lg py-2 px-1 text-sm dark:text-gray-300 dark:bg-gray-850 outline-hidden"
 							bind:value={params.provider.data_collection}
+							data-testid={testId ? getTestId(testId, 'DataCollectionSelect') : null}
 						>
 							<option value="allow">{$i18n.t('Allow')}</option>
 							<option value="deny">{$i18n.t('Deny')}</option>
@@ -1667,6 +1735,7 @@
 							if (!params.provider) params.provider = {};
 							params.provider.only = (params?.provider?.only ?? null) === null ? '' : null;
 						}}
+						data-testid={testId ? getTestId(testId, 'OnlyProvidersToggleButton') : null}
 					>
 						{#if (params?.provider?.only ?? null) === null}
 							<span class="ml-2 self-center">{$i18n.t('Default')}</span>
@@ -1686,6 +1755,7 @@
 							placeholder={$i18n.t('Enter providers to use only (comma-separated)')}
 							bind:value={params.provider.only}
 							autocomplete="off"
+							data-testid={testId ? getTestId(testId, 'OnlyProvidersInput') : null}
 						/>
 					</div>
 				</div>
@@ -1712,6 +1782,7 @@
 							if (!params.provider) params.provider = {};
 							params.provider.ignore = (params?.provider?.ignore ?? null) === null ? '' : null;
 						}}
+						data-testid={testId ? getTestId(testId, 'IgnoreProvidersToggleButton') : null}
 					>
 						{#if (params?.provider?.ignore ?? null) === null}
 							<span class="ml-2 self-center">{$i18n.t('Default')}</span>
@@ -1731,6 +1802,7 @@
 							placeholder={$i18n.t('Enter providers to ignore (comma-separated)')}
 							bind:value={params.provider.ignore}
 							autocomplete="off"
+							data-testid={testId ? getTestId(testId, 'IgnoreProvidersInput') : null}
 						/>
 					</div>
 				</div>
@@ -1757,6 +1829,7 @@
 							if (!params.provider) params.provider = {};
 							params.provider.sort = (params?.provider?.sort ?? null) === null ? '' : null;
 						}}
+						data-testid={testId ? getTestId(testId, 'ProviderSortToggleButton') : null}
 					>
 						{#if (params?.provider?.sort ?? null) === null}
 							<span class="ml-2 self-center">{$i18n.t('Default')}</span>
@@ -1776,6 +1849,7 @@
 							placeholder={$i18n.t('Enter sort criteria ("price", "throughput", or "latency")')}
 							bind:value={params.provider.sort}
 							autocomplete="off"
+							data-testid={testId ? getTestId(testId, 'ProviderSortInput') : null}
 						/>
 					</div>
 				</div>

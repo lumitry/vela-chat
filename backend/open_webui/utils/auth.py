@@ -106,13 +106,42 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def verify_password(plain_password, hashed_password):
-    return (
-        pwd_context.verify(plain_password, hashed_password) if hashed_password else None
-    )
+    """
+    Verify a password against a hash.
+    
+    Supports both old-style (direct bcrypt) and new-style (SHA-256 pre-hashed) passwords
+    for backward compatibility. New passwords are pre-hashed with SHA-256 before bcrypt
+    to support passwords longer than bcrypt's 72-byte limit.
+    """
+    if not hashed_password:
+        return None
+    
+    # Try new method first: SHA-256 pre-hash + bcrypt
+    # This allows passwords of any length
+    pre_hashed = hashlib.sha256(plain_password.encode("utf-8")).hexdigest()
+    if pwd_context.verify(pre_hashed, hashed_password):
+        return True
+    
+    # Fall back to old method for backward compatibility: direct bcrypt
+    # This supports existing passwords that were hashed directly
+    if pwd_context.verify(plain_password, hashed_password):
+        return True
+    
+    return False
 
 
 def get_password_hash(password):
-    return pwd_context.hash(password)
+    """
+    Hash a password using SHA-256 pre-hashing + bcrypt.
+    
+    This approach allows passwords of any length, as SHA-256 always produces
+    a fixed 64-character hex string (32 bytes), which is well under bcrypt's
+    72-byte limit. This prevents bcrypt from silently truncating long passwords.
+    """
+    # Pre-hash with SHA-256 to support passwords longer than bcrypt's 72-byte limit
+    # This ensures all passwords are handled consistently regardless of length
+    pre_hashed = hashlib.sha256(password.encode("utf-8")).hexdigest()
+    return pwd_context.hash(pre_hashed)
 
 
 def create_token(data: dict, expires_delta: Union[timedelta, None] = None) -> str:

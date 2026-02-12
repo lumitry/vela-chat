@@ -7,6 +7,10 @@ declare global {
 		// interface PageData {}
 		// interface Platform {}
 	}
+	
+	// Vite-injected build-time constants
+	const APP_VERSION: string;
+	const APP_BUILD_HASH: string;
 }
 
 export {};

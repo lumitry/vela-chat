@@ -262,10 +262,17 @@ export const getChatListBySearchText = async (
 	}));
 };
 
-export const getChatsByFolderId = async (token: string, folderId: string) => {
+export const getChatsByFolderId = async (token: string, folderId: string, forExport: boolean = false) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/chats/folder/${folderId}`, {
+	const searchParams = new URLSearchParams();
+	if (forExport) {
+		searchParams.append('export', 'true');
+	}
+
+	const url = `${WEBUI_API_BASE_URL}/chats/folder/${folderId}${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
+
+	const res = await fetch(url, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',

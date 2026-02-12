@@ -69,6 +69,7 @@
 		loadReasoningState,
 		type ReasoningState
 	} from '$lib/utils/reasoning';
+	import { testId } from '$lib/utils/testId';
 
 	const i18n = getContext('i18n');
 
@@ -581,6 +582,16 @@
 		});
 	};
 
+	const toClipboardImageFile = (file: File) => {
+		if (file.name && file.name.trim().length > 0) {
+			return file;
+		}
+
+		const mimeType = file.type || 'image/png';
+		const extension = mimeType.includes('/') ? mimeType.split('/')[1].split('+')[0] : 'png';
+		return new File([file], `pasted-image-${Date.now()}.${extension}`, { type: mimeType });
+	};
+
 	const handleKeyDown = (event: KeyboardEvent) => {
 		if (event.key === 'Escape') {
 			console.log('Escape');
@@ -904,6 +915,7 @@
 										<div
 											class="scrollbar-hidden text-left bg-transparent dark:text-gray-100 outline-hidden w-full pt-3 px-1 resize-none h-fit max-h-80 overflow-auto"
 											id="chat-input-container"
+											data-testid={testId('Chat', 'MessageInput', 'RichTextInput')}
 										>
 											<RichTextInput
 												bind:this={chatInputElement}
@@ -1097,23 +1109,18 @@
 													const clipboardData = e.clipboardData || window.clipboardData;
 
 													if (clipboardData && clipboardData.items) {
+														const hasImage = Array.from(clipboardData.items).some((item) =>
+															item.type.indexOf('image') !== -1
+														);
+
 														for (const item of clipboardData.items) {
 															if (item.type.indexOf('image') !== -1) {
-																const blob = item.getAsFile();
-																const reader = new FileReader();
-
-																reader.onload = function (e) {
-																	files = [
-																		...files,
-																		{
-																			type: 'image',
-																			url: `${e.target.result}`
-																		}
-																	];
-																};
-
-																reader.readAsDataURL(blob);
-															} else if (item.type === 'text/plain') {
+																e.preventDefault();
+																const file = item.getAsFile();
+																if (file) {
+																	inputFilesHandler([toClipboardImageFile(file)]);
+																}
+															} else if (item.type === 'text/plain' && !hasImage) {
 																if ($settings?.largeTextAsFile ?? false) {
 																	const text = clipboardData.getData('text/plain');
 
@@ -1136,6 +1143,7 @@
 									{:else}
 										<textarea
 											id="chat-input"
+											data-testid={testId('Chat', 'MessageInput', 'PlainTextInput')}
 											dir="auto"
 											bind:this={chatInputElement}
 											class="scrollbar-hidden bg-transparent dark:text-gray-100 outline-hidden w-full pt-3 px-1 resize-none"
@@ -1384,20 +1392,11 @@
 													// Process content based on what we found
 													for (const item of clipboardData.items) {
 														if (item.type.indexOf('image') !== -1) {
-															const blob = item.getAsFile();
-															const reader = new FileReader();
-
-															reader.onload = function (e) {
-																files = [
-																	...files,
-																	{
-																		type: 'image',
-																		url: `${e.target.result}`
-																	}
-																];
-															};
-
-															reader.readAsDataURL(blob);
+															e.preventDefault();
+															const file = item.getAsFile();
+															if (file) {
+																inputFilesHandler([toClipboardImageFile(file)]);
+															}
 														} else if (
 															item.type === 'text/html' &&
 															hasHtml &&
@@ -2023,6 +2022,7 @@
 														on:click={() => {
 															stopResponse();
 														}}
+														data-testid={testId('Chat', 'MessageInput', 'StopResponseButton')}
 													>
 														<svg
 															xmlns="http://www.w3.org/2000/svg"
@@ -2096,6 +2096,7 @@
 															}
 														}}
 														aria-label="Call"
+														data-testid={testId('Chat', 'MessageInput', 'CallButton')}
 													>
 														<Headphone className="size-5" />
 													</button>
@@ -2111,6 +2112,7 @@
 															: 'text-white bg-gray-200 dark:text-gray-900 dark:bg-gray-700 disabled'} transition rounded-full p-1.5 self-center"
 														type="submit"
 														disabled={prompt === '' && files.length === 0}
+														data-testid={testId('Chat', 'MessageInput', 'SendMessageButton')}
 													>
 														<svg
 															xmlns="http://www.w3.org/2000/svg"

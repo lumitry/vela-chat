@@ -4,6 +4,7 @@
 	import { onMount, getContext, createEventDispatcher } from 'svelte';
 
 	const dispatch = createEventDispatcher();
+	const TEST_ID_SLUG = testId('AdminSettings', 'Documents');
 
 	import {
 		getQuerySettings,
@@ -28,6 +29,7 @@
 	import Switch from '$lib/components/common/Switch.svelte';
 	import Textarea from '$lib/components/common/Textarea.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
+	import { testId } from '$lib/utils/testId';
 
 	const i18n = getContext('i18n');
 
@@ -287,6 +289,7 @@
 								<select
 									class="dark:bg-gray-900 w-fit pr-8 rounded-sm px-2 text-xs bg-transparent outline-hidden text-right"
 									bind:value={RAGConfig.CONTENT_EXTRACTION_ENGINE}
+									data-testid={testId(TEST_ID_SLUG, 'ContentExtractionEngineSelect')}
 								>
 									<option value="">{$i18n.t('Default')}</option>
 									<option value="tika">{$i18n.t('Tika')}</option>
@@ -304,7 +307,10 @@
 										{$i18n.t('PDF Extract Images (OCR)')}
 									</div>
 									<div class="flex items-center relative">
-										<Switch bind:state={RAGConfig.PDF_EXTRACT_IMAGES} />
+										<Switch
+											bind:state={RAGConfig.PDF_EXTRACT_IMAGES}
+											testId={testId(TEST_ID_SLUG, 'PdfExtractImagesSwitch')}
+										/>
 									</div>
 								</div>
 							</div>
@@ -364,7 +370,10 @@
 											'Default to segmented retrieval for focused and relevant content extraction, this is recommended for most cases.'
 										)}
 							>
-								<Switch bind:state={RAGConfig.BYPASS_EMBEDDING_AND_RETRIEVAL} />
+								<Switch
+									bind:state={RAGConfig.BYPASS_EMBEDDING_AND_RETRIEVAL}
+									testId={testId('AdminSettings', 'Documents', 'BypassEmbeddingAndRetrievalSwitch')}
+								/>
 							</Tooltip>
 						</div>
 					</div>
@@ -376,6 +385,7 @@
 								<select
 									class="dark:bg-gray-900 w-fit pr-8 rounded-sm px-2 text-xs bg-transparent outline-hidden text-right"
 									bind:value={RAGConfig.TEXT_SPLITTER}
+									data-testid={testId('AdminSettings', 'Documents', 'TextSplitterSelect')}
 								>
 									<option value="">{$i18n.t('Default')} ({$i18n.t('Character')})</option>
 									<option value="token">{$i18n.t('Token')} ({$i18n.t('Tiktoken')})</option>
@@ -397,6 +407,7 @@
 											bind:value={RAGConfig.CHUNK_SIZE}
 											autocomplete="off"
 											min="0"
+											data-testid={testId('AdminSettings', 'Documents', 'ChunkSizeInput')}
 										/>
 									</div>
 								</div>
@@ -414,6 +425,7 @@
 											bind:value={RAGConfig.CHUNK_OVERLAP}
 											autocomplete="off"
 											min="0"
+											data-testid={testId('AdminSettings', 'Documents', 'ChunkOverlapInput')}
 										/>
 									</div>
 								</div>
@@ -447,6 +459,7 @@
 												embeddingModel = 'sentence-transformers/all-MiniLM-L6-v2';
 											}
 										}}
+										data-testid={testId('AdminSettings', 'Documents', 'EmbeddingEngineSelect')}
 									>
 										<option value="">{$i18n.t('Default (SentenceTransformers)')}</option>
 										<option value="ollama">{$i18n.t('Ollama')}</option>
@@ -462,9 +475,14 @@
 										placeholder={$i18n.t('API Base URL')}
 										bind:value={OpenAIUrl}
 										required
+										data-testid={testId('AdminSettings', 'Documents', 'OpenAIURLInput')}
 									/>
 
-									<SensitiveInput placeholder={$i18n.t('API Key')} bind:value={OpenAIKey} />
+									<SensitiveInput
+										placeholder={$i18n.t('API Key')}
+										bind:value={OpenAIKey}
+										testId={testId('AdminSettings', 'Documents', 'OpenAIAPIKeyInput')}
+									/>
 								</div>
 							{:else if embeddingEngine === 'ollama'}
 								<div class="my-0.5 flex gap-2 pr-2">
@@ -473,12 +491,14 @@
 										placeholder={$i18n.t('API Base URL')}
 										bind:value={OllamaUrl}
 										required
+										data-testid={testId('AdminSettings', 'Documents', 'OllamaURLInput')}
 									/>
 
 									<SensitiveInput
 										placeholder={$i18n.t('API Key')}
 										bind:value={OllamaKey}
 										required={false}
+										testId={testId('AdminSettings', 'Documents', 'OllamaAPIKeyInput')}
 									/>
 								</div>
 							{/if}
@@ -496,6 +516,7 @@
 												bind:value={embeddingModel}
 												placeholder={$i18n.t('Set embedding model')}
 												required
+												data-testid={testId('AdminSettings', 'Documents', 'EmbeddingModelInput')}
 											/>
 										</div>
 									</div>
@@ -508,6 +529,7 @@
 													model: embeddingModel.slice(-40)
 												})}
 												bind:value={embeddingModel}
+												data-testid={testId('AdminSettings', 'Documents', 'EmbeddingModelInput')}
 											/>
 										</div>
 
@@ -591,6 +613,7 @@
 										min="-2"
 										max="16000"
 										step="1"
+										data-testid={testId('AdminSettings', 'Documents', 'EmbeddingBatchSizeInput')}
 									/>
 								</div>
 							</div>
@@ -614,7 +637,10 @@
 												'Default to segmented retrieval for focused and relevant content extraction, this is recommended for most cases.'
 											)}
 								>
-									<Switch bind:state={RAGConfig.RAG_FULL_CONTEXT} />
+									<Switch
+										bind:state={RAGConfig.RAG_FULL_CONTEXT}
+										testId={testId('AdminSettings', 'Documents', 'RagFullContextSwitch')}
+									/>
 								</Tooltip>
 							</div>
 						</div>
@@ -628,6 +654,7 @@
 										on:change={() => {
 											submitHandler();
 										}}
+										testId={testId('AdminSettings', 'Documents', 'EnableHybridSearchSwitch')}
 									/>
 								</div>
 							</div>
@@ -645,6 +672,7 @@
 														model: 'BAAI/bge-reranker-v2-m3'
 													})}
 													bind:value={rerankingModel}
+													data-testid={testId('AdminSettings', 'Documents', 'RerankingModelInput')}
 												/>
 											</div>
 											<button
@@ -715,6 +743,7 @@
 										bind:value={RAGConfig.TOP_K}
 										autocomplete="off"
 										min="0"
+										data-testid={testId('AdminSettings', 'Documents', 'RagTopKInput')}
 									/>
 								</div>
 							</div>
@@ -730,6 +759,7 @@
 											bind:value={RAGConfig.TOP_K_RERANKER}
 											autocomplete="off"
 											min="0"
+											data-testid={testId('AdminSettings', 'Documents', 'RerankingTopKInput')}
 										/>
 									</div>
 								</div>
@@ -752,6 +782,11 @@
 												min="0.0"
 												title={$i18n.t(
 													'The score should be a value between 0.0 (0%) and 1.0 (100%).'
+												)}
+												data-testid={testId(
+													'AdminSettings',
+													'Documents',
+													'RerankingRelevanceThresholdInput'
 												)}
 											/>
 										</div>
@@ -780,6 +815,7 @@
 										placeholder={$i18n.t(
 											'Leave empty to use the default prompt, or enter a custom prompt'
 										)}
+										testId={testId('AdminSettings', 'Documents', 'RagTemplateInput')}
 									/>
 								</Tooltip>
 							</div>
@@ -808,6 +844,7 @@
 									bind:value={RAGConfig.FILE_MAX_SIZE}
 									autocomplete="off"
 									min="0"
+									data-testid={testId('AdminSettings', 'Documents', 'FileMaxSizeInput')}
 								/>
 							</Tooltip>
 						</div>
@@ -829,6 +866,7 @@
 									bind:value={RAGConfig.FILE_MAX_COUNT}
 									autocomplete="off"
 									min="0"
+									data-testid={testId('AdminSettings', 'Documents', 'FileMaxCountInput')}
 								/>
 							</Tooltip>
 						</div>
@@ -843,14 +881,20 @@
 					<div class="  mb-2.5 flex w-full justify-between">
 						<div class=" self-center text-xs font-medium">{$i18n.t('Google Drive')}</div>
 						<div class="flex items-center relative">
-							<Switch bind:state={RAGConfig.ENABLE_GOOGLE_DRIVE_INTEGRATION} />
+							<Switch
+								bind:state={RAGConfig.ENABLE_GOOGLE_DRIVE_INTEGRATION}
+								testId={testId('AdminSettings', 'Documents', 'EnableGoogleDriveIntegrationSwitch')}
+							/>
 						</div>
 					</div>
 
 					<div class="  mb-2.5 flex w-full justify-between">
 						<div class=" self-center text-xs font-medium">{$i18n.t('OneDrive')}</div>
 						<div class="flex items-center relative">
-							<Switch bind:state={RAGConfig.ENABLE_ONEDRIVE_INTEGRATION} />
+							<Switch
+								bind:state={RAGConfig.ENABLE_ONEDRIVE_INTEGRATION}
+								testId={testId('AdminSettings', 'Documents', 'EnableOneDriveIntegrationSwitch')}
+							/>
 						</div>
 					</div>
 				</div>
@@ -868,6 +912,7 @@
 								on:click={() => {
 									showResetUploadDirConfirm = true;
 								}}
+								data-testid={testId('AdminSettings', 'Documents', 'ResetUploadDirButton')}
 							>
 								{$i18n.t('Reset')}
 							</button>
@@ -884,6 +929,7 @@
 								on:click={() => {
 									showResetConfirm = true;
 								}}
+								data-testid={testId('AdminSettings', 'Documents', 'ResetVectorDBButton')}
 							>
 								{$i18n.t('Reset')}
 							</button>
@@ -899,6 +945,7 @@
 								on:click={() => {
 									showReindexConfirm = true;
 								}}
+								data-testid={testId('AdminSettings', 'Documents', 'ReindexKnowledgeFilesButton')}
 							>
 								{$i18n.t('Reindex')}
 							</button>
@@ -911,6 +958,7 @@
 			<button
 				class="px-3.5 py-1.5 text-sm font-medium bg-black hover:bg-gray-900 text-white dark:bg-white dark:text-black dark:hover:bg-gray-100 transition rounded-full"
 				type="submit"
+				data-testid={testId('AdminSettings', 'Settings', 'SaveButton')}
 			>
 				{$i18n.t('Save')}
 			</button>

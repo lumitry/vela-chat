@@ -17,6 +17,7 @@
 	import { getModels } from '$lib/apis';
 	import { toast } from 'svelte-sonner';
 	import localizedFormat from 'dayjs/plugin/localizedFormat';
+	import { testId } from '$lib/utils/testId';
 
 	const i18n = getContext('i18n');
 	dayjs.extend(localizedFormat);
@@ -109,7 +110,11 @@
 						: [chatContent.models ?? ''];
 
 				// Handle messages array without content, sources, or files (JOIN with history.messages if available)
-				if (chatContent.messages && Array.isArray(chatContent.messages) && chatContent.history?.messages) {
+				if (
+					chatContent.messages &&
+					Array.isArray(chatContent.messages) &&
+					chatContent.history?.messages
+				) {
 					const messagesMap = chatContent.history.messages;
 					for (const message of chatContent.messages) {
 						if (message && message.id) {
@@ -192,12 +197,19 @@
 						: 'max-w-5xl'} mx-auto"
 				>
 					<div class="px-3">
-						<div class=" text-2xl font-semibold line-clamp-1">
+						<div
+							class=" text-2xl font-semibold line-clamp-1"
+							data-testid={testId('Chat', 'SharedChatPage', 'Title')}
+						>
 							{title}
 						</div>
 
 						<div class="flex text-sm justify-between items-center mt-1">
-							<div class="text-gray-400">
+							<div
+								class="text-gray-400"
+								data-testid={testId('Chat', 'SharedChatPage', 'Timestamp')}
+								data-value={dayjs(chat.chat.timestamp).toISOString()}
+							>
 								{dayjs(chat.chat.timestamp).format('LLL')}
 							</div>
 						</div>
@@ -231,6 +243,7 @@
 				<div class="pb-5">
 					<button
 						class="px-4 py-2 text-sm font-medium bg-black hover:bg-gray-900 text-white dark:bg-white dark:text-black dark:hover:bg-gray-100 transition rounded-full"
+						data-testid={testId('Chat', 'SharedChatPage', 'CloneChatButton')}
 						on:click={cloneSharedChat}
 					>
 						{$i18n.t('Clone Chat')}

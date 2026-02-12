@@ -1,0 +1,346 @@
+import { expect, type Locator, type Page } from '@playwright/test';
+import { testId } from '$lib/utils/testId';
+import { Dropdown } from './Dropdown';
+import { MiniMediatorModel } from '../data/miniMediatorModels';
+
+/**
+ * Represents the Model Selector dropdown component.
+ *
+ * This selector appears in the chat page navbar and allows users to select models.
+ *
+ * The model selector does not technically need to be opened to use some of these methods. Methods that do not require the model selector to be open are marked as such in their docstring.
+ *
+ * Methods that DO require the model selector to be open are NOT marked as such! That much should be assumed by default, and the others are exceptions, not the rule.
+ *
+ * Extends Dropdown to provide both convenience methods (selectModel(), assertCurrentModelName(), etc.)
+ * and generic dropdown functionality (clickOptionByText(), assertOptionExists(), etc.).
+ *
+ * @example
+ * ```typescript
+ * // Convenience methods (better DX)
+ * await modelSelector.open();
+ * await modelSelector.selectModel('openai:gpt-4');
+ * await modelSelector.assertCurrentModelName('GPT-4');
+ *
+ * // Generic dropdown methods (more flexible)
+ * await modelSelector.clickOptionByText('GPT-4');
+ * await modelSelector.assertOptionExists('GPT-4');
+ * ```
+ */
+export class ModelSelector extends Dropdown {
+	private page: Page;
+	private modelSelectorTrigger: ReturnType<Page['getByTestId']>;
+	private modelSelectorTriggerCurrentModelName: ReturnType<Page['getByTestId']>;
+	private getModelSelectorModelItem: (modelId: string) => ReturnType<Page['getByTestId']>;
+	private getModelSelectorModelImage: (modelId: string) => ReturnType<Page['getByTestId']>;
+	private getModelSelectorModelName: (modelId: string) => ReturnType<Page['getByTestId']>;
+	private getModelSelectorModelDescription: (modelId: string) => ReturnType<Page['getByTestId']>;
+	/** Only for Ollama models. Currently mini-mediator doesn't support this anyway. */
+	private getModelSelectorModelParameterSize: (modelId: string) => ReturnType<Page['getByTestId']>;
+	private setDefaultButton: ReturnType<Page['getByTestId']>;
+	private modelItems: Locator;
+
+	/**
+	 * Gets a tag locator for a specific model and tag name.
+	 */
+	private getModelSelectorTag = (modelId: string, tagName: string) =>
+		this.page.getByTestId(testId('Chat', 'ModelSelector', 'ModelItem', modelId, 'Tag', tagName));
+
+	/**
+	 * Gets a tag filter button locator.
+	 */
+	private getTagFilterButton = (tagName: string) =>
+		this.page.getByTestId(testId('Chat', 'ModelSelector', 'TagFilterButton', tagName));
+
+	constructor(page: Page, containerTestIdPrefix: string[] = ['Chat', 'ModelSelector']) {
+		// The dropdown content appears when the selector is opened
+		// We need to find the dropdown content - it's typically in a DropdownMenu.Content
+		// For now, we'll use a more generic locator that should work
+		const dropdownContainer = page.locator('[role="menu"]').first();
+		super(dropdownContainer);
+		this.page = page;
+
+		// Initialize locators using test IDs
+		this.modelSelectorTrigger = page.getByTestId(
+			testId(...containerTestIdPrefix, 'Selector', 'Trigger')
+		);
+		this.modelSelectorTriggerCurrentModelName = page.getByTestId(
+			testId(...containerTestIdPrefix, 'Selector', 'Trigger', 'CurrentModelName')
+		);
+		this.getModelSelectorModelItem = (modelId: string) =>
+			page.getByTestId(testId(...containerTestIdPrefix, 'ModelItem', modelId));
+		this.getModelSelectorModelImage = (modelId: string) =>
+			page.getByTestId(testId(...containerTestIdPrefix, 'ModelImage', modelId));
+		this.getModelSelectorModelName = (modelId: string) =>
+			page.getByTestId(testId(...containerTestIdPrefix, 'ModelName', modelId));
+		this.getModelSelectorModelDescription = (modelId: string) =>
+			page.getByTestId(testId(...containerTestIdPrefix, 'ModelDescription', modelId));
+		this.getModelSelectorModelParameterSize = (modelId: string) =>
+			page.getByTestId(testId(...containerTestIdPrefix, 'ModelParameterSize', modelId));
+		this.setDefaultButton = page.getByTestId(testId(...containerTestIdPrefix, 'SetDefaultButton'));
+
+		// Any model item rendered in the dropdown for this selector
+		const modelItemPrefix = testId(...containerTestIdPrefix, 'ModelItem');
+		this.modelItems = page.locator(`[data-testid^="${modelItemPrefix}"]`);
+	}
+
+	/**
+	 * Clicks the model selector trigger (the model name & chevron) to open the model selector.
+	 *
+	 * The model selector should be closed before calling this method.
+	 */
+	async open(): Promise<void> {
+		// If we already see at least one model item, assume the selector is open
+		if (
+			await this.modelItems
+				.first()
+				.isVisible()
+				.catch(() => false)
+		) {
+			return;
+		}
+
+		// Make sure the trigger is actually visible/clickable
+		await expect(this.modelSelectorTrigger).toBeVisible();
+		await this.modelSelectorTrigger.click();
+
+		// Wait for at least one model item to become visible.
+		// This is the most reliable signal that the dropdown is actually open and populated.
+		await this.modelItems
+			.first()
+			.waitFor({ state: 'visible', timeout: 5000 })
+			.catch(async () => {
+				// Fallback: at least ensure the generic container became visible
+				await this.container.waitFor({ state: 'visible', timeout: 1000 }).catch(() => {
+					console.warn('Model selector dropdown did not become visible or show items in time');
+				});
+			});
+	}
+
+	/**
+	 * Closes the model selector by clicking the model selector trigger (the model name & chevron).
+	 *
+	 * The model selector should be **OPEN** before calling this method.
+	 */
+	async close(): Promise<void> {
+		await this.modelSelectorTrigger.click();
+
+		await this.container.waitFor({ state: 'hidden', timeout: 2000 }).catch(() => {
+			// Dropdown might close immediately or might not use standard visibility
+			// TODO i've seen this fail to catch a still-open dropdown before!
+			console.warn('Model selector dropdown was not hidden when it should have been');
+		});
+	}
+
+	/**
+	 * Asserts that the current model name on the model selector trigger matches the expected model name.
+	 *
+	 * The model selector does not need to be open to call this method.
+	 *
+	 * TODO: support for multiple models!
+	 *
+	 * @param modelName - The expected model name.
+	 */
+	async assertCurrentModelName(modelName: string): Promise<void> {
+		await expect(this.modelSelectorTriggerCurrentModelName).toHaveText(modelName);
+	}
+
+	/**
+	 * Asserts that the model name exists in the model selector.
+	 *
+	 * @param modelId - The ID of the model.
+	 * @param modelName - The name of the model.
+	 */
+	async assertModelNameExists(modelId: string, modelName: string): Promise<void> {
+		await expect(this.getModelSelectorModelName(modelId)).toHaveText(modelName);
+	}
+
+	/**
+	 * Asserts that the model's hide state matches the expected value.
+	 *
+	 * We expect the model to not be visible in the model selector if it is hidden.
+	 *
+	 * @param modelId - The ID of the model.
+	 * @param expectedHideState - The expected hide state.
+	 */
+	async assertModelHideState(modelId: string, expectedHideState: boolean): Promise<void> {
+		if (expectedHideState) {
+			await expect(this.getModelSelectorModelName(modelId)).not.toBeVisible();
+		} else {
+			await expect(this.getModelSelectorModelName(modelId)).toBeVisible();
+		}
+	}
+
+	/**
+	 * Selects a model from the model selector.
+	 *
+	 * Closes the model selector if it is open.
+	 *
+	 * @param model - The model to select. Can be a MiniMediatorModel or the model ID with endpoint prefix.
+	 */
+	async selectModel(model: string | MiniMediatorModel): Promise<void> {
+		let modelId: string;
+		if (model instanceof MiniMediatorModel) {
+			modelId = model.getFullIdWithEndpointPrefix();
+		} else {
+			modelId = model;
+		}
+
+		const modelItem = this.getModelSelectorModelItem(modelId);
+
+		// Ensure the dropdown is open and the specific model item is visible before clicking.
+		if (!(await modelItem.isVisible().catch(() => false))) {
+			await this.open();
+		}
+
+		await modelItem.waitFor({ state: 'visible', timeout: 5000 });
+		await modelItem.click();
+
+		// Wait for dropdown to close after selection
+		await this.container.waitFor({ state: 'hidden', timeout: 2000 }).catch(() => {
+			// Dropdown might close immediately or might not use standard visibility
+		});
+	}
+
+	/**
+	 * Asserts that the model description exists in the model selector.
+	 *
+	 * @param modelId - The ID of the model.
+	 * @param modelDescription - The description of the model. If null, asserts that the description element does not exist.
+	 */
+	async assertModelDescription(modelId: string, modelDescription: string | null): Promise<void> {
+		if (modelDescription === null) {
+			await expect(this.getModelSelectorModelDescription(modelId)).not.toBeVisible();
+		} else {
+			await expect(this.getModelSelectorModelDescription(modelId)).toHaveAttribute(
+				'aria-label',
+				`<p>${modelDescription}</p>\n`
+			);
+		}
+	}
+
+	/**
+	 * Asserts that the model's image src attribute matches the expected URL or pattern.
+	 *
+	 * @param modelId - The ID of the model.
+	 * @param expectedImageUrl - The expected image URL. Can be:
+	 *   - An exact URL string (e.g., '/static/favicon.png')
+	 *   - A regex pattern (e.g., /\/api\/v1\/files\/.*\/content/)
+	 *   - A function that returns a boolean (for custom validation)
+	 */
+	async assertModelImage(
+		modelId: string,
+		expectedImageUrl: string | RegExp | ((url: string) => boolean)
+	): Promise<void> {
+		const imageLocator = this.getModelSelectorModelImage(modelId);
+
+		if (typeof expectedImageUrl === 'string') {
+			// Exact URL match
+			await expect(imageLocator).toHaveAttribute('src', expectedImageUrl);
+		} else if (expectedImageUrl instanceof RegExp) {
+			// Regex pattern match
+			await expect(imageLocator).toHaveAttribute('src', expectedImageUrl);
+		} else {
+			// Custom function validation
+			const actualSrc = await imageLocator.getAttribute('src');
+			expect(actualSrc).not.toBeNull();
+			expect(expectedImageUrl(actualSrc!)).toBe(true);
+		}
+	}
+
+	/**
+	 * Asserts that the model's image is NOT the default favicon.
+	 *
+	 * @param modelId - The ID of the model.
+	 * @param defaultImageUrl - The default image URL to check against (defaults to '/static/favicon.png')
+	 */
+	async assertModelImageIsNotDefault(
+		modelId: string,
+		defaultImageUrl: string = '/static/favicon.png'
+	): Promise<void> {
+		const imageLocator = this.getModelSelectorModelImage(modelId);
+		await expect(imageLocator).not.toHaveAttribute('src', defaultImageUrl);
+	}
+
+	/**
+	 * Asserts that the model's image URL matches the uploaded file pattern.
+	 * This checks that the image is a file URL (e.g., /api/v1/files/{id}/content) and not the default.
+	 *
+	 * @param modelId - The ID of the model.
+	 * @param defaultImageUrl - The default image URL to exclude (defaults to '/static/favicon.png')
+	 */
+	async assertModelImageIsUploaded(
+		modelId: string,
+		defaultImageUrl: string = '/static/favicon.png'
+	): Promise<void> {
+		const imageLocator = this.getModelSelectorModelImage(modelId);
+		const actualSrc = await imageLocator.getAttribute('src');
+
+		expect(actualSrc).not.toBeNull();
+		expect(actualSrc).not.toBe(defaultImageUrl);
+		// Check that it's a file URL (either /api/v1/files/... or data:... or absolute URL)
+		expect(actualSrc).toMatch(/\/api\/v1\/files\/.*\/content|data:image|https?:\/\//);
+	}
+
+	/**
+	 * Sets the current model as the default model by clicking the set default button.
+	 *
+	 * The model selector does not need to be open to call this method, but this method CANNOT be called if the model selector is open, and it cannot be called if a chat is open because the button does not appear in that case.
+	 */
+	async setCurrentModelAsDefault(): Promise<void> {
+		await this.setDefaultButton.click();
+	}
+
+	/**
+	 * Asserts that the model's tags match the expected tags.
+	 *
+	 * Tags are displayed within the model item in the dropdown. On mobile, they appear above the model name.
+	 * On desktop, they appear inline with the model name.
+	 *
+	 * @param modelId - The ID of the model.
+	 * @param expectedTags - The expected tags array. Tags are sorted alphabetically in the UI.
+	 */
+	async assertModelTags(modelId: string, expectedTags: string[]): Promise<void> {
+		if (expectedTags.length === 0) {
+			// If no tags expected, verify no tag elements exist for this specific model
+			const tagElements = this.page.locator(`[data-testid*="ModelItem_${modelId}_Tag_"]`);
+			const count = await tagElements.count();
+			expect(count).toBe(0);
+		} else {
+			// Sort expected tags alphabetically (as they are in the UI)
+			const sortedExpectedTags = [...expectedTags].sort((a, b) => a.localeCompare(b));
+
+			// Verify each expected tag exists
+			for (const tagName of sortedExpectedTags) {
+				const tagLocator = this.getModelSelectorTag(modelId, tagName);
+				await expect(tagLocator).toBeVisible();
+				await expect(tagLocator).toHaveText(tagName);
+			}
+
+			// Verify we have the correct number of tags (no extra tags)
+			const tagElements = this.page.locator(`[data-testid*="ModelItem_${modelId}_Tag_"]`);
+			const actualCount = await tagElements.count();
+			expect(actualCount).toBe(expectedTags.length);
+		}
+	}
+
+	/**
+	 * Filters the model list by clicking on a tag filter button.
+	 *
+	 * The tag filter buttons appear at the top of the model selector dropdown.
+	 *
+	 * If tagName is an empty string, this method does nothing.
+	 *
+	 * @param tagName - The name of the tag to filter by.
+	 */
+	async filterByTag(tagName: string): Promise<void> {
+		if (tagName === '') {
+			return;
+		}
+		const tagButton = this.getTagFilterButton(tagName);
+		await tagButton.scrollIntoViewIfNeeded();
+		await tagButton.click();
+		// Wait a moment for the filter to apply
+		await this.page.waitForTimeout(200);
+	}
+}

@@ -3,6 +3,7 @@
 	import { formatSmartCurrency } from '$lib/utils/currency';
 	import { models as modelsStore } from '$lib/stores';
 	import Spinner from '$lib/components/common/Spinner.svelte';
+	import { testId } from '$lib/utils/testId';
 
 	const i18n = getContext('i18n');
 
@@ -174,6 +175,7 @@
 				{#each sortedModels as model}
 					<tr
 						class="border-b border-gray-100 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition"
+						data-testid={testId('Workspace', 'Metrics', 'ModelUsageTable', 'Row', model.model_id)}
 					>
 						<td class="py-3 px-4 font-medium text-sm">
 							<div class="flex items-center gap-2">
@@ -181,22 +183,74 @@
 									src={getModelIcon(model.model_id)}
 									alt={model.model_name}
 									class="w-6 h-6 rounded-full object-cover"
+									data-testid={testId(
+										'Workspace',
+										'Metrics',
+										'ModelUsageTable',
+										'ModelImage',
+										model.model_id
+									)}
 								/>
-								<span>{model.model_name}</span>
+								<span
+									data-testid={testId(
+										'Workspace',
+										'Metrics',
+										'ModelUsageTable',
+										'ModelName',
+										model.model_id
+									)}>{model.model_name}</span
+								>
 							</div>
 						</td>
-						<td class="py-3 px-4 text-right text-sm tabular-nums">{formatCurrency(model.spend)}</td>
-						<td class="py-3 px-4 text-right text-sm tabular-nums"
-							>{formatNumber(model.input_tokens)}</td
+						<td
+							class="py-3 px-4 text-right text-sm tabular-nums"
+							data-testid={testId(
+								'Workspace',
+								'Metrics',
+								'ModelUsageTable',
+								'Spend',
+								model.model_id
+							)}>{formatCurrency(model.spend)}</td
 						>
-						<td class="py-3 px-4 text-right text-sm tabular-nums"
-							>{formatNumber(model.output_tokens)}</td
+						<td
+							class="py-3 px-4 text-right text-sm tabular-nums"
+							data-testid={testId(
+								'Workspace',
+								'Metrics',
+								'ModelUsageTable',
+								'InputTokens',
+								model.model_id
+							)}>{formatNumber(model.input_tokens)}</td
 						>
-						<td class="py-3 px-4 text-right text-sm font-semibold tabular-nums"
-							>{formatNumber(model.total_tokens)}</td
+						<td
+							class="py-3 px-4 text-right text-sm tabular-nums"
+							data-testid={testId(
+								'Workspace',
+								'Metrics',
+								'ModelUsageTable',
+								'OutputTokens',
+								model.model_id
+							)}>{formatNumber(model.output_tokens)}</td
 						>
-						<td class="py-3 px-4 text-right text-sm tabular-nums"
-							>{formatNumber(model.message_count)}</td
+						<td
+							class="py-3 px-4 text-right text-sm font-semibold tabular-nums"
+							data-testid={testId(
+								'Workspace',
+								'Metrics',
+								'ModelUsageTable',
+								'TotalTokens',
+								model.model_id
+							)}>{formatNumber(model.total_tokens)}</td
+						>
+						<td
+							class="py-3 px-4 text-right text-sm tabular-nums"
+							data-testid={testId(
+								'Workspace',
+								'Metrics',
+								'ModelUsageTable',
+								'MessageCount',
+								model.model_id
+							)}>{formatNumber(model.message_count)}</td
 						>
 					</tr>
 				{/each}

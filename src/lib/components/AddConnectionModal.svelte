@@ -15,6 +15,7 @@
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import Switch from '$lib/components/common/Switch.svelte';
 	import Tags from './common/Tags.svelte';
+	import { testId } from '$lib/utils/testId';
 
 	export let onSubmit: Function = () => {};
 	export let onDelete: Function = () => {};
@@ -38,6 +39,8 @@
 	let modelIds = [];
 
 	let loading = false;
+
+	const TEST_ID_SLUG = testId('AdminSettings', 'Connections', 'AddConnectionModal');
 
 	const verifyOllamaHandler = async () => {
 		const res = await verifyOllamaConnection(localStorage.token, url, key).catch((error) => {
@@ -183,6 +186,7 @@
 										placeholder={$i18n.t('API Base URL')}
 										autocomplete="off"
 										required
+										data-testid={testId(TEST_ID_SLUG, 'URLInput')}
 									/>
 								</div>
 							</div>
@@ -194,6 +198,7 @@
 										verifyHandler();
 									}}
 									type="button"
+									data-testid={testId(TEST_ID_SLUG, 'VerifyConnectionButton')}
 								>
 									<svg
 										xmlns="http://www.w3.org/2000/svg"
@@ -212,7 +217,10 @@
 
 							<div class="flex flex-col shrink-0 self-end">
 								<Tooltip content={enable ? $i18n.t('Enabled') : $i18n.t('Disabled')}>
-									<Switch bind:state={enable} />
+									<Switch
+										bind:state={enable}
+										testId={testId(TEST_ID_SLUG, 'VisibilityToggleButton')}
+									/>
 								</Tooltip>
 							</div>
 						</div>
@@ -227,6 +235,7 @@
 										bind:value={key}
 										placeholder={$i18n.t('API Key')}
 										required={false}
+										testId={testId(TEST_ID_SLUG, 'KeyInput')}
 									/>
 								</div>
 							</div>
@@ -246,6 +255,7 @@
 											bind:value={prefixId}
 											placeholder={$i18n.t('Prefix ID')}
 											autocomplete="off"
+											data-testid={testId(TEST_ID_SLUG, 'PrefixIDInput')}
 										/>
 									</Tooltip>
 								</div>
@@ -257,6 +267,7 @@
 								<div class=" mb-1.5 text-xs text-gray-500">{$i18n.t('Tags')}</div>
 
 								<div class="flex-1">
+									<!-- TODO: add automation for tags, model IDs input! -->
 									<Tags
 										bind:tags
 										on:add={(e) => {
@@ -350,6 +361,7 @@
 									onDelete();
 									show = false;
 								}}
+								data-testid={testId(TEST_ID_SLUG, 'DeleteButton')}
 							>
 								{$i18n.t('Delete')}
 							</button>
@@ -361,6 +373,7 @@
 								: ''}"
 							type="submit"
 							disabled={loading}
+							data-testid={testId(TEST_ID_SLUG, 'SaveButton')}
 						>
 							{$i18n.t('Save')}
 

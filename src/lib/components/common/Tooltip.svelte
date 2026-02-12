@@ -15,6 +15,7 @@
 	export let offset = [0, 4];
 	export let allowHTML = true;
 	export let tippyOptions = {};
+	export let testId: string | null = null;
 
 	let tooltipElement;
 	let tooltipInstance;
@@ -47,6 +48,11 @@
 	});
 </script>
 
-<div bind:this={tooltipElement} aria-label={DOMPurify.sanitize(content)} class={className}>
+<div
+	bind:this={tooltipElement}
+	aria-label={DOMPurify.sanitize(content)}
+	class={className}
+	data-testid={testId ? testId : undefined}
+>
 	<slot />
 </div>
